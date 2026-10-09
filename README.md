@@ -13,4 +13,3 @@ Each tool is an independent Node.js project under `tools/`, with its own package
 ## Design documents
 
 - [Audit CLI design](docs/superpowers/specs/2026-10-09-npm-dep-audit-design.md)
-- [Independent tool folders](docs/superpowers/specs/2026-10-09-independent-tool-folders-design.md)
