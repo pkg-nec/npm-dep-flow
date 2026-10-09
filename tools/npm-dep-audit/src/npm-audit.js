@@ -31,11 +31,13 @@ export function validateAudit(report) {
   return report
 }
 
-function command(root, args, spawnImpl) {
+function command(root, args, spawnImpl, platform) {
   return new Promise((resolve, reject) => {
     let child
     try {
-      child = spawnImpl('npm', args, { cwd: root, shell: false, stdio: ['ignore', 'pipe', 'pipe'] })
+      const windows = platform === 'win32'
+      child = spawnImpl(windows ? `npm.cmd ${args.join(' ')}` : 'npm', windows ? [] : args,
+        { cwd: root, shell: windows, stdio: ['ignore', 'pipe', 'pipe'] })
     } catch (error) {
       reject(error)
       return
@@ -72,19 +74,19 @@ function requireSuccess(result, args) {
   return result.stdout.trim()
 }
 
-export async function readNpmContext(root, spawnImpl = spawn) {
-  const version = requireSuccess(await command(root, ['--version'], spawnImpl), ['--version'])
-  let registry = requireSuccess(await command(root, ['config', 'get', 'audit-registry'], spawnImpl), ['config', 'get', 'audit-registry'])
+export async function readNpmContext(root, spawnImpl = spawn, platform = process.platform) {
+  const version = requireSuccess(await command(root, ['--version'], spawnImpl, platform), ['--version'])
+  let registry = requireSuccess(await command(root, ['config', 'get', 'audit-registry'], spawnImpl, platform), ['config', 'get', 'audit-registry'])
   if (!registry || registry === 'undefined' || registry === 'null') {
-    registry = requireSuccess(await command(root, ['config', 'get', 'registry'], spawnImpl), ['config', 'get', 'registry'])
+    registry = requireSuccess(await command(root, ['config', 'get', 'registry'], spawnImpl, platform), ['config', 'get', 'registry'])
   }
   if (!version || !registry) throw new Error('Cannot determine npm version or audit registry')
   return { version, registry }
 }
 
-export async function runNpmAudit(root, spawnImpl = spawn) {
+export async function runNpmAudit(root, spawnImpl = spawn, platform = process.platform) {
   const args = ['audit', '--json', '--include=prod', '--include=dev', '--include=optional', '--include=peer']
-  const result = await command(root, args, spawnImpl)
+  const result = await command(root, args, spawnImpl, platform)
   if (result.code !== 0 && result.code !== 1) {
     throw new Error(`npm audit failed with exit ${result.code}: ${result.stderr.trim() || result.stdout.trim()}`)
   }
