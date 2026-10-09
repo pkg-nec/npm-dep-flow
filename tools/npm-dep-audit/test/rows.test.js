@@ -59,3 +59,9 @@ test('rejects unsupported advisory range and missing node version', () => {
   audit.vulnerabilities.dep.nodes = ['node_modules/missing']
   assert.throws(() => buildRows(lock, audit), /node_modules\/missing/)
 })
+
+test('does not turn malformed advisory entries into a clean report', () => {
+  const lock = { packages: { '': {}, 'node_modules/dep': { version: '1.0.0' } } }
+  const audit = { vulnerabilities: { dep: { via: [null, 42], nodes: ['node_modules/dep'] } } }
+  assert.throws(() => buildRows(lock, audit), /via|advisory/i)
+})

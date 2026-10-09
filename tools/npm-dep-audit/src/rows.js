@@ -23,7 +23,11 @@ function normalizeAdvisory(via) {
 export function buildRows(lock, audit) {
   const grouped = new Map()
   for (const vuln of Object.values(audit.vulnerabilities)) {
-    const direct = vuln.via.filter(via => via && typeof via === 'object').map(normalizeAdvisory)
+    if (!Array.isArray(vuln.via) || !Array.isArray(vuln.nodes)) throw new Error('Invalid vulnerability via or nodes')
+    const direct = vuln.via.filter(via => typeof via !== 'string').map(via => {
+      if (!via || typeof via !== 'object' || Array.isArray(via)) throw new Error('Invalid advisory via entry')
+      return normalizeAdvisory(via)
+    })
     if (direct.length === 0) continue
     for (const location of vuln.nodes) {
       const entry = lock.packages[location]

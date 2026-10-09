@@ -73,3 +73,22 @@ test('failed refresh does not serve stale data or write an entry', async t => {
   await getAudit(project, context, { ttlMs: 3600000, cacheRoot, now: () => 1000000, fetchAudit: async () => audit })
   await assert.rejects(getAudit(project, context, { ttlMs: 3600000, cacheRoot, now: () => 4600000, fetchAudit: async () => { throw new Error('audit failed') } }), /audit failed/)
 })
+
+test('does not cache malformed nested advisories', async t => {
+  const cacheRoot = await cacheDir(t)
+  const malformed = { ...audit, vulnerabilities: { dep: { via: [{ source: 1, severity: 'high', range: 'not a range' }], nodes: ['node_modules/dep'] } } }
+  await assert.rejects(getAudit(project, context, { ttlMs: 3600000, cacheRoot, now: () => 1000000, fetchAudit: async () => malformed }), /audit|range/i)
+  assert.deepEqual(await readdir(cacheRoot), [])
+})
+
+test('null cache envelope triggers a fresh audit', async t => {
+  const cacheRoot = await cacheDir(t)
+  let calls = 0
+  const options = { ttlMs: 3600000, cacheRoot, now: () => 1000000, fetchAudit: async () => { calls++; return audit } }
+  await getAudit(project, context, options)
+  const [name] = await readdir(cacheRoot)
+  await writeFile(join(cacheRoot, name), 'null')
+  await getAudit(project, context, options)
+  assert.equal(calls, 2)
+  assert.deepEqual(JSON.parse(await readFile(join(cacheRoot, name), 'utf8')).audit, audit)
+})

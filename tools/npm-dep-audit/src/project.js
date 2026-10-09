@@ -46,6 +46,10 @@ export async function loadProject(path) {
 
   const manifest = parseJson(manifestBytes, 'package.json')
   const lock = parseJson(lockBytes, 'package-lock.json')
+  if (manifest.packageManager !== undefined &&
+      (typeof manifest.packageManager !== 'string' || !/^npm@\S+$/.test(manifest.packageManager))) {
+    throw new Error(`Unsupported packageManager: ${manifest.packageManager}`)
+  }
   if (![2, 3].includes(lock.lockfileVersion) || !isObject(lock.packages) || !isObject(lock.packages[''])) {
     throw new Error('Unsupported package-lock.json lockfileVersion or packages structure; expected version 2 or 3')
   }

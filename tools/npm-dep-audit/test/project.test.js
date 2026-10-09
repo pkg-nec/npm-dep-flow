@@ -55,3 +55,11 @@ test('rejects shrinkwrap because npm would audit it instead of package-lock', as
   await writeFile(join(dir, 'npm-shrinkwrap.json'), '{"lockfileVersion":3,"packages":{"":{}}}')
   await assert.rejects(loadProject(dir), /npm-shrinkwrap\.json/)
 })
+
+test('rejects an explicitly declared non-npm package manager', async t => {
+  const dir = await project('{"name":"sample","packageManager":"pnpm@10.0.0"}', '{"lockfileVersion":3,"packages":{"":{}}}')
+  t.after(() => rm(dir, { recursive: true, force: true }))
+  await assert.rejects(loadProject(dir), /packageManager.*pnpm/)
+  await writeFile(join(dir, 'package.json'), '{"name":"sample","packageManager":"npm@12.1.0"}')
+  assert.equal((await loadProject(dir)).root, dir)
+})

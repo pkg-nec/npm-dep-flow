@@ -45,6 +45,8 @@ for (const response of [
   { code: 0, stdout: '{not json' },
   { code: 0, stdout: JSON.stringify({ auditReportVersion: 2, metadata: {} }) },
   { error: new Error('spawn failed') },
+  { code: 1, stdout: JSON.stringify({ ...valid, vulnerabilities: { dep: { via: [null, 42], nodes: ['node_modules/dep'] } } }) },
+  { code: 1, stdout: JSON.stringify({ ...valid, vulnerabilities: { dep: { via: [{ source: 1, title: 'bad', severity: 'high', range: 'not a range' }], nodes: ['node_modules/dep'] } } }) },
 ]) {
   test(`rejects failed or malformed npm response ${JSON.stringify(response)}`, async () => {
     await assert.rejects(runNpmAudit('/project', fakeSpawn([response], [])))

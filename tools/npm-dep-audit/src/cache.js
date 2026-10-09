@@ -2,7 +2,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { mkdir, readFile, rename, unlink, writeFile } from 'node:fs/promises'
-import { runNpmAudit } from './npm-audit.js'
+import { runNpmAudit, validateAudit } from './npm-audit.js'
 
 const schemaVersion = 1
 
@@ -28,12 +28,6 @@ function fingerprint(project, context) {
   return hash.digest('hex')
 }
 
-function validAudit(audit) {
-  return audit?.auditReportVersion === 2 && audit.vulnerabilities &&
-    typeof audit.vulnerabilities === 'object' && !Array.isArray(audit.vulnerabilities) &&
-    audit.metadata && typeof audit.metadata === 'object' && !audit.error
-}
-
 function defaultRoot() {
   return join(process.env.XDG_CACHE_HOME || join(homedir(), '.cache'), 'npm-dep-audit')
 }
@@ -46,8 +40,7 @@ export async function getAudit(project, context, {
   fetchAudit = () => runNpmAudit(project.root),
 } = {}) {
   if (noCache) {
-    const audit = await fetchAudit()
-    if (!validAudit(audit)) throw new Error('Invalid npm audit response')
+    const audit = validateAudit(await fetchAudit())
     return { audit, auditedAt: new Date(now()).toISOString() }
   }
 
@@ -56,17 +49,21 @@ export async function getAudit(project, context, {
   const key = fingerprint(project, context)
   try {
     const entry = JSON.parse(await readFile(file, 'utf8'))
-    const age = now() - entry.timestamp
-    if (entry.key === key && validAudit(entry.audit) && Number.isFinite(age) && age >= 0 && age < ttlMs &&
-        entry.auditedAt === new Date(entry.timestamp).toISOString()) {
-      return { audit: entry.audit, auditedAt: entry.auditedAt }
+    if (entry && typeof entry === 'object' && !Array.isArray(entry) &&
+        Number.isFinite(entry.timestamp) && Math.abs(entry.timestamp) <= 8.64e15) {
+      const age = now() - entry.timestamp
+      let auditValid = false
+      try { validateAudit(entry.audit); auditValid = true } catch { /* invalid cache is a miss */ }
+      if (entry.key === key && auditValid && Number.isFinite(age) && age >= 0 && age < ttlMs &&
+          entry.auditedAt === new Date(entry.timestamp).toISOString()) {
+        return { audit: entry.audit, auditedAt: entry.auditedAt }
+      }
     }
   } catch (error) {
     if (error.code !== 'ENOENT' && !(error instanceof SyntaxError)) throw error
   }
 
-  const audit = await fetchAudit()
-  if (!validAudit(audit)) throw new Error('Invalid npm audit response')
+  const audit = validateAudit(await fetchAudit())
   const timestamp = now()
   const auditedAt = new Date(timestamp).toISOString()
   const temporary = `${file}.${process.pid}.${randomUUID()}.tmp`

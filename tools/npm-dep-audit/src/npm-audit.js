@@ -1,6 +1,35 @@
 import { spawn } from 'node:child_process'
+import semver from 'semver'
 
 const maxOutputBytes = 32 * 1024 * 1024
+const severities = new Set(['info', 'low', 'moderate', 'high', 'critical'])
+
+function isRecord(value) {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+}
+
+export function validateAudit(report) {
+  if (!isRecord(report) || report.error || report.auditReportVersion !== 2 ||
+      !isRecord(report.vulnerabilities) || !isRecord(report.metadata)) {
+    throw new Error(`Invalid npm audit response: ${report?.error?.message ?? 'missing expected audit fields'}`)
+  }
+  for (const [name, vuln] of Object.entries(report.vulnerabilities)) {
+    if (!isRecord(vuln) || !Array.isArray(vuln.via) || !Array.isArray(vuln.nodes) ||
+        vuln.nodes.some(path => typeof path !== 'string' || !path)) {
+      throw new Error(`Invalid npm audit vulnerability for ${name}`)
+    }
+    for (const via of vuln.via) {
+      if (typeof via === 'string') continue
+      if (!isRecord(via) || !severities.has(via.severity) ||
+          typeof (via.range ?? via.vulnerable_versions) !== 'string' ||
+          semver.validRange(via.range ?? via.vulnerable_versions) === null ||
+          (via.source ?? via.id ?? via.url) === undefined) {
+        throw new Error(`Invalid npm audit advisory for ${name}`)
+      }
+    }
+  }
+  return report
+}
 
 function command(root, args, spawnImpl) {
   return new Promise((resolve, reject) => {
@@ -62,10 +91,5 @@ export async function runNpmAudit(root, spawnImpl = spawn) {
   let report
   try { report = JSON.parse(result.stdout) }
   catch (error) { throw new Error(`Invalid npm audit JSON: ${error.message}`, { cause: error }) }
-  if (!report || report.error || report.auditReportVersion !== 2 ||
-      !report.vulnerabilities || typeof report.vulnerabilities !== 'object' || Array.isArray(report.vulnerabilities) ||
-      !report.metadata || typeof report.metadata !== 'object') {
-    throw new Error(`Invalid npm audit response: ${report?.error?.message ?? 'missing expected audit fields'}`)
-  }
-  return report
+  return validateAudit(report)
 }
