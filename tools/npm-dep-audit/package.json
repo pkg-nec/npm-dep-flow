@@ -3,6 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "bin": {
+    "npm-dep-audit": "bin/npm-dep-audit.js"
+  },
   "engines": {
     "node": ">=20"
   },
