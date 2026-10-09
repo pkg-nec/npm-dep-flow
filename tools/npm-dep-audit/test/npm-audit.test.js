@@ -35,6 +35,18 @@ test('audits all dependency types with argv spawning and explicit cwd', async ()
   })
 })
 
+test('runs npm.cmd through the Windows command shell', async () => {
+  const calls = []
+  const root = 'C:\\Projects\\my app'
+  const audit = await runNpmAudit(root, fakeSpawn([{ code: 1, stdout: JSON.stringify(valid) }], calls), 'win32')
+  assert.deepEqual(audit, valid)
+  assert.deepEqual(calls, [{
+    command: 'npm.cmd audit --json --include=prod --include=dev --include=optional --include=peer',
+    args: [],
+    options: { cwd: root, shell: true, stdio: ['ignore', 'pipe', 'pipe'] },
+  }])
+})
+
 test('accepts clean audit exit zero', async () => {
   assert.deepEqual(await runNpmAudit('/project', fakeSpawn([{ stdout: JSON.stringify(valid) }], [])), valid)
 })
@@ -71,4 +83,18 @@ test('reads npm version and effective audit registry', async () => {
   ], directCalls))
   assert.equal(direct.registry, 'https://audit.example/')
   assert.equal(directCalls.length, 2)
+})
+
+test('reads npm context through npm.cmd on Windows', async () => {
+  const calls = []
+  const context = await readNpmContext('C:\\Projects\\my app', fakeSpawn([
+    { stdout: '12.1.0\n' },
+    { stdout: 'https://registry.example/\n' },
+  ], calls), 'win32')
+  assert.deepEqual(context, { version: '12.1.0', registry: 'https://registry.example/' })
+  assert.deepEqual(calls.map(call => call.command), [
+    'npm.cmd --version',
+    'npm.cmd config get audit-registry',
+  ])
+  assert.ok(calls.every(call => call.args.length === 0 && call.options.shell === true))
 })
