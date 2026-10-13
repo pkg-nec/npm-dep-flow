@@ -2,108 +2,97 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Build a standalone CLI that reports every logical route to an installed npm package version, with each dependent's declared spec on the route.
+**Goal:** Change the standalone CLI from exhaustive route reports to requirement-grouped summaries with optional compact upstream graph detail.
 
-**Architecture:** Load the target manifest and lockfile, resolve their declarations into a graph keyed by lockfile location, then enumerate simple root-to-target routes without global deduplication. Group routes by exact resolved version and render complete text trees or versioned JSON after validating the reachable graph.
+**Architecture:** Keep the existing validated lockfile graph as the source of truth. Collect qualifying incoming edges for each target version without enumerating routes; separately extract an upstream subgraph when requested. Render schema v2 JSON and text from these compact structures, then remove the superseded route renderer and enumerator.
 
-**Tech Stack:** Node.js 20+ ES modules, `node:test`, npm `semver` package; no npm subprocess or Arborist at runtime.
+**Tech Stack:** Node.js 20+ ES modules, `node:test`, npm `semver`; no npm subprocess or Arborist at runtime.
 
 **Spec:** `docs/superpowers/specs/2026-10-13-npm-dep-paths-design.md`
 
 ## Global Constraints
 
-- Work only in the new `tools/npm-dep-paths/` package, its root README index entry, and this plan's tracking state. Do not modify `tools/npm-dep-audit/`.
-- Any temporary files go under `/home/maw/src/nrc/npm-dep-flow-impl/tmp`; any new worktree goes under `/home/maw/src/nrc/npm-dep-flow-impl/worktrees`.
-- Support ordinary single-package npm projects with `package-lock.json` versions 2 and 3; reject workspaces, local `file:` or linked packages, shrinkwrap files, and other package managers.
-- Read the target project's manifest and lockfile only; never install into it, change it, run lifecycle scripts, or require its `node_modules`.
-- CLI: `npm-dep-paths <project> <package-selector> [--format text|json]`; text is default. Name-only selects all reachable versions; `name@exact-version` selects one.
-- JSON has `schemaVersion: 1`, `project: { name, version }`, `selector`, and either `result` for exact selection or `results` for name-only selection. Each item has `package`, `version`, `routeCount`, `routes`; each node has `name`, `version`, `location`, `incoming` (`null` at root, otherwise `{ name, type, spec }`).
-- Keep all distinct root-to-target edge sequences. Skip absent optional and optional peer edges. Fail on an unresolved required edge and emit no partial stdout. Do not impose a depth, route, or output-size limit.
-- Install this tool's own dependencies with `--ignore-scripts`. Use `npm test` from `tools/npm-dep-paths/` for the final suite.
+- Work in the existing `feat/npm-dep-paths` worktree at `/home/maw/src/nrc/npm-dep-flow-impl/worktrees/npm-dep-paths`; do not modify `tools/npm-dep-audit/`.
+- Keep one canonical spec and this one canonical plan under `docs/superpowers/`; any scratch files go under `/home/maw/src/nrc/npm-dep-flow-impl/tmp`.
+- Read only the target project's `package.json` and `package-lock.json`; never install into it, change it, run lifecycle scripts, or require its `node_modules`.
+- Support ordinary single-package npm projects with lockfile versions 2 and 3; keep existing clear failures for workspaces, local `file:` or linked packages, shrinkwrap files, and other package managers.
+- Keep validation of root-reachable required edges, optional omissions, npm aliases, overrides, hoisting, nested installs, and peer lookup from the existing graph builder.
+- CLI: `npm-dep-paths <project> <package-selector> [--format text|json] [--upstream-of <package@exact-version> [--from <package@exact-version>]]`; text is default.
+- `--upstream-of` requires an exact target selector. `--from` requires `--upstream-of` and selects a matching top-level package. Errors produce stderr and no partial stdout.
+- Schema v2 has the existing project/selector envelope and `result` for exact queries or `results` for name-only queries. Normal JSON contains only requirement groups, no route arrays or graph. Upstream JSON adds `upstream`; `--from` filters only that detail graph.
+- Group declarations by exact raw spec; retain distinct physical links and all original edge metadata. Normal and upstream queries must not enumerate all root-to-target routes.
+- Install tool dependencies, if needed, only with `--ignore-scripts`. Final suite: `npm test` in `tools/npm-dep-paths/`.
 
 ## File map
 
-- `tools/npm-dep-paths/package.json`, `package-lock.json`: independent ESM package, CLI bin, `node --test`, `semver` dependency.
-- `tools/npm-dep-paths/src/project.js`: read and validate target files and unsupported project forms.
-- `tools/npm-dep-paths/src/graph.js`: resolve declared edges to lockfile locations and validate the root-reachable graph.
-- `tools/npm-dep-paths/src/routes.js`: parse selectors, enumerate all simple routes, group and order version results.
-- `tools/npm-dep-paths/src/render.js`: complete text trees and versioned JSON envelopes.
-- `tools/npm-dep-paths/src/cli.js`, `bin/npm-dep-paths.js`: argument parsing, orchestration, exit and output behavior.
-- `tools/npm-dep-paths/test/*.test.js`: focused fixtures and CLI integration checks.
-- `tools/npm-dep-paths/README.md`, root `README.md`: public usage and tool index.
+- Keep `src/project.js` and `src/graph.js` as the validated project and graph source.
+- Create `src/summary.js`: select target versions and group qualifying incoming links by exact declared spec.
+- Create `src/upstream.js`: select the direct dependent and optional top-level branch, then return a deterministic subgraph.
+- Create `src/report.js`: format the summary and upstream detail in text and schema v2 JSON.
+- Move selector parsing from `src/routes.js` to `src/selector.js` during the CLI cutover; remove `src/routes.js` and `src/render.js` once unused. Tasks 1–3 pass selector object literals, so they do not depend on the removed module.
+- Modify `src/cli.js`, `test/cli.test.js`, `tools/npm-dep-paths/README.md`, and the root `README.md` only as needed for the new contract. Add `test/summary.test.js`, `test/upstream.test.js`, `test/report.test.js`, and `test/selector.test.js`; remove obsolete route/render tests at cutover.
 
 ## Review Focus
 
-- A scoped alias can use a scoped requested name and a different resolved name: Task 2 tests both identities and Task 3 tests selection by resolved name.
-- A package lists one name under both `dependencies` and `optionalDependencies`: Task 2 tests npm's optional declaration precedence so an absent optional edge does not fail.
-- An override makes the installed version differ from the dependent's declared range: Task 2 tests that the raw spec remains visible and the resolved version remains authoritative.
-- The manifest and lockfile root declarations disagree: Task 1 tests a clear stale-lock error rather than constructing a misleading graph.
-- A tree has more routes than a small subprocess buffer would hold: Task 3 tests the full count and Task 5 tests full CLI output without buffered subprocess capture.
+- A target is directly declared by the project root: Task 1 tests the root as a dependent and Task 2 tests an upstream graph with no top-level entries.
+- Several physical installations share one resolved name and version: Tasks 1–2 test that locations and their links remain distinct.
+- A reachable dependency cycle points back to a target: Task 1 tests that an edge requiring a repeated target location does not enter the summary; Task 2 tests a finite graph with the cycle link retained.
+- An npm alias has a requested name different from its resolved package name: Tasks 1 and 3 test selection by resolved name and retention of `requestedName`.
+- A declared spec contains control or non-ASCII characters: Task 3 tests lossless JSON and escaped, readable text.
 
 ---
 
-### Task 1: Load and validate project inputs
+### Task 1: Collect compact requirement summaries
 
-**Files:** Create `tools/npm-dep-paths/package.json`, `package-lock.json`, `src/project.js`, `test/project.test.js`.
+**Files:** Create `tools/npm-dep-paths/src/summary.js`, `tools/npm-dep-paths/test/summary.test.js`.
 
-**Interfaces:** Produce `loadProject(path: string) -> Promise<{ root: string, manifest: object, lock: object }>`; `root` is canonical. Later tasks consume `manifest` and `lock` without rereading target files.
+**Interfaces:** `collectSummaryResults(graph: Map<string, GraphNode>, selector: {kind, name, version?}) -> Result[]`, where `Result` is `{ package, version, requirements: [{ declaredRequirement, directDependents: [{ name, version, location, targetLocation, type, requestedName }] }] }`. The graph and selector are the existing shapes. Keep `parseSelector` in `routes.js` until Task 4.
 
-- [ ] **Step 1: Write failing tests.** In `test/project.test.js`, a minimal v2 and v3 project load with their root names and versions; missing or malformed files, lockfile v1, absent root name/version, workspaces, local/link references, shrinkwrap, and a root declaration mismatched between manifest and lock each reject with an input-specific message.
-- [ ] **Step 2: Run `node --test test/project.test.js` from `tools/npm-dep-paths/`.** Expect failure because `src/project.js` is absent.
-- [ ] **Step 3: Implement `loadProject(path)` and the package scaffold.** Validate object shapes and declaration fields across root and lock entries; reject unsupported forms before graph work. Add the ESM bin mapping and `node --test` script. Install the tool's `semver` dependency with `npm install --ignore-scripts --save semver` in this tool's directory.
-- [ ] **Step 4: Run `npm test`.** Expect Task 1 tests to pass.
-- [ ] **Step 5: Commit.** Stage the four Task 1 files and commit `feat: load npm dependency path inputs`.
+- [ ] **Step 1: Write failing tests in `test/summary.test.js`.** Assert one installed `5.0.9` target produces separate `5.0.9`, `^5.0.5`, and `^5.0.6` groups; two parents with `^5.0.5` share one group; duplicate physical installations retain separate location pairs; an alias keeps the resolved target name and requested alias; a root declaration has `location: ''`; name selection orders `1.1.21`, `2.1.7`, `5.0.9`; missing name gives `[]`, missing exact version throws. Add a cycle fixture whose back-edge parent can only be reached after visiting the target and assert it is excluded. Add 20 connected diamonds (over a million possible routes) and assert summary size and content depend only on unique incoming links.
+- [ ] **Step 2: Run `node --test test/summary.test.js`.** Expect an import failure because `summary.js` does not exist.
+- [ ] **Step 3: Implement `collectSummaryResults` in `src/summary.js`.** Index incoming graph edges by destination location. For each matching target, include an incoming edge only when the root can reach its parent without visiting that target location; use iterative graph traversal so cycles and deep graphs are finite. Group by exact `edge.spec`, preserve the parent and target locations plus edge metadata, and sort versions, groups, and dependents as specified. Do not call or copy `collectResults` route enumeration.
+- [ ] **Step 4: Run `node --test test/summary.test.js`.** Expect every Task 1 assertion to pass.
+- [ ] **Step 5: Commit.** Stage the two Task 1 files and commit `feat: summarize dependency requirements`.
 
-### Task 2: Resolve the logical dependency graph
+### Task 2: Extract selected upstream graphs
 
-**Files:** Create `tools/npm-dep-paths/src/graph.js`, `test/graph.test.js`.
+**Files:** Create `tools/npm-dep-paths/src/upstream.js`, `tools/npm-dep-paths/test/upstream.test.js`.
 
-**Interfaces:** Consume the Task 1 project. Produce `buildGraph(project: { manifest, lock }) -> Map<string, GraphNode>` keyed by lockfile location, including `''` for root. `GraphNode` has `{ name, version, location, edges }`; each resolved edge has `{ name, type, spec, toLocation }`. `type` is one of the source declaration fields: `dependencies`, `devDependencies`, `optionalDependencies`, `peerDependencies`.
+**Interfaces:** `collectUpstream(graph, result: Result, dependent: {kind:'exact', name, version}, from?: {kind:'exact', name, version}) -> Upstream`, with `Upstream` shaped as `{ selectedDependent, rootLocation:'', selectedLocations, targetLocations, topLevelLocations, nodes:[{location,name,version}], edges:[{from,to,requestedName,type,spec}] }`. Derive qualifying direct-dependent links from Task 1's result; do not re-enumerate routes.
 
-- [ ] **Step 1: Write failing tests.** A v3 fixture resolves nested and hoisted packages; two parents pointing to one hoisted node retain two edges; peer lookup reaches an ancestor installation; a scoped alias retains requested and resolved names; a present override target keeps the parent's raw, out-of-range spec. Test the Review Focus duplicate optional declaration, absent optional and optional peer, missing required dependency with declaring package in the error, and present malformed optional destination. Repeat a representative resolution on a v2 fixture.
-- [ ] **Step 2: Run `node --test test/graph.test.js`.** Expect failure because `src/graph.js` is absent.
-- [ ] **Step 3: Implement `buildGraph(project)` in `src/graph.js`.** For ordinary declarations, search `node_modules/<requested-name>` beneath the declaring location, then at each ancestor package location, up to root; for peers, start at the declaring package's parent. Use lockfile entry `name` for resolved identity when present. Validate all required edges reachable from root; omit only absent optional edges and optional peers. Do not reject an override merely because resolved version is outside the raw spec.
-- [ ] **Step 4: Run `npm test`.** Expect Tasks 1–2 tests to pass.
-- [ ] **Step 5: Commit.** Stage Task 2 files and commit `feat: resolve npm dependency graph`.
+- [ ] **Step 1: Write failing tests in `test/upstream.test.js`.** A convergent fixture returns each shared node and edge once, includes final dependent-to-target links, retains exact edge specs and types, and lists top-level locations. Two physical copies of the selected dependent both appear. `--from` keeps only a matching root child and its path to the selected dependent, while `result` remains outside this function and unchanged. A root dependent has no top-level locations. A cycle is represented by a finite edge list. Missing direct dependent and unrelated `from` selectors throw specific errors.
+- [ ] **Step 2: Run `node --test test/upstream.test.js`.** Expect an import failure because `upstream.js` does not exist.
+- [ ] **Step 3: Implement `collectUpstream` in `src/upstream.js`.** Build reverse edges, find selected-dependent ancestors, intersect with nodes reachable from root (or chosen top-level edge), then keep connecting graph edges and qualifying final target links. Deduplicate by full edge identity and sort every location and edge list. For `from`, include root and only matching direct root edge(s); reject a choice that cannot reach a selected dependent. Do not recursively expand shared nodes or cycles.
+- [ ] **Step 4: Run `node --test test/upstream.test.js`.** Expect every Task 2 assertion to pass.
+- [ ] **Step 5: Commit.** Stage the two Task 2 files and commit `feat: extract upstream dependency graph`.
 
-### Task 3: Select versions and enumerate every route
+### Task 3: Render schema v2 and the upstream views
 
-**Files:** Create `tools/npm-dep-paths/src/routes.js`, `test/routes.test.js`.
+**Files:** Create `tools/npm-dep-paths/src/report.js`, `tools/npm-dep-paths/test/report.test.js`.
 
-**Interfaces:** Produce `parseSelector(input: string) -> { kind: 'name'|'exact', name: string, version?: string }` and `collectResults(graph: Map<string, GraphNode>, selector) -> Result[]`. A `Result` is `{ package, version, routeCount, routes }`; each route is an ordered array of `{ name, version, location, incoming }`, where `incoming` is `null` or `{ name, type, spec }`.
+**Interfaces:** `renderSummaryText(project, results: Result[]) -> string`; `renderSummaryJson(project, selector, results: Result[], upstream?: Upstream) -> string`; `renderUpstreamText(project, result: Result, upstream: Upstream, from?: {name,version}) -> string`. All return one final newline. Task 4 composes summary and upstream text and uses the single JSON renderer.
 
-- [ ] **Step 1: Write failing tests.** Parse scoped and unscoped names and exact versions; reject ranges and invalid selectors. Query one name with three versions and assert three ordered items; query one exact version and assert one item containing two different routes to the same installation. Assert selection uses the resolved name for aliases, path-specific cycle detection retains other routes, an absent exact version errors, an absent name returns `[]`, and a generated fixture with over 1,000 converging routes returns the exact full count.
-- [ ] **Step 2: Run `node --test test/routes.test.js`.** Expect failure because `src/routes.js` is absent.
-- [ ] **Step 3: Implement `parseSelector` and `collectResults` in `src/routes.js`.** Use `semver.valid` for exact versions and `semver.compare` for item order. Enumerate routes with an explicit traversal stack and a visited-location set local to each route; never use a global visited set. Sort routes by requested names, resolved versions, and locations.
-- [ ] **Step 4: Run `npm test`.** Expect Tasks 1–3 tests to pass.
-- [ ] **Step 5: Commit.** Stage Task 3 files and commit `feat: enumerate exact-version dependency routes`.
+- [ ] **Step 1: Write failing tests in `test/report.test.js`.** Assert the declared requirement appears before grouped direct dependents in text; distinguish identical labels at different locations; show dependency type and alias requested name; order versions/groups/dependents deterministically. Parse normal JSON and assert `schemaVersion: 2`, exact `result` versus name-only `results`, two-key requirement groups, and no `upstream`, `routes`, or `routeCount`. Parse detailed JSON and assert the same summary plus complete `upstream`, including `from` filtering without summary changes. Assert overview text lists all immediate parents and top-level entries with graph counts; focused text shows every connecting edge, one reference for a shared node, and no recursive cycle expansion. Verify control/non-ASCII specs round-trip in JSON and are escaped in text.
+- [ ] **Step 2: Run `node --test test/report.test.js`.** Expect an import failure because `report.js` does not exist.
+- [ ] **Step 3: Implement the three renderers in `src/report.js`.** JSON preserves the exact field names and shapes in the spec. Text rendering uses iterative traversal and reference markers for repeated installed locations; it never silently truncates a parent, top-level, or edge list. The empty result text remains `No matching installed packages.`.
+- [ ] **Step 4: Run `node --test test/report.test.js`.** Expect every Task 3 assertion to pass.
+- [ ] **Step 5: Commit.** Stage the two Task 3 files and commit `feat: render compact dependency reports`.
 
-### Task 4: Render complete text and JSON reports
+### Task 4: Switch the CLI and documentation to the final contract
 
-**Files:** Create `tools/npm-dep-paths/src/render.js`, `test/render.test.js`.
+**Files:** Create `tools/npm-dep-paths/src/selector.js` and `tools/npm-dep-paths/test/selector.test.js`; modify `tools/npm-dep-paths/src/cli.js`, `tools/npm-dep-paths/test/cli.test.js`, `tools/npm-dep-paths/README.md`, and root `README.md`; remove `tools/npm-dep-paths/src/routes.js`, `tools/npm-dep-paths/src/render.js`, `tools/npm-dep-paths/test/routes.test.js`, and `tools/npm-dep-paths/test/render.test.js` after their still-relevant coverage is carried into the new tests.
 
-**Interfaces:** Produce `renderText(project: { manifest }, results: Result[]) -> string` and `renderJson(project: { manifest }, selector, results: Result[]) -> string`. Exact JSON uses `result: results[0]`; name-only JSON uses `results`. Both end with one newline.
+**Interfaces:** `parseSelector(input: string) -> {kind:'name'|'exact',name,version?}` moves unchanged to `selector.js`. `main(argv, io = process, deps = defaults) -> Promise<number>` uses Tasks 1–3 and writes once after all parsing, graph work, filtering, and rendering succeed.
 
-- [ ] **Step 1: Write failing tests.** Assert two routes to one hoisted installation both appear in an `npm ls` style tree with `[dependency: ^5.0.5]` and `[dependency: 5.0.9]` on the correct leaves; common prefixes merge without losing distinct edges. Assert a name query produces separate version sections and a no-match message. Parse JSON and assert the exact versus name envelope, `schemaVersion: 1`, every route node's location and incoming declaration, and a root `incoming: null`. Include names/specs containing tree or JSON metacharacters.
-- [ ] **Step 2: Run `node --test test/render.test.js`.** Expect failure because `src/render.js` is absent.
-- [ ] **Step 3: Implement `renderText` and `renderJson` in `src/render.js`.** Build a display trie keyed by location plus incoming edge identity; draw branch characters only after inserting every route. Map declaration fields to readable singular text labels while preserving original field names in JSON. Do not truncate or abbreviate paths.
-- [ ] **Step 4: Run `npm test`.** Expect Tasks 1–4 tests to pass.
-- [ ] **Step 5: Commit.** Stage Task 4 files and commit `feat: render dependency route reports`.
+- [ ] **Step 1: Update `test/cli.test.js` and add `test/selector.test.js` with failing integration assertions.** Name-only and exact queries emit schema v2 summaries; `--upstream-of` with `--format json` adds the complete graph; `--from` filters only the graph; text overview and focused graph display; `--help` lists both flags. Invalid selectors, `--from` alone, name-only target plus `--upstream-of`, non-direct dependent, unrelated top-level selector, and unsupported format exit 1 with no stdout. Port scoped-name, exact-version, and range-rejection selector checks from the old route tests. A large convergent fixture's CLI output is compact and complete without a subprocess output-buffer limit.
+- [ ] **Step 2: Run `node --test test/cli.test.js test/selector.test.js`.** Expect failures against the old route-array output, unknown flags, and missing selector module.
+- [ ] **Step 3: Move `parseSelector` to `selector.js` and switch `main` to `collectSummaryResults`, optional `collectUpstream`, and the new renderers.** Parse both flags as exact selectors; validate their combination before loading the project. Preserve one write to stdout only after success. Remove the superseded modules and tests after migrating their relevant selector, deep-graph, and error coverage. Update the tool README with commands and schema v2 examples; update the root index if its description still promises route arrays.
+- [ ] **Step 4: Run `npm test`, `node bin/npm-dep-paths.js --help`, and `git diff --check`.** Expect the full suite to pass, help to show the final command, and no whitespace errors. Confirm `git diff --name-only` contains no `tools/npm-dep-audit/` file.
+- [ ] **Step 5: Commit.** Stage only the Task 4 files and commit `feat: expose compact npm-dep-paths output`.
 
-### Task 5: CLI, integration checks, and documentation
+## Final verification and handoff
 
-**Files:** Create `tools/npm-dep-paths/src/cli.js`, `bin/npm-dep-paths.js`, `test/cli.test.js`, `README.md`; modify root `README.md`.
-
-**Interfaces:** Produce `main(argv: string[], io = process, deps = { loadProject, buildGraph, parseSelector, collectResults, renderText, renderJson }) -> Promise<number>`; the bin sets `process.exitCode` from `main`. All graph validation and result collection finish before `io.stdout.write`.
-
-- [ ] **Step 1: Write failing tests.** Assert default text and `--format json` output for name and exact selectors, `--help`, missing arguments, unknown flags, invalid format, no-match behavior, and no stdout after any error. Invoke the real bin against a fixture without `node_modules`, read stdout as a stream, and assert its route count and final route are intact for the large fixture. Compare representative route membership against `npm ls --package-lock-only` as a verification check, accounting for npm's own display choices.
-- [ ] **Step 2: Run `node --test test/cli.test.js`.** Expect failure because CLI files are absent.
-- [ ] **Step 3: Implement `main` and the executable; write docs.** Resolve arguments, call Tasks 1–4 in order, write only the completed report, and send errors to stderr with exit 1. Document installation, selectors, exact and name JSON shapes, optional omissions, failures, and unsupported project forms in the tool README; add the tool to the root README index.
-- [ ] **Step 4: Run `npm test`, `node bin/npm-dep-paths.js --help`, and `git diff --check`.** Expect all tests pass, help lists the agreed command, and no whitespace errors.
-- [ ] **Step 5: Commit.** Stage Task 5 files and commit `feat: expose npm-dep-paths CLI`.
-
-## Final verification
-
-- Run `npm test` from `tools/npm-dep-paths/` and inspect the final counts and failure total.
-- Run the exact and name-only CLI forms against a small fixture and inspect that the former emits one version item while the latter emits all installed versions.
-- Run `git status --short` and confirm `tools/npm-dep-audit/` has no changes.
+- Run the exact-version and name-only CLI forms against a small fixture; confirm exact returns one result and name-only returns every reachable installed version.
+- Use `/home/maw/src/nrc/npm-dep-flow-impl/tmp/xxx-webapp-brace-expansion.json` as a read-only reference for the expected three versions and distinct raw requirements; the CLI target must be a directory with a manifest and lockfile, not that JSON file.
+- Run `npm test` from `tools/npm-dep-paths/`, inspect its final pass/fail count, run `git diff --check`, and confirm the worktree is clean after commits.
+- Confirm the branch retains only `docs/superpowers/specs/2026-10-13-npm-dep-paths-design.md` and `docs/superpowers/plans/2026-10-13-npm-dep-paths.md` for this tool, with no `npm-dep-audit` changes.
