@@ -1,0 +1,18 @@
+{
+  "name": "npm-dep-upgrade-plan",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "npm-dep-upgrade-plan": "bin/npm-dep-upgrade-plan.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "node --test"
+  },
+  "dependencies": {
+    "semver": "^7.8.5"
+  }
+}
