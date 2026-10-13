@@ -36,27 +36,69 @@ function capture() {
   return { io: { stdout: { write: value => { stdout += value } }, stderr: { write: value => { stderr += value } } }, get stdout() { return stdout }, get stderr() { return stderr } }
 }
 
-test('name query returns grouped versions and exact query returns one version', async t => {
+test('name and exact queries return schema v2 requirement summaries', async t => {
   const dir = await fixture(t)
   const all = capture()
   assert.equal(await main([dir, 'dep', '--format', 'json'], all.io), 0)
-  assert.deepEqual(JSON.parse(all.stdout).results.map(item => [item.version, item.routeCount]), [['2.1.7', 1], ['5.0.9', 2]])
+  const allData = JSON.parse(all.stdout)
+  assert.equal(allData.schemaVersion, 2)
+  assert.deepEqual(allData.results.map(item => item.version), ['2.1.7', '5.0.9'])
+  assert.deepEqual(allData.results[1].requirements.map(item => item.declaredRequirement), ['5.0.9', '^5.0.5'])
+  assert.equal(Object.hasOwn(allData.results[1], 'routes'), false)
   const exact = capture()
   assert.equal(await main([dir, 'dep@5.0.9', '--format', 'json'], exact.io), 0)
-  assert.equal(JSON.parse(exact.stdout).result.routeCount, 2)
+  assert.equal(JSON.parse(exact.stdout).result.version, '5.0.9')
   assert.equal(Object.hasOwn(JSON.parse(exact.stdout), 'results'), false)
   const human = capture()
   assert.equal(await main([dir, 'dep@5.0.9'], human.io), 0)
-  assert.match(human.stdout, /dep@5\.0\.9 — 2 routes/)
-  assert.match(human.stdout, /\[dependency: \^5\.0\.5\]/)
+  assert.match(human.stdout, /Declared requirement\s+Direct dependents/)
+  assert.match(human.stdout, /\^5\.0\.5\s+parent-0000@1\.0\.0/)
+})
+
+test('upstream JSON keeps the summary and --from filters only its graph', async t => {
+  const dir = await fixture(t)
+  const normal = capture()
+  const detailed = capture()
+  const focused = capture()
+  assert.equal(await main([dir, 'dep@5.0.9', '--format', 'json'], normal.io), 0)
+  assert.equal(await main([dir, 'dep@5.0.9', '--upstream-of', 'parent-0000@1.0.0', '--format', 'json'], detailed.io), 0)
+  assert.equal(await main([dir, 'dep@5.0.9', '--upstream-of', 'parent-0000@1.0.0', '--from', 'parent-0000@1.0.0', '--format', 'json'], focused.io), 0)
+  const normalData = JSON.parse(normal.stdout)
+  const detailedData = JSON.parse(detailed.stdout)
+  const focusedData = JSON.parse(focused.stdout)
+  assert.deepEqual(detailedData.result, normalData.result)
+  assert.deepEqual(focusedData.result, normalData.result)
+  assert.deepEqual(detailedData.upstream.topLevelLocations, ['node_modules/parent-0000'])
+  assert.deepEqual(focusedData.upstream.nodes.map(item => item.location), ['', 'node_modules/dep', 'node_modules/parent-0000'])
+  assert.equal(focusedData.upstream.edges.at(-1).spec, '^5.0.5')
+})
+
+test('text upstream overview and focused graph show requirements', async t => {
+  const dir = await fixture(t)
+  const overview = capture()
+  const focused = capture()
+  assert.equal(await main([dir, 'dep@5.0.9', '--upstream-of', 'parent-0000@1.0.0'], overview.io), 0)
+  assert.match(overview.stdout, /Immediate parents \(1\):/)
+  assert.match(overview.stdout, /Top-level packages \(1\):/)
+  assert.match(overview.stdout, /requires dep@5\.0\.9: \^5\.0\.5/)
+  assert.equal(await main([dir, 'dep@5.0.9', '--upstream-of', 'parent-0000@1.0.0', '--from', 'parent-0000@1.0.0'], focused.io), 0)
+  assert.match(focused.stdout, /app@1\.0\.0[\s\S]*parent-0000@1\.0\.0[\s\S]*dep@5\.0\.9/)
 })
 
 test('help and invalid requests never emit a partial report', async t => {
   const dir = await fixture(t)
   const help = capture()
   assert.equal(await main(['--help'], help.io), 0)
-  assert.match(help.stdout, /--format text\|json/)
-  for (const args of [[], [dir], [dir, 'dep', '--wat'], [dir, 'dep', '--format', 'xml'], [dir, 'dep@9.9.9'], [dir, 'dep@^5']]) {
+  assert.match(help.stdout, /--upstream-of/)
+  assert.match(help.stdout, /--from/)
+  for (const args of [
+    [], [dir], [dir, 'dep', '--wat'], [dir, 'dep', '--format', 'xml'], [dir, 'dep@9.9.9'], [dir, 'dep@^5'],
+    [dir, 'dep@5.0.9', '--from', 'parent-0000@1.0.0'],
+    [dir, 'dep', '--upstream-of', 'parent-0000@1.0.0'],
+    [dir, 'dep@5.0.9', '--upstream-of', 'parent-0000'],
+    [dir, 'dep@5.0.9', '--upstream-of', 'old@1.0.0'],
+    [dir, 'dep@5.0.9', '--upstream-of', 'parent-0000@1.0.0', '--from', 'old@1.0.0'],
+  ]) {
     const output = capture()
     assert.equal(await main(args, output.io), 1, args.join(' '))
     assert.equal(output.stdout, '')
@@ -67,7 +109,7 @@ test('help and invalid requests never emit a partial report', async t => {
   assert.deepEqual(JSON.parse(none.stdout).results, [])
 })
 
-test('real executable streams a complete large report without node_modules', async t => {
+test('real executable emits a complete compact summary without node_modules', async t => {
   const dir = await fixture(t, 1025, false)
   const bin = fileURLToPath(new URL('../bin/npm-dep-paths.js', import.meta.url))
   const child = spawn(process.execPath, [bin, dir, 'dep@5.0.9', '--format', 'json'], { env: process.env })
@@ -83,6 +125,8 @@ test('real executable streams a complete large report without node_modules', asy
   })
   assert.equal(status, 0, stderr)
   const result = JSON.parse(stdout).result
-  assert.equal(result.routeCount, 1025)
-  assert.equal(result.routes.at(-1)[1].name, 'parent-1024')
+  assert.deepEqual(result.requirements.map(item => item.declaredRequirement), ['5.0.9', '^5.0.5'])
+  assert.equal(result.requirements[0].directDependents.length, 1024)
+  assert.equal(result.requirements[0].directDependents.at(-1).name, 'parent-1024')
+  assert.ok(Buffer.byteLength(stdout) < 500000)
 })
