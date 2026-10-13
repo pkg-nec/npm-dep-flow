@@ -10,8 +10,11 @@ Each tool is an independent Node.js project under `tools/`, with its own package
 | --- | --- |
 | [npm-dep-audit](tools/npm-dep-audit/README.md) | Report direct npm vulnerability advisories by exact installed package version. |
 | [npm-dep-paths](tools/npm-dep-paths/README.md) | Group the requirements declared by direct dependents of an installed package version, with optional upstream graph detail. |
+| [npm-dep-upgrade-plan](tools/npm-dep-upgrade-plan/README.md) | Report per-link eligibility for ordered, read-only vulnerability remediation strategies. |
 
 `npm-dep-audit` uses the separately installed `npm-dep-paths` CLI to show which declared requirements resolved to vulnerable versions. Install `npm-dep-paths` as a standalone command and keep it on `PATH` when running the audit tool; each tool has its own setup and usage instructions in its README.
+
+`npm-dep-upgrade-plan` consumes the public JSON output from `npm-dep-audit` and checks stable versions from the configured npm registry. It reports eligibility independently for each dependent link and does not change the target project. Install `npm-dep-paths`, `npm-dep-audit`, and `npm-dep-upgrade-plan` as standalone commands and keep them on `PATH` when using the planner.
 
 ## Design documents
 
