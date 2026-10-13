@@ -7,7 +7,7 @@ import test from 'node:test'
 import { main } from '../src/cli.js'
 import { renderJson, renderMarkdown } from '../src/report.js'
 
-const scratchRoot = '/home/maw/src/nrc/npm-dep-flow-impl/tmp/npm-dep-upgrade-plan-cli'
+const scratchRoot = fileURLToPath(new URL('../../../tmp/npm-dep-upgrade-plan-cli/', import.meta.url))
 const binPath = fileURLToPath(new URL('../bin/npm-dep-upgrade-plan.js', import.meta.url))
 
 function dependent(name, version, location, targetLocation) {
