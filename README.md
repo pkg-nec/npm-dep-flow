@@ -9,6 +9,7 @@ Each tool is an independent Node.js project under `tools/`, with its own package
 | Tool | Purpose |
 | --- | --- |
 | [npm-dep-audit](tools/npm-dep-audit/README.md) | Report direct npm vulnerability advisories by exact installed package version. |
+| [npm-dep-paths](tools/npm-dep-paths/README.md) | Show every dependency route to an installed package version, including each dependent's declared version spec. |
 
 ## Design documents
 
