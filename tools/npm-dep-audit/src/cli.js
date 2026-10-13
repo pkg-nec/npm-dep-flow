@@ -2,9 +2,11 @@ import { loadProject } from './project.js'
 import { readNpmContext } from './npm-audit.js'
 import { getAudit } from './cache.js'
 import { buildRows, selectRows } from './rows.js'
+import { runNpmDepPaths } from './dep-paths.js'
+import { attachRequirements } from './requirements.js'
 import { renderMarkdown, renderJson } from './render.js'
 
-const defaults = { loadProject, readNpmContext, getAudit }
+const defaults = { loadProject, readNpmContext, getAudit, runNpmDepPaths }
 const severities = new Set(['info', 'low', 'moderate', 'high', 'critical'])
 const multipliers = { s: 1000, m: 60000, h: 3600000, d: 86400000 }
 
@@ -62,7 +64,12 @@ export async function main(argv, io = process, deps = defaults) {
     const context = await deps.readNpmContext(project.root)
     const { audit, auditedAt } = await deps.getAudit(project, context, { ttlMs: options.ttlMs, noCache: options.noCache })
     const rows = selectRows(buildRows(project.lock, audit), options.minSeverity)
-    io.stdout.write(options.format === 'json' ? renderJson(rows, auditedAt) : renderMarkdown(rows))
+    const summariesByPackage = new Map()
+    for (const packageName of new Set(rows.map(row => row.package))) {
+      summariesByPackage.set(packageName, await deps.runNpmDepPaths(project.root, packageName))
+    }
+    const enrichedRows = attachRequirements(rows, summariesByPackage)
+    io.stdout.write(options.format === 'json' ? renderJson(enrichedRows, auditedAt) : renderMarkdown(enrichedRows))
     return 0
   } catch (error) {
     io.stderr.write(`npm-dep-audit: ${error.message}\n`)
