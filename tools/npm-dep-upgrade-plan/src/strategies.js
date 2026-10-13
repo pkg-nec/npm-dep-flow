@@ -24,18 +24,11 @@ function declaredRange(row, declaredRequirement) {
   return range
 }
 
-function ineligible(reason) {
-  return { id: strategyId, status: 'ineligible', reason }
-}
-
-export function updateWithinDeclaredRange(row, declaredRequirement, stableVersions) {
-  const requirement = declaredRange(row, declaredRequirement)
-  if (requirement === null) return ineligible('unsupported-requirement')
-
+function safeStableVersions(row, stableVersions) {
   const installedVersion = semver.valid(row.version)
   const vulnerableRanges = row.advisories.map(advisory => semver.validRange(advisory.range))
   if (!installedVersion || vulnerableRanges.length === 0 || vulnerableRanges.some(range => range === null)) {
-    return ineligible('no-compatible-safe-version')
+    return []
   }
 
   const candidates = [...new Set(stableVersions.filter(strictStableVersion))]
@@ -45,13 +38,36 @@ export function updateWithinDeclaredRange(row, declaredRequirement, stableVersio
     return left < right ? -1 : left > right ? 1 : 0
   })
 
-  const minimumSafeVersion = candidates.find(candidate =>
+  return candidates.filter(candidate =>
     semver.gt(candidate, installedVersion) &&
-    semver.satisfies(candidate, requirement) &&
     vulnerableRanges.every(range => !semver.satisfies(candidate, range)),
   )
-  if (!minimumSafeVersion) return ineligible('no-compatible-safe-version')
-  return { id: strategyId, status: 'eligible', minimumSafeVersion }
+}
+
+export function findMinimumSafeVersion(row, stableVersions) {
+  return safeStableVersions(row, stableVersions)[0] ?? null
+}
+
+export function updateWithinDeclaredRange(row, declaredRequirements, stableVersions) {
+  const requirements = Array.isArray(declaredRequirements)
+    ? declaredRequirements
+    : [declaredRequirements]
+  if (requirements.length === 0) return null
+
+  const ranges = requirements.map(requirement => declaredRange(row, requirement))
+  if (ranges.some(range => range === null)) return null
+
+  const targetVersion = safeStableVersions(row, stableVersions).find(candidate =>
+    ranges.every(range => semver.satisfies(candidate, range)),
+  )
+  if (!targetVersion) return null
+
+  return {
+    id: strategyId,
+    targetPackage: row.package,
+    currentVersion: row.version,
+    targetVersion,
+  }
 }
 
 export const orderedStrategies = [{

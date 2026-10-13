@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { EventEmitter } from 'node:events'
 import { PassThrough } from 'node:stream'
 import test from 'node:test'
-import { fetchStableVersions } from '../src/registry.js'
+import { fetchReleaseTimes, fetchStableVersions } from '../src/registry.js'
 
 function fakeSpawn(response, calls) {
   return (command, args, options) => {
@@ -75,6 +75,42 @@ test('registry adapter accepts an empty version array', async () => {
   assert.deepEqual(await fetchStableVersions('/project', 'brace-expansion', fakeSpawn({
     stdout: '[]',
   }, []), 'linux'), [])
+})
+
+test('registry adapter returns normalized stable release times', async () => {
+  const calls = []
+  const releaseTimes = await fetchReleaseTimes('/project', 'brace-expansion', fakeSpawn({
+    stdout: JSON.stringify({
+      created: '2017-01-01T00:00:00.000Z',
+      modified: '2026-10-02T00:00:00.000Z',
+      '5.0.12': '2026-10-01T12:00:00Z',
+      '5.0.13': '2026-02-30T12:00:00.000Z',
+      '5.0.14-beta.1': '2026-10-02T12:00:00.000Z',
+    }),
+  }, calls), 'linux')
+
+  assert.deepEqual([...releaseTimes], [['5.0.12', '2026-10-01T12:00:00.000Z']])
+  assert.deepEqual(calls, [{
+    command: 'npm',
+    args: ['view', 'brace-expansion', 'time', '--json'],
+    options: { cwd: '/project', shell: false, stdio: ['ignore', 'pipe', 'pipe'] },
+  }])
+})
+
+test('registry adapter returns an empty release-time map when version dates are absent or invalid', async () => {
+  const releaseTimes = await fetchReleaseTimes('/project', 'brace-expansion', fakeSpawn({
+    stdout: JSON.stringify({ created: 'invalid', modified: 'invalid', '5.0.12': null }),
+  }, []), 'linux')
+
+  assert.deepEqual([...releaseTimes], [])
+})
+
+test('registry adapter treats a null time field as unavailable release metadata', async () => {
+  const releaseTimes = await fetchReleaseTimes('/project', 'brace-expansion', fakeSpawn({
+    stdout: 'null',
+  }, []), 'linux')
+
+  assert.deepEqual([...releaseTimes], [])
 })
 
 for (const packageName of ['', 'brace-expansion & touch bad', '@scope/name;bad']) {

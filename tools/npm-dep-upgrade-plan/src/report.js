@@ -8,6 +8,12 @@ const severityOrder = new Map([
   ['info', 4],
 ])
 
+const severityColors = new Map([
+  ['moderate', 'yellow'],
+  ['high', 'red'],
+  ['critical', 'magenta'],
+])
+
 const strategyLabels = new Map([
   ['update-within-declared-range', 'Update within declared range'],
 ])
@@ -25,45 +31,16 @@ function compareVersion(left, right) {
   return compareText(left, right)
 }
 
-function compareDependents(left, right) {
-  return compareText(left.name, right.name) ||
-    compareVersion(left.version, right.version) ||
-    compareText(left.location, right.location) ||
-    compareText(left.targetLocation, right.targetLocation) ||
-    compareText(left.type, right.type) ||
-    compareText(left.requestedName, right.requestedName)
-}
-
-function compareDependentLists(left, right) {
-  const length = Math.min(left.length, right.length)
-  for (let index = 0; index < length; index += 1) {
-    const comparison = compareDependents(left[index], right[index])
-    if (comparison !== 0) return comparison
-  }
-  return left.length - right.length
-}
-
-function compareRequirements(left, right) {
-  return compareText(left.declaredRequirement, right.declaredRequirement) ||
-    compareDependentLists(left.directDependents, right.directDependents)
-}
-
 function compareRows(left, right) {
   return (severityOrder.get(left.severity) ?? Number.MAX_SAFE_INTEGER) -
     (severityOrder.get(right.severity) ?? Number.MAX_SAFE_INTEGER) ||
     compareText(left.package, right.package) ||
     compareVersion(left.version, right.version) ||
-    compareText(JSON.stringify(left), JSON.stringify(right))
+    compareText(left.targetLocation, right.targetLocation)
 }
 
 export function sortFindings(rows) {
-  return rows.map(row => ({
-    ...row,
-    requirements: row.requirements.map(requirement => ({
-      ...requirement,
-      directDependents: [...requirement.directDependents].sort(compareDependents),
-    })).sort(compareRequirements),
-  })).sort(compareRows)
+  return [...rows].sort(compareRows)
 }
 
 function escapeMarkdown(value) {
@@ -79,35 +56,26 @@ function escapeMarkdown(value) {
     .replace(/[\r\n]/g, ' ')
 }
 
-function safeAdvisoryUrl(value) {
-  try {
-    const url = new URL(value)
-    if (url.protocol !== 'http:' && url.protocol !== 'https:') return null
-    return encodeURI(url.href).replace(/\(/g, '%28').replace(/\)/g, '%29')
-  } catch {
-    return null
-  }
-}
-
-function renderAdvisory(advisory) {
-  const id = escapeMarkdown(advisory.id)
-  const title = escapeMarkdown(advisory.title)
-  const range = escapeMarkdown(advisory.range)
-  const url = safeAdvisoryUrl(advisory.url)
-  const label = url ? `[${id}](${url}) ${title}` : `(${id}) ${title}`
-  return `${label} (${range})`
+function displayValue(value) {
+  return value === null || value === undefined || value === '' ? '—' : escapeMarkdown(value)
 }
 
 function displayLocation(location) {
   return location === '' ? '(project root)' : location
 }
 
+function renderSeverity(value) {
+  const color = severityColors.get(value)
+  const formatted = `<strong${color ? ` style="color: ${color}"` : ''}>${escapeMarkdown(value)}</strong>`
+  return formatted
+}
+
 function renderStrategy(strategy) {
+  if (!strategy) return '—'
   const label = escapeMarkdown(strategyLabels.get(strategy.id) ?? strategy.id)
-  if (strategy.status === 'eligible') {
-    return `${label}: eligible; minimum safe version ${escapeMarkdown(strategy.minimumSafeVersion)}`
-  }
-  return `${label}: ineligible (${escapeMarkdown(strategy.reason)})`
+  const current = `${escapeMarkdown(strategy.targetPackage)}@${escapeMarkdown(strategy.currentVersion)}`
+  const target = `${escapeMarkdown(strategy.targetPackage)}@${escapeMarkdown(strategy.targetVersion)}`
+  return `${label}: ${current} → ${target}`
 }
 
 export function renderMarkdown(rows) {
@@ -119,56 +87,32 @@ export function renderMarkdown(rows) {
   const output = [
     '# npm-dep-upgrade-plan',
     '',
-    '| Package | Installed | Severity | Advisories | Requirement | Direct dependent | Dependent location | Target location | Remediation strategies |',
-    '| --- | --- | --- | --- | --- | --- | --- | --- | --- |',
+    '| Package | Installed | Highest severity | Minimum safe version | Released at | Target location | Status | Strategy |',
+    '| --- | --- | --- | --- | --- | --- | --- | --- |',
   ]
 
   for (const row of orderedRows) {
-    const advisories = row.advisories.map(renderAdvisory).join('<br>')
-    for (const requirement of row.requirements) {
-      for (const dependent of requirement.directDependents) {
-        const identity = `${dependent.name}@${dependent.version} (${dependent.type}; requested ${dependent.requestedName})`
-        const strategies = dependent.strategies.length > 0
-          ? dependent.strategies.map(renderStrategy).join('<br>')
-          : 'No remediation strategies registered'
-        output.push(`| ${escapeMarkdown(row.package)} | ${escapeMarkdown(row.version)} | ${escapeMarkdown(row.severity)} | ${advisories} | ${escapeMarkdown(requirement.declaredRequirement)} | ${escapeMarkdown(identity)} | ${escapeMarkdown(displayLocation(dependent.location))} | ${escapeMarkdown(displayLocation(dependent.targetLocation))} | ${strategies} |`)
-      }
-    }
+    output.push(`| ${escapeMarkdown(row.package)} | ${escapeMarkdown(row.version)} | ${renderSeverity(row.severity)} | ${displayValue(row.minimumSafeVersion)} | ${displayValue(row.minimumSafeVersionReleasedAt)} | ${escapeMarkdown(displayLocation(row.targetLocation))} | ${escapeMarkdown(row.status)} | ${renderStrategy(row.strategy)} |`)
   }
 
   return `${output.join('\n')}\n`
-}
-
-function renderStrategyJson(strategy) {
-  return strategy.status === 'eligible'
-    ? { id: strategy.id, status: strategy.status, minimumSafeVersion: strategy.minimumSafeVersion }
-    : { id: strategy.id, status: strategy.status, reason: strategy.reason }
 }
 
 export function renderJson(rows, auditedAt) {
   const orderedRows = sortFindings(rows).map(row => ({
     package: row.package,
     version: row.version,
+    targetLocation: row.targetLocation,
     severity: row.severity,
-    advisories: row.advisories.map(advisory => ({
-      id: advisory.id,
-      title: advisory.title,
-      url: advisory.url,
-      severity: advisory.severity,
-      range: advisory.range,
-    })),
-    requirements: row.requirements.map(requirement => ({
-      declaredRequirement: requirement.declaredRequirement,
-      directDependents: requirement.directDependents.map(dependent => ({
-        name: dependent.name,
-        version: dependent.version,
-        location: dependent.location,
-        targetLocation: dependent.targetLocation,
-        type: dependent.type,
-        requestedName: dependent.requestedName,
-        strategies: dependent.strategies.map(renderStrategyJson),
-      })),
-    })),
+    minimumSafeVersion: row.minimumSafeVersion,
+    minimumSafeVersionReleasedAt: row.minimumSafeVersionReleasedAt,
+    status: row.status,
+    strategy: row.strategy === null ? null : {
+      id: row.strategy.id,
+      targetPackage: row.strategy.targetPackage,
+      currentVersion: row.strategy.currentVersion,
+      targetVersion: row.strategy.targetVersion,
+    },
   }))
-  return `${JSON.stringify({ schemaVersion: 1, auditedAt, rows: orderedRows }, null, 2)}\n`
+  return `${JSON.stringify({ schemaVersion: 2, auditedAt, rows: orderedRows }, null, 2)}\n`
 }

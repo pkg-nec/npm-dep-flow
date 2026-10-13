@@ -71,6 +71,7 @@ function injectedDeps(report, versions = new Map(), renderers = {}) {
   return {
     async runNpmDepAudit(projectRoot) { return report },
     async fetchStableVersions(projectRoot, packageName) { return versions.get(packageName) ?? [] },
+    async fetchReleaseTimes() { return new Map() },
     renderMarkdown: renderers.renderMarkdown ?? (() => 'markdown report\n'),
     renderJson: renderers.renderJson ?? (() => '{"schemaVersion":1}\n'),
   }
@@ -122,7 +123,7 @@ test('main accepts an explicit project path and JSON format', async () => {
     ['json', [], '2026-10-13T06:00:00.000Z'],
   ])
   assert.deepEqual(JSON.parse(io.stdout), {
-    schemaVersion: 1,
+    schemaVersion: 2,
     auditedAt: '2026-10-13T06:00:00.000Z',
     rows: [],
   })
@@ -149,7 +150,7 @@ test('main requests audit once and queries each distinct package name once', asy
   assert.equal(await main([], io.io, deps), 0)
   assert.equal(calls.audit, 1)
   assert.deepEqual(calls.registry, ['brace-expansion', 'left-pad'])
-  assert.equal(io.stdout, 'rows:3\n')
+  assert.equal(io.stdout, 'rows:4\n')
 })
 
 test('main skips registry lookups for an empty audit report', async () => {
@@ -178,10 +179,9 @@ test('main evaluates every link and renders findings by severity', async () => {
   const lines = io.stdout.split('\n').filter(line => line.startsWith('| '))
   assert.equal(lines[2].includes('| left-pad |'), true)
   assert.equal(lines[3].includes('| brace-expansion |') && lines[4].includes('| brace-expansion |'), true)
-  assert.match(io.stdout, /nx@23\.1\.2/)
-  assert.match(io.stdout, /Update within declared range: ineligible \(no-compatible-safe-version\)/)
-  assert.match(io.stdout, /minimatch@10\.2\.5/)
-  assert.match(io.stdout, /minimum safe version 5\.0\.12/)
+  assert.match(io.stdout, /Highest severity/)
+  assert.match(io.stdout, /node\\_modules\/nx\/node\\_modules\/brace-expansion \| ineligible \| —/)
+  assert.match(io.stdout, /node\\_modules\/brace-expansion \| eligible \| Update within declared range: brace-expansion@5\.0\.9 → brace-expansion@5\.0\.12/)
 })
 
 test('main returns success when all links are ineligible', async () => {
@@ -192,7 +192,7 @@ test('main returns success when all links are ineligible', async () => {
   ]), { renderMarkdown }))
 
   assert.equal(result, 0)
-  assert.match(io.stdout, /no-compatible-safe-version/)
+  assert.match(io.stdout, /\| ineligible \| — \|/)
   assert.equal(io.stderr, '')
 })
 
@@ -222,12 +222,12 @@ process.stdout.write(process.env.PLAN_AUDIT_JSON);
 `
   const npmScript = `const fs = require('node:fs');
 const args = process.argv.slice(2);
-if (JSON.stringify(args.slice(0, 1).concat(args.slice(2))) !== JSON.stringify(['view', 'versions', '--json'])) { process.stderr.write('unexpected npm args'); process.exit(2); }
+if (args[0] !== 'view' || !['versions', 'time'].includes(args[2]) || args[3] !== '--json') { process.stderr.write('unexpected npm args'); process.exit(2); }
 const packageName = args[1];
-fs.appendFileSync(process.env.PLAN_CALL_LOG, packageName + '\\n');
+if (args[2] === 'versions') fs.appendFileSync(process.env.PLAN_CALL_LOG, packageName + '\\n');
 if (packageName === process.env.PLAN_FAIL_PACKAGE) { process.stderr.write('registry fixture failure'); process.exit(1); }
-const byPackage = JSON.parse(process.env.PLAN_VERSIONS_JSON);
-process.stdout.write(JSON.stringify(byPackage[packageName] ?? []));
+const byPackage = JSON.parse(args[2] === 'versions' ? process.env.PLAN_VERSIONS_JSON : process.env.PLAN_RELEASE_TIMES_JSON);
+process.stdout.write(JSON.stringify(byPackage[packageName] ?? (args[2] === 'versions' ? [] : {})));
 `
   writeFileSync(path.join(commandDirectory, 'fake-audit.js'), `#!/usr/bin/env node\n${auditScript}`)
   writeFileSync(path.join(commandDirectory, 'fake-npm.js'), `#!/usr/bin/env node\n${npmScript}`)
@@ -249,6 +249,7 @@ process.stdout.write(JSON.stringify(byPackage[packageName] ?? []));
     PATH: `${commandDirectory}${path.delimiter}${process.env.PATH ?? ''}`,
     PLAN_AUDIT_JSON: JSON.stringify(report),
     PLAN_VERSIONS_JSON: JSON.stringify(versions),
+    PLAN_RELEASE_TIMES_JSON: JSON.stringify({}),
     PLAN_FAIL_PACKAGE: failPackage,
     PLAN_CALL_LOG: callLog,
   }
@@ -270,21 +271,24 @@ test('executable emits Markdown and JSON, distinguishes both brace-expansion lin
 
   const markdown = fixture.run([])
   assert.equal(markdown.status, 0, JSON.stringify(markdown, null, 2))
-  assert.match(markdown.stdout, /nx@23\.1\.2/)
-  assert.match(markdown.stdout, /minimatch@10\.2\.5/)
-  assert.match(markdown.stdout, /Update within declared range: ineligible \(no-compatible-safe-version\)/)
-  assert.match(markdown.stdout, /minimum safe version 5\.0\.12/)
+  assert.match(markdown.stdout, /node\\_modules\/nx\/node\\_modules\/brace-expansion \| ineligible \| —/)
+  assert.match(markdown.stdout, /node\\_modules\/brace-expansion \| eligible \| Update within declared range: brace-expansion@5\.0\.9 → brace-expansion@5\.0\.12/)
   assert.deepEqual(readFileSync(path.join(fixture.project, 'package.json')), manifestBefore)
   assert.deepEqual(readFileSync(path.join(fixture.project, 'package-lock.json')), lockBefore)
 
   const json = fixture.run(['--format', 'json'])
   assert.equal(json.status, 0, JSON.stringify(json, null, 2))
   const report = JSON.parse(json.stdout)
-  assert.equal(report.schemaVersion, 1)
-  const links = report.rows[0].requirements.flatMap(group => group.directDependents)
-  assert.deepEqual(links.map(item => [item.name, item.strategies[0].status]), [
-    ['nx', 'ineligible'], ['minimatch', 'eligible'],
+  assert.equal(report.schemaVersion, 2)
+  assert.deepEqual(report.rows.map(item => [item.targetLocation, item.status]), [
+    ['node_modules/brace-expansion', 'eligible'],
+    ['node_modules/nx/node_modules/brace-expansion', 'ineligible'],
   ])
+  assert.equal(report.rows[0].minimumSafeVersion, '5.0.12')
+  assert.equal(report.rows[0].minimumSafeVersionReleasedAt, null)
+  assert.equal(report.rows[1].strategy, null)
+  assert.equal('advisories' in report.rows[0], false)
+  assert.equal('requirements' in report.rows[0], false)
   assert.deepEqual(readFileSync(path.join(fixture.project, 'package.json')), manifestBefore)
   assert.deepEqual(readFileSync(path.join(fixture.project, 'package-lock.json')), lockBefore)
 })

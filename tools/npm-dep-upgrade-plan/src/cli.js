@@ -1,10 +1,10 @@
 import { parseArgs } from './args.js'
 import { runNpmDepAudit } from './audit.js'
 import { evaluateFindings } from './evaluate.js'
-import { fetchStableVersions } from './registry.js'
+import { fetchReleaseTimes, fetchStableVersions } from './registry.js'
 import { renderJson, renderMarkdown } from './report.js'
 
-const defaults = { runNpmDepAudit, fetchStableVersions, renderJson, renderMarkdown }
+const defaults = { runNpmDepAudit, fetchStableVersions, fetchReleaseTimes, renderJson, renderMarkdown }
 
 const help = `Usage: npm-dep-upgrade-plan [project] [options]
 
@@ -25,10 +25,13 @@ export async function main(argv, io = process, deps = defaults) {
     const versionsByPackage = new Map()
     const packageNames = [...new Set(auditReport.rows.map(row => row.package))]
     for (const packageName of packageNames) {
-      versionsByPackage.set(
-        packageName,
-        await deps.fetchStableVersions(options.projectPath, packageName),
-      )
+      const [versions, releaseTimes] = await Promise.all([
+        deps.fetchStableVersions(options.projectPath, packageName),
+        deps.fetchReleaseTimes
+          ? deps.fetchReleaseTimes(options.projectPath, packageName)
+          : Promise.resolve(new Map()),
+      ])
+      versionsByPackage.set(packageName, { versions, releaseTimes })
     }
 
     const findings = evaluateFindings(auditReport.rows, versionsByPackage)

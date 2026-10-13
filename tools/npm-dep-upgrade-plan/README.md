@@ -1,8 +1,8 @@
 # npm-dep-upgrade-plan
 
-`npm-dep-upgrade-plan` is a read-only CLI that reports which vulnerable installed package versions have a supported remediation strategy. It evaluates each direct-dependent link separately, so two requirements that resolve to the same installed copy can have different results.
+`npm-dep-upgrade-plan` is a read-only CLI that reports which vulnerable package installations have an eligible remediation strategy. It emits one row for each `(package, installed version, target location)` because each physical installation must be upgraded separately.
 
-The first strategy is `update-within-declared-range`. It checks whether the package itself can move to a newer stable version while still satisfying each dependent's declared requirement. For example, a vulnerable `brace-expansion@5.0.9` required as exact `5.0.9` by `nx@23.1.2` is ineligible for this strategy, while a separate `^5.0.5` requirement from `minimatch@10.2.5` can be eligible with `5.0.12` as the minimum safe compatible version. The planner reports that version as evidence; it does not choose or apply an update.
+The first strategy is `update-within-declared-range`. It checks whether the vulnerable package itself can move to a newer stable version while satisfying every declared requirement that points to the same target location. For example, a vulnerable `brace-expansion@5.0.9` required as exact `5.0.9` by `nx@23.1.2` is ineligible, while a separate installation required as `^5.0.5` by `minimatch@10.2.5` can be eligible with `5.0.12` as the target version. The planner reports a possible update; it does not select or apply it.
 
 ## Requirements and installation
 
@@ -44,69 +44,54 @@ The project path defaults to the current directory. Markdown is the default form
 
 ## How eligibility is reported
 
-For each vulnerable `(package, installed version)` and each affected direct-dependent link, the planner uses the configured npm registry to list published versions. It considers only strict stable semantic versions: prereleases, non-semver values, and noncanonical version strings are excluded.
+For each vulnerable `(package, installed version)`, the planner asks the configured registry for published versions and release times. It considers only strict stable semantic versions: prereleases, non-semver values, and noncanonical version strings are excluded.
 
-The `update-within-declared-range` strategy reports the lowest registry version that is:
+`minimumSafeVersion` is the lowest stable registry version that is newer than the installed version and outside every advisory range for that package/version. It is the same across target locations. Its registry release time is returned as `minimumSafeVersionReleasedAt`; that value is `null` if there is no newer safe version or the registry has no valid timestamp for it.
 
-1. Newer than the installed vulnerable version.
-2. Outside every advisory range for that finding.
-3. Allowed by that specific dependent's declared requirement.
-
-Exact versions, caret and tilde ranges, comparator ranges, unions, and matching npm aliases are supported. A non-range requirement or an npm alias for another package is reported as `unsupported-requirement`. If a valid range admits no newer safe version, the result is `no-compatible-safe-version`. These are per-link results; an eligible link does not imply that other links to the same installed package copy are resolved.
+`status` is evaluated per target location. The current strategy is eligible only when one newer safe version satisfies every declared requirement associated with that location. If no strategy can resolve the finding at that location, `status` is `ineligible` and `strategy` is `null`. When eligible, `strategy` identifies the package and version change that can remediate that location. The planner chooses the first eligible strategy in its configured order.
 
 The planner invokes `npm-dep-audit` and `npm view` as standalone commands. It does not install dependencies, run lifecycle scripts, select an update, write a lockfile, or modify the target project.
 
 ## JSON report
 
-Use `--format json` for the versioned consumer contract:
+Use `--format json` for the versioned consumer contract. The composite row identity is `package`, `version`, and `targetLocation`; multiple rows may share a package and version.
 
 ```json
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "auditedAt": "2026-10-13T06:00:00.000Z",
   "rows": [
     {
       "package": "brace-expansion",
       "version": "5.0.9",
+      "targetLocation": "node_modules/brace-expansion",
       "severity": "high",
-      "advisories": [
-        {
-          "id": "GHSA-example-1234-abcd",
-          "title": "Example vulnerability",
-          "url": "https://example.test/advisory",
-          "severity": "high",
-          "range": "<5.0.12"
-        }
-      ],
-      "requirements": [
-        {
-          "declaredRequirement": "^5.0.5",
-          "directDependents": [
-            {
-              "name": "minimatch",
-              "version": "10.2.5",
-              "location": "node_modules/minimatch",
-              "targetLocation": "node_modules/brace-expansion",
-              "type": "dependencies",
-              "requestedName": "brace-expansion",
-              "strategies": [
-                {
-                  "id": "update-within-declared-range",
-                  "status": "eligible",
-                  "minimumSafeVersion": "5.0.12"
-                }
-              ]
-            }
-          ]
-        }
-      ]
+      "minimumSafeVersion": "5.0.12",
+      "minimumSafeVersionReleasedAt": "2026-10-01T12:00:00.000Z",
+      "status": "eligible",
+      "strategy": {
+        "id": "update-within-declared-range",
+        "targetPackage": "brace-expansion",
+        "currentVersion": "5.0.9",
+        "targetVersion": "5.0.12"
+      }
+    },
+    {
+      "package": "brace-expansion",
+      "version": "5.0.9",
+      "targetLocation": "node_modules/nx/node_modules/brace-expansion",
+      "severity": "high",
+      "minimumSafeVersion": "5.0.12",
+      "minimumSafeVersionReleasedAt": "2026-10-01T12:00:00.000Z",
+      "status": "ineligible",
+      "strategy": null
     }
   ]
 }
 ```
 
-An empty audit produces `rows: []` in JSON and a clear no-findings message in Markdown. A completed report exits 0 even when every link is ineligible.
+The JSON report retains the audit timestamp and highest severity, but does not repeat advisory details or declared requirements from `npm-dep-audit`. Markdown uses the **Highest severity** heading and the same bold and color styling as `npm-dep-audit`. An empty audit produces `rows: []` in JSON and a clear no-findings message in Markdown. A completed report exits 0 even when every row is ineligible.
 
 ## Errors
 
-Invalid arguments, a missing or failed `npm-dep-audit` command, invalid audit JSON, or a failed or malformed registry response exits nonzero and writes an error to stderr. The planner emits no partial report on stdout if any step fails. Unsupported dependency requirements are eligibility results rather than command errors.
+Invalid arguments, a missing or failed `npm-dep-audit` command, invalid audit JSON, or a failed or malformed registry response exits nonzero and writes an error to stderr. The planner emits no partial report on stdout if any step fails.

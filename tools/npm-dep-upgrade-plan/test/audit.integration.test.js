@@ -85,6 +85,7 @@ else if (args[0] === 'config' && args[2] === 'audit-registry') process.stdout.wr
 else if (args[0] === 'config' && args[2] === 'registry') process.stdout.write('https://registry.example/\\n')
 else if (args[0] === 'audit') { process.stdout.write(process.env.PLAN_AUDIT_JSON); process.exitCode = 1 }
 else if (args[0] === 'view' && args[1] === 'brace-expansion' && args[2] === 'versions' && args[3] === '--json') process.stdout.write(process.env.PLAN_VERSIONS_JSON)
+else if (args[0] === 'view' && args[1] === 'brace-expansion' && args[2] === 'time' && args[3] === '--json') process.stdout.write(process.env.PLAN_TIMES_JSON)
 else { process.stderr.write('unexpected npm arguments: ' + args.join(' ')); process.exitCode = 2 }
 `
   const pathsScript = `const fs = require('node:fs')
@@ -121,6 +122,9 @@ else { fs.appendFileSync(process.env.PLAN_PATHS_CALLS, args.join(' ') + '\\n'); 
     PATH: `${commandDirectory}${path.delimiter}${process.env.PATH ?? ''}`,
     PLAN_AUDIT_JSON: JSON.stringify(audit),
     PLAN_VERSIONS_JSON: JSON.stringify(['5.0.9', '5.0.12']),
+    PLAN_TIMES_JSON: JSON.stringify({
+      '5.0.12': '2026-10-01T12:00:00.000Z',
+    }),
     PLAN_PATHS_JSON: JSON.stringify(paths),
     PLAN_NPM_CALLS: npmCalls,
     PLAN_PATHS_CALLS: pathsCalls,
@@ -142,15 +146,26 @@ test('planner consumes JSON emitted by the real npm-dep-audit CLI', { skip: !ena
 
   assert.equal(result.status, 0, JSON.stringify(result, null, 2))
   const report = JSON.parse(result.stdout)
-  assert.equal(report.schemaVersion, 1)
+  assert.equal(report.schemaVersion, 2)
   assert.equal(report.rows[0].package, 'brace-expansion')
   assert.equal(report.rows[0].version, '5.0.9')
+  assert.equal(report.rows[0].targetLocation, 'node_modules/brace-expansion')
   assert.equal(report.rows[0].severity, 'high')
-  assert.equal(report.rows[0].requirements[0].declaredRequirement, '^5.0.5')
-  assert.equal(report.rows[0].requirements[0].directDependents[0].strategies[0].minimumSafeVersion, '5.0.12')
+  assert.equal(report.rows[0].minimumSafeVersion, '5.0.12')
+  assert.equal(report.rows[0].minimumSafeVersionReleasedAt, '2026-10-01T12:00:00.000Z')
+  assert.equal(report.rows[0].status, 'eligible')
+  assert.deepEqual(report.rows[0].strategy, {
+    id: 'update-within-declared-range',
+    targetPackage: 'brace-expansion',
+    currentVersion: '5.0.9',
+    targetVersion: '5.0.12',
+  })
+  assert.equal('advisories' in report.rows[0], false)
+  assert.equal('requirements' in report.rows[0], false)
 
   const npmCalls = readFileSync(fixture.npmCalls, 'utf8').trim().split('\n')
   assert.ok(npmCalls.some(call => call.startsWith('audit ')))
   assert.ok(npmCalls.includes('view brace-expansion versions --json'))
+  assert.ok(npmCalls.includes('view brace-expansion time --json'))
   assert.equal(readFileSync(fixture.pathsCalls, 'utf8').trim(), '. brace-expansion --format json')
 })

@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add a read-only `npm-dep-upgrade-plan` CLI that reports, per vulnerable dependency link, whether an ordered remediation strategy can move the package to a newer stable safe version.
+**Goal:** Add a read-only `npm-dep-upgrade-plan` CLI that reports, per vulnerable package version and target installation location, whether an ordered remediation strategy can resolve that installation.
 
-**Architecture:** Create an independent tool under `tools/npm-dep-upgrade-plan/`. Its CLI consumes `npm-dep-audit` schema v2 JSON through the public command, queries `npm view` once per affected package, evaluates each dependency link with an ordered strategy registry, and renders Markdown or versioned JSON only after all work succeeds.
+**Architecture:** Create an independent tool under `tools/npm-dep-upgrade-plan/`. Its CLI consumes `npm-dep-audit` schema v2 JSON through the public command, queries `npm view` for versions and release times per affected package, groups requirements by target location, evaluates locations with an ordered strategy registry, and renders Markdown or versioned JSON only after all work succeeds.
 
 **Tech Stack:** Node.js 20+ ES modules, `node:test`, `semver` `^7.8.5`, npm subprocesses.
 
@@ -16,8 +16,8 @@
 - The planner invokes the separately installed `npm-dep-audit` CLI with `--min-severity info --format json` and validates schema version 2.
 - The command is `npm-dep-upgrade-plan [project] [--format markdown|json]`; project defaults to the current directory and Markdown is the default format.
 - Consider only strict semantic versions that are stable; exclude prereleases and values that are not semantic versions.
-- A candidate must be newer than the installed version, outside every advisory range on the finding, and admitted by the individual dependent's declared requirement.
-- Keep each direct-dependent link distinct; do not label a vulnerable version resolved when any affected link has no applicable strategy.
+- `minimumSafeVersion` must be a stable version newer than the installed version and outside every advisory range on the finding; it is null if none exists. Its registry release time is null when unavailable.
+- Emit one row per `(package, version, targetLocation)`. A strategy is eligible only when one candidate satisfies every declared requirement for that target location. Set `strategy` to null when no strategy applies.
 - Do not install dependencies, run lifecycle scripts, modify the target project, or change `tools/npm-dep-audit/`.
 - Use argument-array subprocesses on Unix-like systems and the repository's `.cmd` shell pattern on Windows; never put the target project path in shell command text.
 - Install dependencies in the new tool only with `npm ci --ignore-scripts` or `npm install --package-lock-only --ignore-scripts`.
@@ -27,8 +27,8 @@
 
 - A project-root dependent has `location: ""`; accept the empty location as a string and preserve it. Task 3 tests this audit link.
 - Scoped package names must remain safe in registry queries on Windows; Task 4 tests the package validation and `.cmd` invocation.
-- `npm view ... versions --json` can return one JSON string instead of an array; Task 4 normalizes both forms and tests the scalar response.
-- A semver union can exclude the globally lowest safe version but admit a later safe version; Task 5 selects the minimum version in the intersection of the safe versions and the declared range.
+- `npm view ... versions --json` can return one JSON string instead of an array; Task 4 normalizes both forms and tests the scalar response. Release times come from the registry `time` object; missing or invalid version timestamps are null.
+- A semver union can exclude the package-level minimum safe version but admit a later safe version; the strategy target can therefore differ from `minimumSafeVersion`.
 - A later registry query can fail after earlier package queries succeeded; Task 7 asserts the CLI emits no partial stdout.
 
 ---
@@ -40,7 +40,7 @@
 - Create `tools/npm-dep-upgrade-plan/src/args.js` for CLI parsing and `src/cli.js` for orchestration.
 - Create `tools/npm-dep-upgrade-plan/src/process.js` for portable subprocess execution.
 - Create `tools/npm-dep-upgrade-plan/src/audit.js` for invoking and validating the `npm-dep-audit` JSON contract.
-- Create `tools/npm-dep-upgrade-plan/src/registry.js` for `npm view` and stable-version normalization.
+- Create `tools/npm-dep-upgrade-plan/src/registry.js` for `npm view`, stable-version normalization, and release-time normalization.
 - Create `tools/npm-dep-upgrade-plan/src/strategies.js` for the ordered strategy registry and `update-within-declared-range` evaluator.
 - Create `tools/npm-dep-upgrade-plan/src/evaluate.js` to attach strategy results to every affected link.
 - Create `tools/npm-dep-upgrade-plan/src/report.js` to sort findings deterministically and render Markdown and JSON.
@@ -104,42 +104,43 @@
 
 - [ ] **Step 5: Commit.** Stage `src/audit.js` and `test/audit.test.js`; commit `feat: consume npm-dep-audit reports`.
 
-### Task 4: Query and normalize published stable versions
+### Task 4: Query stable versions and their registry release times
 
 **Files:** Create `tools/npm-dep-upgrade-plan/src/registry.js` and `test/registry.test.js`.
 
 **Interfaces:**
 
 - `fetchStableVersions(projectRoot: string, packageName: string, spawnImpl = spawn, platform = process.platform) -> Promise<string[]>`; the result is unique, valid stable semantic versions sorted ascending by semver.
+- `fetchReleaseTimes(projectRoot: string, packageName: string, spawnImpl = spawn, platform = process.platform) -> Promise<Map<string,string>>`; stable-version keys with valid ISO timestamps are normalized to UTC ISO strings.
 
-- [ ] **Step 1: Write failing tests in `test/registry.test.js`.** Assert `npm view <package> versions --json` runs in the project directory on Unix and through `${command}.cmd` on Windows. Cover scoped names, package-name rejection before spawning, a JSON array response, a scalar JSON string response, prerelease and malformed-version filtering, duplicate removal, semantic sort order, empty version array, invalid JSON, invalid JSON type or array member, nonzero exit, and missing npm.
+- [ ] **Step 1: Write failing tests in `test/registry.test.js`.** Assert `npm view <package> versions --json` and `npm view <package> time --json` run in the project directory on Unix and through `${command}.cmd` on Windows. Cover version normalization, scoped names, package-name rejection before spawning, invalid registry data, valid and invalid release timestamps, nonzero exit, and missing npm.
 
 - [ ] **Step 2: Run the focused registry tests.** Expect the import to fail because `src/registry.js` does not exist.
 
-- [ ] **Step 3: Implement `fetchStableVersions` in `src/registry.js`.** Validate npm package names with `/^(?:[a-z0-9][a-z0-9._~-]*|@[a-z0-9][a-z0-9._~-]*\/[a-z0-9][a-z0-9._~-]*)$/i` before constructing a Windows shell command. Invoke `runProcess('npm', ['view', packageName, 'versions', '--json'], projectRoot, spawnImpl, platform)`. Parse either a JSON array containing only strings or one JSON string; reject other shapes. Retain only strict semver versions with no prerelease component, deduplicate, and sort with `semver.compare` and a lexical tie-break for semantically equal versions.
+- [ ] **Step 3: Implement the registry adapters in `src/registry.js`.** Validate npm package names before constructing a Windows shell command. Parse and normalize strict stable versions from the `versions` field. Read the `time` field into a map keyed by stable version; ignore missing or invalid timestamps so the report can emit null for those versions.
 
 - [ ] **Step 4: Run `node --test test/registry.test.js`.** Expect all response-shape, filtering, ordering, and platform cases to pass.
 
 - [ ] **Step 5: Commit.** Stage `src/registry.js` and `test/registry.test.js`; commit `feat: query stable npm package versions`.
 
-### Task 5: Evaluate the ordered remediation strategy per dependency link
+### Task 5: Evaluate ordered remediation strategies per target location
 
 **Files:** Create `tools/npm-dep-upgrade-plan/src/strategies.js`, `src/evaluate.js`, and `test/strategies.test.js`.
 
 **Interfaces:**
 
-- `updateWithinDeclaredRange(row: AuditRow, declaredRequirement: string, stableVersions: string[]) -> StrategyResult`.
-- `StrategyResult` is `{ id: 'update-within-declared-range', status: 'eligible', minimumSafeVersion: string }` or `{ id: 'update-within-declared-range', status: 'ineligible', reason: 'unsupported-requirement'|'no-compatible-safe-version' }`.
-- `evaluateFindings(rows: AuditRow[], versionsByPackage: Map<string,string[]>, strategies = orderedStrategies) -> EvaluatedRow[]` clones each row and adds an ordered `strategies` array to every direct-dependent link.
-- `orderedStrategies` contains `{ id, label, order, evaluate(row, declaredRequirement, stableVersions) }`, sorted by ascending numeric `order`, with the first strategy at order `1`.
+- `findMinimumSafeVersion(row: AuditRow, stableVersions: string[]) -> string|null`; its result is independent of target requirements and is always newer than the installed version.
+- `updateWithinDeclaredRange(row: AuditRow, declaredRequirements: string[], stableVersions: string[]) -> Strategy|null`; an eligible result is `{ id, targetPackage, currentVersion, targetVersion }`.
+- `evaluateFindings(rows: AuditRow[], versionsByPackage: Map<string,{versions:string[],releaseTimes:Map<string,string>}>, strategies = orderedStrategies) -> EvaluatedRow[]` emits one row per target location with `status` and a nullable selected `strategy`.
+- `orderedStrategies` contains `{ id, label, order, evaluate(row, declaredRequirements, stableVersions) }`, sorted by ascending numeric `order`; select the first eligible result.
 
-- [ ] **Step 1: Write failing tests in `test/strategies.test.js`.** Test a vulnerable range `<5.0.12` with normalized stable versions `5.0.9` and `5.0.12`: `^5.0.5` is eligible with minimum `5.0.12`, while exact `5.0.9` is ineligible. Test tilde, comparator, and union ranges; candidates must be newer than installed and outside every advisory range. Include a union that excludes the globally lowest safe version but admits a later one, multiple advisory ranges, matching and mismatched unscoped and scoped npm aliases, non-range specs, and a link with no eligible version. Assert two links on one finding remain distinct and injected strategies are evaluated in ascending `order`.
+- [ ] **Step 1: Write failing tests in `test/strategies.test.js`.** Test that package-level minimum-safe selection is newer than installed and outside every advisory range. Test per-location eligibility with multiple requirements, including a safe package-level version that a location cannot use, locations that share a package/version, future strategies that apply when `minimumSafeVersion` is null, supported ranges and npm aliases, and first-eligible strategy ordering.
 
 - [ ] **Step 2: Run the focused strategy tests.** Expect the imports to fail because `strategies.js` and `evaluate.js` do not exist.
 
-- [ ] **Step 3: Implement `updateWithinDeclaredRange` and `orderedStrategies` in `src/strategies.js`.** Parse standard semver ranges and aliases of the form `npm:<audited-package>@<range>`; return `unsupported-requirement` for non-range or mismatched aliases. Find the first sorted stable candidate that is greater than the installed version, satisfies the requirement, and satisfies none of the finding's advisory ranges.
+- [ ] **Step 3: Implement `findMinimumSafeVersion`, `updateWithinDeclaredRange`, and `orderedStrategies` in `src/strategies.js`.** Parse standard semver ranges and aliases of the form `npm:<audited-package>@<range>`. Find the lowest newer stable candidate outside all advisory ranges, then find the lowest safe version satisfying all requirements at the target location.
 
-- [ ] **Step 4: Implement `evaluateFindings` in `src/evaluate.js`.** For every audit requirement and every physical direct-dependent record, preserve the original link fields and add results from all strategies sorted by ascending `order`. Do not collapse identical names or requirement strings across locations.
+- [ ] **Step 4: Implement `evaluateFindings` in `src/evaluate.js`.** Group requirements by `targetLocation`, compute package/version safe release fields, and select the first eligible strategy for each location. Keep distinct target locations as separate rows.
 
 - [ ] **Step 5: Run `node --test test/strategies.test.js`.** Expect all eligibility, reason, alias, multi-advisory, and link-preservation assertions to pass.
 
@@ -151,15 +152,15 @@
 
 **Interfaces:**
 
-- `sortFindings(rows: EvaluatedRow[]) -> EvaluatedRow[]`, including deterministic ordering of rows, requirement groups, and physical links.
+- `sortFindings(rows: EvaluatedRow[]) -> EvaluatedRow[]`, ordered by severity, package, installed version, and target location.
 - `renderMarkdown(rows: EvaluatedRow[]) -> string`.
 - `renderJson(rows: EvaluatedRow[], auditedAt: string) -> string`.
 
-- [ ] **Step 1: Write failing tests in `test/report.test.js`.** Assert severity order critical, high, moderate, low, info; ties sort by package and installed version; requirement and link ordering is stable. Markdown emits one row per direct-dependent link, displays requirement, dependent identity/type/locations, advisory links, strategy eligibility, and minimum safe version or reason. The exact and caret `brace-expansion` links must be visibly distinct. Test Markdown escaping and the empty result text. Parse JSON and assert `schemaVersion: 1`, `auditedAt`, audit row/advisory fields, the original requirement/dependent fields, ordered strategy results, and the empty `rows` array.
+- [ ] **Step 1: Write failing tests in `test/report.test.js`.** Assert severity order and target-location ordering. Markdown emits one row per composite key, labels severity **Highest severity** with `npm-dep-audit` styling, and shows minimum safe release data, status, and strategy. Parse JSON and assert schema version 2, `auditedAt`, the flattened row fields, null strategies for ineligible rows, and empty `rows`.
 
 - [ ] **Step 2: Run the focused report tests.** Expect the import to fail because `src/report.js` does not exist.
 
-- [ ] **Step 3: Implement sorting and renderers in `src/report.js`.** Keep each physical link as its own Markdown row. Include dependent and target locations so duplicate labels remain distinguishable. Render JSON with `schemaVersion`, `auditedAt`, and evaluated rows using the contract in the spec.
+- [ ] **Step 3: Implement sorting and renderers in `src/report.js`.** Emit one row per target location, render highest-severity styling, and serialize schema version 2 without repeating advisories or requirements.
 
 - [ ] **Step 4: Run `node --test test/report.test.js`.** Expect deterministic ordering, Markdown, JSON, escaping, and empty-report assertions to pass.
 
@@ -171,18 +172,18 @@
 
 **Interfaces:**
 
-- `main(argv: string[], io = process, deps = defaults) -> Promise<number>` where defaults provide `runNpmDepAudit(projectRoot)`, `fetchStableVersions(projectRoot, packageName)`, and the two renderers.
+- `main(argv: string[], io = process, deps = defaults) -> Promise<number>` where defaults provide `runNpmDepAudit(projectRoot)`, `fetchStableVersions(projectRoot, packageName)`, `fetchReleaseTimes(projectRoot, packageName)`, and the two renderers.
 - The bin sets `process.exitCode = await main(process.argv.slice(2))`.
 
 - [ ] **Step 1: Write failing orchestration tests in `test/cli.test.js`.** Cover help without subprocess calls; default current directory and Markdown; explicit project and JSON; audit request once; one registry request per distinct package name and none for an empty report; evaluation and severity ordering; successful exit with ineligible links; and audit or later registry failure leaving stdout empty with an actionable stderr message.
 
 - [ ] **Step 2: Run the focused CLI tests.** Expect failures because `src/cli.js` and the bin do not exist.
 
-- [ ] **Step 3: Implement `main` in `src/cli.js` and the bin.** Parse arguments, request audit JSON, fetch versions for unique package names, evaluate and render only after all queries succeed, write stdout exactly once, and return 0. On errors, write `npm-dep-upgrade-plan: <message>` to stderr and return 1. Add the bin mapping to `package.json` and refresh `package-lock.json` with `npm install --package-lock-only --ignore-scripts`.
+- [ ] **Step 3: Implement `main` in `src/cli.js` and the bin.** Parse arguments, request audit JSON, fetch versions and release times for unique package names, evaluate and render only after all queries succeed, write stdout exactly once, and return 0. On errors, write `npm-dep-upgrade-plan: <message>` to stderr and return 1. Add the bin mapping to `package.json` and refresh `package-lock.json` with `npm install --package-lock-only --ignore-scripts`.
 
-- [ ] **Step 4: Add executable-level tests with fake commands.** Place all generated project and command fixtures under `/home/maw/src/nrc/npm-dep-flow-impl/tmp`; do not use a system temp directory. Put fake `npm-dep-audit` and `npm` commands on a controlled `PATH`. Assert default Markdown and `--format json`, the two separate `brace-expansion@5.0.9` outcomes, the `5.0.12` minimum safe result, no partial stdout when the second registry query fails, and unchanged target `package.json`/`package-lock.json` bytes after each successful run.
+- [ ] **Step 4: Add executable-level tests with fake commands.** Place all generated project and command fixtures under `/home/maw/src/nrc/npm-dep-flow-impl/tmp`; do not use a system temp directory. Put fake `npm-dep-audit` and `npm` commands on a controlled `PATH`. Assert default Markdown and `--format json`, separate rows for target locations, the package-level minimum safe version and release time, nullable strategies, no partial stdout on registry failure, and unchanged target `package.json`/`package-lock.json` bytes after each successful run.
 
-- [ ] **Step 5: Write `tools/npm-dep-upgrade-plan/README.md`.** Document installation, the prerequisite standalone `npm-dep-audit` command and its `npm-dep-paths` setup, command examples, registry lookup behavior, stable-version and per-link semantics, Markdown default, JSON schema v1, and errors. Update the root README tool index to link the new CLI and describe its read-only purpose.
+- [ ] **Step 5: Write `tools/npm-dep-upgrade-plan/README.md`.** Document installation, the prerequisite standalone `npm-dep-audit` command and its `npm-dep-paths` setup, command examples, registry lookup behavior, stable-version and per-target-location semantics, Markdown default, JSON schema v2, and errors. Update the root README tool index to link the new CLI and describe its read-only purpose.
 
 - [ ] **Step 6: Run final verification from `tools/npm-dep-upgrade-plan/`.** Run `npm ci --ignore-scripts`, `npm test`, and `node bin/npm-dep-upgrade-plan.js --help`. Run `git diff --check` from the repository root. Expect the suite and help command to pass, no whitespace errors, and no changes under `tools/npm-dep-audit/`.
 
