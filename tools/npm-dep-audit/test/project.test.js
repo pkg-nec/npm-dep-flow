@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtemp, writeFile, rm } from 'node:fs/promises'
+import { mkdtemp, writeFile, rm, realpath } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { loadProject } from '../src/project.js'
@@ -19,7 +19,7 @@ for (const version of [2, 3]) {
     const dir = await project(manifest, lock)
     t.after(() => rm(dir, { recursive: true, force: true }))
     const result = await loadProject(dir)
-    assert.equal(result.root, dir)
+    assert.equal(result.root, await realpath(dir))
     assert.equal(result.manifestBytes.toString(), manifest)
     assert.equal(result.lockBytes.toString(), lock)
     assert.equal(result.lock.lockfileVersion, version)
@@ -61,5 +61,5 @@ test('rejects an explicitly declared non-npm package manager', async t => {
   t.after(() => rm(dir, { recursive: true, force: true }))
   await assert.rejects(loadProject(dir), /packageManager.*pnpm/)
   await writeFile(join(dir, 'package.json'), '{"name":"sample","packageManager":"npm@12.1.0"}')
-  assert.equal((await loadProject(dir)).root, dir)
+  assert.equal((await loadProject(dir)).root, await realpath(dir))
 })

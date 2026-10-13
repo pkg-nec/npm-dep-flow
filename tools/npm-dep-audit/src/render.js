@@ -24,18 +24,63 @@ function severity(value) {
   return color ? `<strong style="color: ${color}">${cell(value)}</strong>` : `<strong>${cell(value)}</strong>`
 }
 
+function dependentLabel(dependent, targetName) {
+  const alias = dependent.requestedName === targetName
+    ? ''
+    : `; requested as ${cell(dependent.requestedName)}`
+  return `${cell(dependent.name)}@${cell(dependent.version)} [${cell(dependent.type)}${alias}]`
+}
+
+function visibleDependents(requirement, targetName) {
+  const labels = new Map()
+  for (const dependent of requirement.directDependents) {
+    const label = dependentLabel(dependent, targetName)
+    labels.set(label, (labels.get(label) || 0) + 1)
+  }
+  return [...labels].map(([label, count]) => count === 1 ? label : `${label} (${count} installations)`).join(', ')
+}
+
+function requirementsCell(row) {
+  return row.requirements.map(requirement =>
+    `${cell(requirement.declaredRequirement)} → ${visibleDependents(requirement, row.package)}`,
+  ).join('<br>')
+}
+
 export function renderMarkdown(rows) {
   const output = [
-    '| Package | Version | Highest severity | Advisories | Installed paths |',
+    '| Package | Version | Highest severity | Advisories | Declared requirements |',
     '| --- | --- | --- | --- | --- |',
   ]
   for (const row of rows) {
-    output.push(`| ${cell(row.package)} | ${cell(row.version)} | ${severity(row.severity)} | ${row.advisories.map(link).join('<br>')} | ${row.paths.map(cell).join('<br>')} |`)
+    output.push(`| ${cell(row.package)} | ${cell(row.version)} | ${severity(row.severity)} | ${row.advisories.map(link).join('<br>')} | ${requirementsCell(row)} |`)
   }
   if (rows.length === 0) output.push('', 'No matching direct advisories.')
   return `${output.join('\n')}\n`
 }
 
 export function renderJson(rows, auditedAt) {
-  return `${JSON.stringify({ schemaVersion: 1, auditedAt, rows }, null, 2)}\n`
+  const reportRows = rows.map(row => ({
+    package: row.package,
+    version: row.version,
+    severity: row.severity,
+    advisories: row.advisories.map(advisory => ({
+      id: advisory.id,
+      title: advisory.title,
+      url: advisory.url,
+      severity: advisory.severity,
+      range: advisory.range,
+    })),
+    requirements: row.requirements.map(requirement => ({
+      declaredRequirement: requirement.declaredRequirement,
+      directDependents: requirement.directDependents.map(dependent => ({
+        name: dependent.name,
+        version: dependent.version,
+        location: dependent.location,
+        targetLocation: dependent.targetLocation,
+        type: dependent.type,
+        requestedName: dependent.requestedName,
+      })),
+    })),
+  }))
+  return `${JSON.stringify({ schemaVersion: 2, auditedAt, rows: reportRows }, null, 2)}\n`
 }
