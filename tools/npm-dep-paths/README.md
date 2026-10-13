@@ -4,7 +4,16 @@ Inspect how an npm project's installed package versions are required. The normal
 
 ## Use
 
-From `tools/npm-dep-paths/`, install this tool's own dependency with `npm ci --ignore-scripts`, then run:
+Install this tool's dependencies and expose the CLI globally from the repository root so other tools, including `npm-dep-audit`, can invoke `npm-dep-paths` from `PATH`:
+
+```sh
+cd tools/npm-dep-paths
+npm ci --ignore-scripts
+npm install --global . --ignore-scripts
+npm-dep-paths --help
+```
+
+For local development without a global install, run its entry point directly:
 
 ```sh
 node bin/npm-dep-paths.js /path/to/project brace-expansion
@@ -15,6 +24,8 @@ node bin/npm-dep-paths.js /path/to/project brace-expansion@5.0.9 --upstream-of m
 ```
 
 A name-only query produces one result per reachable installed version. An exact-version query produces one result. The default text report lists each distinct declared requirement first, followed by all direct dependents that made it. `^5.0.5` and `^5.0.6` remain separate even if both resolved to `5.0.9`. A dependent's dependency type is shown beside its name; repeated physical installations are counted. The summary has no route count.
+
+`npm-dep-audit` runs a name-only JSON query and uses the declared requirements and direct dependent links to replace its former installed-paths column. The integration requires this CLI to be separately installed and available on `PATH`; see the [npm-dep-audit guide](../npm-dep-audit/README.md) for setup and its report format.
 
 `--upstream-of` requires an exact target version and the exact resolved name and version of a direct dependent. Text then lists the selected dependent's requirement on the target, all of its immediate parents, and every top-level package leading to it, along with upstream graph size. Add `--from` with an exact top-level name and version to display only that branch as a tree. Shared installations and cycles appear as references, with every connecting declaration still shown. The default summary remains complete when either option is used.
 

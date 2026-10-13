@@ -1,8 +1,8 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtemp, writeFile, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, writeFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'
-import { tmpdir } from 'node:os'
+import { fileURLToPath } from 'node:url'
 import { loadProject } from '../src/project.js'
 import { runNpmDepPaths } from '../src/dep-paths.js'
 import { main } from '../src/cli.js'
@@ -10,7 +10,9 @@ import { main } from '../src/cli.js'
 const enabled = process.env.NPM_DEP_PATHS_INTEGRATION === '1'
 
 test('audit consumes the separately installed npm-dep-paths CLI', { skip: !enabled }, async t => {
-  const root = await mkdtemp(join(tmpdir(), 'npm-dep-audit-paths-integration-'))
+  const temporaryRoot = fileURLToPath(new URL('../../../tmp/', import.meta.url))
+  await mkdir(temporaryRoot, { recursive: true })
+  const root = await mkdtemp(join(temporaryRoot, 'npm-dep-audit-paths-integration-'))
   t.after(() => rm(root, { recursive: true, force: true }))
 
   const manifest = {
@@ -64,5 +66,9 @@ test('audit consumes the separately installed npm-dep-paths CLI', { skip: !enabl
   assert.equal(await main([root, '--format', 'json'], json.io, deps), 0, json.stderr)
   const report = JSON.parse(json.stdout)
   assert.equal(report.schemaVersion, 2)
+  assert.equal(Object.hasOwn(report.rows[0], 'paths'), false)
   assert.deepEqual(report.rows[0].requirements.map(group => group.declaredRequirement), ['5.0.9'])
+  assert.deepEqual(report.rows[0].requirements[0].directDependents.map(dependent => [dependent.name, dependent.version, dependent.type]), [
+    ['fixture', '1.0.0', 'dependencies'],
+  ])
 })
