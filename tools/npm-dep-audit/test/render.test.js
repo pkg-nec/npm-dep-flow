@@ -5,20 +5,32 @@ import { renderMarkdown, renderJson } from '../src/render.js'
 const rows = [{
   package: 'dep', version: '1.1.1', severity: 'high',
   advisories: [
-    { id: 123, title: 'First issue', url: 'https://example.test/123', severity: 'high', range: '<2' },
+    { id: 123, title: 'First issue', url: 'https://github.com/advisories/GHSA-6qxp-vccf-f47h', severity: 'high', range: '<2' },
     { id: 124, title: 'Second issue', url: 'https://example.test/124', severity: 'low', range: '<1.2' },
   ],
   paths: ['node_modules/a/node_modules/dep', 'node_modules/dep'],
 }]
 
-test('renders one Markdown row per version with linked advisories and paths', () => {
+test('links only advisory codes and keeps titles as plain text', () => {
   const markdown = renderMarkdown(rows)
   assert.match(markdown, /\| Package \| Version \| Highest severity \| Advisories \| Installed paths \|/)
-  assert.match(markdown, /\| dep \| 1\.1\.1 \| high \| \[First issue\]\(https:\/\/example\.test\/123\)/)
-  assert.match(markdown, /\[Second issue\]\(https:\/\/example\.test\/124\)/)
+  assert.match(markdown, /\(\[GHSA-6qxp-vccf-f47h\]\(https:\/\/github\.com\/advisories\/GHSA-6qxp-vccf-f47h\)\) First issue/)
+  assert.match(markdown, /\(\[124\]\(https:\/\/example\.test\/124\)\) Second issue/)
   assert.match(markdown, /node_modules\/a\/node_modules\/dep<br>node_modules\/dep/)
   assert.equal(markdown.split('\n').filter(line => line.startsWith('| dep ')).length, 1)
   assert.ok(markdown.endsWith('\n') && !markdown.endsWith('\n\n'))
+})
+
+test('uses npm audit severity colors in Markdown', () => {
+  for (const [severity, expected] of [
+    ['moderate', '<strong style="color: yellow">moderate</strong>'],
+    ['high', '<strong style="color: red">high</strong>'],
+    ['critical', '<strong style="color: magenta">critical</strong>'],
+    ['low', '<strong>low</strong>'],
+    ['info', '<strong>info</strong>'],
+  ]) {
+    assert.ok(renderMarkdown([{ ...rows[0], severity }]).includes(`| ${expected} |`))
+  }
 })
 
 test('escapes Markdown table metacharacters from audit and lockfile data', () => {
