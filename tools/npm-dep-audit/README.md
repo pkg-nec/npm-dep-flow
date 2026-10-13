@@ -15,6 +15,8 @@ node bin/npm-dep-audit.js /path/to/project --no-cache
 
 The project path defaults to the current directory. Markdown is the default format. `--min-severity` accepts `info`, `low`, `moderate`, `high`, or `critical`; a row is kept when its highest advisory severity meets the threshold, and all direct advisories for that version remain in the row. The JSON format has `schemaVersion: 1`, `auditedAt`, and `rows`. Each row contains `package`, `version`, `severity`, `advisories`, and `paths`.
 
+In Markdown, each advisory appears as `(code) title`, with only the code linked. The code is the GHSA identifier from its URL when available, or the advisory ID otherwise. Highest severity uses npm audit's colors in Markdown viewers that support inline HTML styles: moderate is yellow, high is red, and critical is magenta. Low and info are bold without a color.
+
 The cache defaults to one hour and lives under `XDG_CACHE_HOME/npm-dep-audit` or `~/.cache/npm-dep-audit`. It is keyed by the project and hashes of both manifest files, npm version, and audit registry. `--cache-ttl` takes a positive number followed by `s`, `m`, `h`, or `d`. `--no-cache` bypasses reads and writes.
 
 A completed report exits 0 even if vulnerabilities are found. Errors exit 1 and write to stderr; stdout contains no partial report. This version supports lockfile versions 2 and 3. It rejects npm workspaces, local `file:` or linked packages, shrinkwrap files, and other package managers.
