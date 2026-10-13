@@ -60,6 +60,14 @@ function displayValue(value) {
   return value === null || value === undefined || value === '' ? '—' : escapeMarkdown(value)
 }
 
+function displayReleasedAt(value) {
+  if (value === null || value === undefined || value === '') return '—'
+
+  const timestamp = new Date(value)
+  if (Number.isNaN(timestamp.getTime())) return displayValue(value)
+  return timestamp.toISOString().replace('T', ' ').replace(/Z$/, ' UTC')
+}
+
 function displayLocation(location) {
   return location === '' ? '(project root)' : location
 }
@@ -92,7 +100,7 @@ export function renderMarkdown(rows) {
   ]
 
   for (const row of orderedRows) {
-    output.push(`| ${escapeMarkdown(row.package)} | ${escapeMarkdown(row.version)} | ${renderSeverity(row.severity)} | ${displayValue(row.minimumSafeVersion)} | ${displayValue(row.minimumSafeVersionReleasedAt)} | ${escapeMarkdown(displayLocation(row.targetLocation))} | ${escapeMarkdown(row.status)} | ${renderStrategy(row.strategy)} |`)
+    output.push(`| ${escapeMarkdown(row.package)} | ${escapeMarkdown(row.version)} | ${renderSeverity(row.severity)} | ${displayValue(row.minimumSafeVersion)} | ${displayReleasedAt(row.minimumSafeVersionReleasedAt)} | ${escapeMarkdown(displayLocation(row.targetLocation))} | ${escapeMarkdown(row.status)} | ${renderStrategy(row.strategy)} |`)
   }
 
   return `${output.join('\n')}\n`
