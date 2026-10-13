@@ -1,4 +1,6 @@
-const fields = ['dependencies', 'devDependencies', 'optionalDependencies', 'peerDependencies']
+import semver from 'semver'
+
+const fields = ['peerDependencies', 'dependencies', 'optionalDependencies', 'devDependencies']
 
 function parentLocation(location) {
   const marker = 'node_modules/'
@@ -11,11 +13,12 @@ function installedName(location, entry) {
   return location.slice(location.lastIndexOf('node_modules/') + 'node_modules/'.length)
 }
 
-function declarations(pkg) {
+function declarations(pkg, root) {
   const byName = new Map()
   for (const type of fields) {
+    if (type === 'devDependencies' && !root) continue
     for (const [name, spec] of Object.entries(pkg[type] || {})) {
-      if (!byName.has(name) || type === 'optionalDependencies') byName.set(name, { name, type, spec })
+      byName.set(name, { name, type, spec })
     }
   }
   return [...byName.values()].sort((a, b) => a.name.localeCompare(b.name, 'en') || a.type.localeCompare(b.type, 'en'))
@@ -40,7 +43,7 @@ export function buildGraph(project) {
     const location = queue[i]
     const node = graph.get(location)
     const entry = location ? packages[location] : project.manifest
-    for (const { name, type, spec } of declarations(entry)) {
+    for (const { name, type, spec } of declarations(entry, location === '')) {
       const optional = type === 'optionalDependencies' ||
         (type === 'peerDependencies' && entry.peerDependenciesMeta?.[name]?.optional === true)
       const toLocation = lookup(packages, location, name, type === 'peerDependencies')
@@ -49,8 +52,8 @@ export function buildGraph(project) {
         throw new Error(`Unresolved ${type} ${name} declared by ${node.name}@${node.version} (${location || 'root'})`)
       }
       const target = packages[toLocation]
-      if (!target || typeof target.version !== 'string' || !target.version) {
-        throw new Error(`Missing version for ${name} at ${toLocation}, declared by ${node.name}@${node.version}`)
+      if (!target || typeof target.version !== 'string' || semver.valid(target.version) === null) {
+        throw new Error(`Invalid or missing version for ${name} at ${toLocation}, declared by ${node.name}@${node.version}`)
       }
       node.edges.push({ name, type, spec, toLocation })
       if (!graph.has(toLocation)) {

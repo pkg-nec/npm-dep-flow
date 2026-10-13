@@ -65,6 +65,15 @@ test('returns an empty list for an absent name and fails an absent exact version
   assert.throws(() => collectResults(graph, parseSelector('missing@1.0.0')), /version not found/i)
 })
 
+test('selects an exact installed version that contains build metadata', () => {
+  const graph = new Map([
+    ['', node('app', '1.0.0', '', [edge('dep', 'node_modules/dep')])],
+    ['node_modules/dep', node('dep', '1.2.3+build.1', 'node_modules/dep')],
+  ])
+  assert.deepEqual(parseSelector('dep@1.2.3+build.1'), { kind: 'exact', name: 'dep', version: '1.2.3+build.1' })
+  assert.equal(collectResults(graph, parseSelector('dep@1.2.3+build.1'))[0].version, '1.2.3+build.1')
+})
+
 test('returns every route when more than a thousand parents share one target', () => {
   const count = 1025
   const rootEdges = []
@@ -78,4 +87,27 @@ test('returns every route when more than a thousand parents share one target', (
   const result = collectResults(graph, parseSelector('target@1.0.0'))[0]
   assert.equal(result.routeCount, count)
   assert.equal(result.routes.at(-1)[1].name, 'parent-1024')
+})
+
+test('skips combinatorial branches that cannot reach the selected package', () => {
+  let edgeReads = 0
+  const graph = new Map([
+    ['', node('app', '1.0.0', '', [edge('target', 'target'), edge('left', '0-left'), edge('right', '0-right')])],
+    ['target', node('target', '1.0.0', 'target')],
+  ])
+  for (let level = 0; level < 16; level++) {
+    for (const side of ['left', 'right']) {
+      const location = `${level}-${side}`
+      const next = level === 15 ? [] : [edge('left', `${level + 1}-left`), edge('right', `${level + 1}-right`)]
+      const entry = node(location, '1.0.0', location)
+      Object.defineProperty(entry, 'edges', { get() {
+        if (++edgeReads > 5000) throw new Error('unrelated branches were enumerated')
+        return next
+      } })
+      graph.set(location, entry)
+    }
+  }
+  const results = collectResults(graph, parseSelector('target@1.0.0'))
+  assert.equal(results[0].routeCount, 1)
+  assert.ok(edgeReads < 5000)
 })

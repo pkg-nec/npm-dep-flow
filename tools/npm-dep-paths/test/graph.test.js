@@ -68,3 +68,18 @@ test('uses v2 package locations for resolution', () => {
   input.lock.lockfileVersion = 2
   assert.equal(buildGraph(input).get('node_modules/parent').edges[0].toLocation, 'node_modules/child')
 })
+
+test('uses npm root declaration precedence and ignores transitive dev dependencies', () => {
+  const graph = buildGraph(project({ dep: '^1', parent: '1' }, {
+    'node_modules/dep': { version: '2.0.0' },
+    'node_modules/parent': { version: '1.0.0', devDependencies: { missing: '^1' } },
+  }, { devDependencies: { dep: '^2' } }))
+  assert.deepEqual(graph.get('').edges.find(e => e.name === 'dep'), { name: 'dep', type: 'devDependencies', spec: '^2', toLocation: 'node_modules/dep' })
+  assert.deepEqual(graph.get('node_modules/parent').edges, [])
+})
+
+test('rejects a reachable malformed installed version before any query', () => {
+  assert.throws(() => buildGraph(project({ bad: '^1' }, {
+    'node_modules/bad': { version: 'garbage' },
+  })), /bad.*version|version.*bad/)
+})

@@ -61,8 +61,12 @@ export async function loadProject(path) {
     throw new Error('Stale package-lock.json root name or version mismatch')
   }
   for (const field of fields) {
-    const wanted = manifest[field] || {}
-    const locked = rootEntry[field] || {}
+    const wanted = { ...(manifest[field] || {}) }
+    const locked = { ...(rootEntry[field] || {}) }
+    if (field === 'dependencies') {
+      for (const name of Object.keys(manifest.optionalDependencies || {})) delete wanted[name]
+      for (const name of Object.keys(rootEntry.optionalDependencies || {})) delete locked[name]
+    }
     if (JSON.stringify(Object.entries(wanted).sort()) !== JSON.stringify(Object.entries(locked).sort())) {
       throw new Error(`Stale package-lock.json root ${field} mismatch`)
     }

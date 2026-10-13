@@ -80,3 +80,12 @@ test('rejects linked and local lockfile entries', async t => {
   await writeFile(join(dir, 'package-lock.json'), JSON.stringify(lock))
   await assert.rejects(loadProject(dir), /local/)
 })
+
+test('accepts npm root metadata that removes optional duplicates from dependencies', async t => {
+  const manifest = { name: 'app', version: '1.0.0', dependencies: { maybe: '^1' }, optionalDependencies: { maybe: '^1' } }
+  const lock = { lockfileVersion: 3, packages: {
+    '': { name: 'app', version: '1.0.0', optionalDependencies: { maybe: '^1' } },
+  } }
+  const dir = await fixture(t, manifest, lock)
+  assert.equal((await loadProject(dir)).manifest.optionalDependencies.maybe, '^1')
+})

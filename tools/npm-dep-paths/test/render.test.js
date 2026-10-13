@@ -62,3 +62,14 @@ test('keeps text control characters on one line while JSON preserves their value
   assert.match(text, /\^5\\n<next>\|\\x1b\[31m/)
   assert.equal(JSON.parse(renderJson(project, { kind: 'exact', name: 'dep', version: '5.0.9' }, [odd])).result.routes[0][2].incoming.spec, '^5\n<next>|\u001b[31m')
 })
+
+test('renders a deep logical route without a call-stack limit', () => {
+  const deep = [root]
+  for (let i = 0; i < 6000; i++) {
+    const name = `step-${i}`
+    deep.push({ name, version: '1.0.0', location: `node_modules/${name}`,
+      incoming: { name, type: 'dependencies', spec: '1.0.0' } })
+  }
+  const text = renderText(project, [{ package: 'step-5999', version: '1.0.0', routeCount: 1, routes: [deep] }])
+  assert.match(text, /step-5999@1\.0\.0 \[dependency: 1\.0\.0\]/)
+})

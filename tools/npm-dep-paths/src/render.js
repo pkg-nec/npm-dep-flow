@@ -36,18 +36,21 @@ function treeFor(result) {
     }
   }
   const lines = []
-  function walk(children, prefix) {
+  const stack = []
+  function pushChildren(children, prefix) {
     const entries = [...children.values()]
-    for (let i = 0; i < entries.length; i++) {
-      const entry = entries[i]
-      const last = i === entries.length - 1
-      const branch = last ? '└' : '├'
-      const join = entry.children.size ? '─┬' : '──'
-      lines.push(`${prefix}${branch}${join} ${displayNode(entry.step, entry.parentLocation)}`)
-      walk(entry.children, `${prefix}${last ? '  ' : '│ '}`)
+    for (let i = entries.length - 1; i >= 0; i--) {
+      stack.push({ entry: entries[i], prefix, last: i === entries.length - 1 })
     }
   }
-  walk(roots, '')
+  pushChildren(roots, '')
+  while (stack.length) {
+    const { entry, prefix, last } = stack.pop()
+    const branch = last ? '└' : '├'
+    const join = entry.children.size ? '─┬' : '──'
+    lines.push(`${prefix}${branch}${join} ${displayNode(entry.step, entry.parentLocation)}`)
+    pushChildren(entry.children, `${prefix}${last ? '  ' : '│ '}`)
+  }
   return lines
 }
 
