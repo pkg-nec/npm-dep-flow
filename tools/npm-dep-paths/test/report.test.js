@@ -76,9 +76,33 @@ test('focused text shows every connecting edge and refers to a repeated node', (
   assert.match(text, /a@1\.0\.0 \[devDependencies: 1\.0\.0\]/)
   assert.match(text, /b@1\.0\.0 \[dependencies: \^1\]/)
   assert.match(text, /mini@1\.0\.0 \[dependencies: \^1\].*ref/)
+  assert.match(text, /mini@1\.0\.0 \[dependencies: 1\.0\.0\] \[location: mini-a\]/)
+  assert.match(text, /mini@1\.0\.0 \[dependencies: \^1\] ↪ ref mini-a/)
   assert.match(text, /brace-expansion@5\.0\.9 \[dependencies: \^5\.0\.5\]/)
   const cyclic = { ...upstream, edges: [...upstream.edges, { from: 'mini-a', to: 'a', requestedName: 'a', type: 'peerDependencies', spec: '^1' }] }
   assert.match(renderUpstreamText(project, result, cyclic, { name: 'a', version: '1.0.0' }), /peerDependencies: \^1.*ref/)
+})
+
+test('upstream overview includes a parent link when selected and target locations overlap', () => {
+  const chain = {
+    selectedDependent: 'dep@1.0.0', rootLocation: '', selectedLocations: ['a', 'b'],
+    targetLocations: ['b', 'c'], topLevelLocations: ['a'],
+    nodes: [
+      { location: '', name: 'demo', version: '1.0.0' },
+      { location: 'a', name: 'dep', version: '1.0.0' },
+      { location: 'b', name: 'dep', version: '1.0.0' },
+      { location: 'c', name: 'dep', version: '1.0.0' },
+    ],
+    edges: [
+      { from: '', to: 'a', requestedName: 'dep', type: 'dependencies', spec: '^1' },
+      { from: 'a', to: 'b', requestedName: 'dep', type: 'dependencies', spec: '^1' },
+      { from: 'b', to: 'c', requestedName: 'dep', type: 'dependencies', spec: '^1' },
+    ],
+  }
+  const text = renderUpstreamText(project, { package: 'dep', version: '1.0.0' }, chain)
+  assert.match(text, /Immediate parents \(2\):/)
+  assert.match(text, /demo@1\.0\.0 requires dep: \^1/)
+  assert.match(text, /dep@1\.0\.0 requires dep: \^1/)
 })
 
 test('preserves unusual specs in JSON and escapes text controls without losing alias identity', () => {

@@ -60,7 +60,7 @@ function overviewText(result, upstream) {
   const selected = new Set(upstream.selectedLocations)
   const targets = new Set(upstream.targetLocations)
   const finalEdges = upstream.edges.filter(edge => selected.has(edge.from) && targets.has(edge.to))
-  const parentEdges = upstream.edges.filter(edge => selected.has(edge.to) && !targets.has(edge.to))
+  const parentEdges = upstream.edges.filter(edge => selected.has(edge.to))
   const topLevel = new Set(upstream.topLevelLocations)
   const rootEdges = upstream.edges.filter(edge => edge.from === upstream.rootLocation && topLevel.has(edge.to))
   const lines = [
@@ -104,8 +104,9 @@ function focusedText(upstream) {
     const node = byLocation.get(edge.to)
     const repeated = seen.has(edge.to)
     const alias = edge.requestedName === node.name ? '' : `; requested as ${safe(edge.requestedName)}`
+    const locationTag = repeated ? '' : ` [location: ${safe(edge.to)}]`
     const reference = repeated ? ` ↪ ref ${safe(edge.to)}` : ''
-    lines.push(`${prefix}${last ? '└' : '├'}─ ${nodeLabel(node)} [${safe(edge.type)}: ${safe(edge.spec)}${alias}]${reference}`)
+    lines.push(`${prefix}${last ? '└' : '├'}─ ${nodeLabel(node)} [${safe(edge.type)}: ${safe(edge.spec)}${alias}]${locationTag}${reference}`)
     if (!repeated) {
       seen.add(edge.to)
       pushChildren(edge.to, `${prefix}${last ? '  ' : '│ '}`)
