@@ -26,7 +26,7 @@ function fakeSpawn(responses, calls) {
 test('audits all dependency types with argv spawning and explicit cwd', async () => {
   const calls = []
   const root = '/tmp/project $(touch unexpected) with spaces'
-  const audit = await runNpmAudit(root, fakeSpawn([{ code: 1, stdout: JSON.stringify(valid) }], calls))
+  const audit = await runNpmAudit(root, fakeSpawn([{ code: 1, stdout: JSON.stringify(valid) }], calls), 'linux')
   assert.deepEqual(audit, valid)
   assert.deepEqual(calls[0], {
     command: 'npm',
@@ -71,7 +71,7 @@ test('reads npm version and effective audit registry', async () => {
     { stdout: '12.1.0\n' },
     { stdout: 'undefined\n' },
     { stdout: 'https://registry.example/\n' },
-  ], calls))
+  ], calls), 'linux')
   assert.deepEqual(context, { version: '12.1.0', registry: 'https://registry.example/' })
   assert.deepEqual(calls.map(call => call.args), [['--version'], ['config', 'get', 'audit-registry'], ['config', 'get', 'registry']])
   assert.ok(calls.every(call => call.options.cwd === '/project' && call.options.shell === false))
