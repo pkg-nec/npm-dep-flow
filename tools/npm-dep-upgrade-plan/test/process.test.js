@@ -69,6 +69,22 @@ test('process runner collects both output streams and resolves the exit code', a
   assert.deepEqual(await resultPromise, { code: 7, stdout: 'out-done', stderr: 'err-done' })
 })
 
+test('process runner preserves UTF-8 characters split across output chunks', async () => {
+  const child = new EventEmitter()
+  child.stdout = new PassThrough()
+  child.stderr = new PassThrough()
+  child.kill = () => {}
+  const resultPromise = runProcess('tool', [], '/project', () => child, 'linux')
+
+  child.stdout.write(Buffer.from([0x63, 0x61, 0x66, 0xc3]))
+  child.stdout.end(Buffer.from([0xa9]))
+  child.stderr.write(Buffer.from([0x65, 0x72, 0x72, 0xc3]))
+  child.stderr.end(Buffer.from([0xa9]))
+  child.emit('close', 0)
+
+  assert.deepEqual(await resultPromise, { code: 0, stdout: 'café', stderr: 'erré' })
+})
+
 test('process runner rejects a child startup error', async () => {
   const error = Object.assign(new Error('missing command'), { code: 'ENOENT' })
   await assert.rejects(runProcess('missing', [], '/project', fakeSpawn({ error }, []), 'linux'), error)

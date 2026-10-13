@@ -22,6 +22,9 @@ export function runProcess(commandName, args, cwd, spawnImpl = spawn, platform =
     let stderr = ''
     let settled = false
 
+    child.stdout.setEncoding('utf8')
+    child.stderr.setEncoding('utf8')
+
     const fail = error => {
       if (settled) return
       settled = true
@@ -29,8 +32,8 @@ export function runProcess(commandName, args, cwd, spawnImpl = spawn, platform =
       reject(error)
     }
 
-    child.stdout.on('data', chunk => { stdout += chunk.toString() })
-    child.stderr.on('data', chunk => { stderr += chunk.toString() })
+    child.stdout.on('data', chunk => { stdout += chunk })
+    child.stderr.on('data', chunk => { stderr += chunk })
     child.on('error', fail)
     child.on('close', code => {
       if (settled) return

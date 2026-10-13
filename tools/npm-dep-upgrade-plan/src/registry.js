@@ -36,7 +36,9 @@ export async function fetchStableVersions(projectRoot, packageName, spawnImpl = 
   }
 
   if (result.code !== 0) {
-    throw new Error(`npm view failed with exit code ${result.code}`)
+    throw new Error(
+      `npm view failed for ${packageName} with exit code ${result.code}; check the package name and npm registry access`,
+    )
   }
 
   let response

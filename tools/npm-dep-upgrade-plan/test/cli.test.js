@@ -303,6 +303,6 @@ test('executable emits no partial stdout when the second registry query fails', 
 
   assert.equal(result.status, 1, JSON.stringify(result, null, 2))
   assert.equal(result.stdout, '')
-  assert.match(result.stderr, /npm-dep-upgrade-plan: npm view failed with exit code 1/)
+  assert.match(result.stderr, /npm-dep-upgrade-plan: npm view failed for left-pad with exit code 1/)
   assert.deepEqual(readFileSync(fixture.callLog, 'utf8').trim().split('\n'), ['brace-expansion', 'left-pad'])
 })

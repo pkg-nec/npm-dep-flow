@@ -104,7 +104,10 @@ for (const stdout of ['{}', '1', 'null', '["1.0.0", 2]']) {
 test('registry adapter rejects nonzero npm exits without echoing stderr', async () => {
   await assert.rejects(
     fetchStableVersions('/project', 'brace-expansion', fakeSpawn({ code: 1, stderr: 'secret-token' }, []), 'linux'),
-    error => /npm view failed with exit code 1/.test(error.message) && !error.message.includes('secret-token'),
+    error => /npm view failed for brace-expansion with exit code 1/.test(error.message) &&
+      /package name/.test(error.message) &&
+      /registry access/.test(error.message) &&
+      !error.message.includes('secret-token'),
   )
 })
 

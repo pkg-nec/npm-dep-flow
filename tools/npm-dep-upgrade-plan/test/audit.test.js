@@ -117,7 +117,10 @@ test('audit adapter rejects invalid JSON without echoing its content', async () 
 test('audit adapter rejects a nonzero command result without echoing stderr', async () => {
   await assert.rejects(
     runNpmDepAudit('/project', fakeSpawn({ code: 1, stderr: 'secret-token' }, []), 'linux'),
-    error => /exit code 1/.test(error.message) && !error.message.includes('secret-token'),
+    error => /exit code 1/.test(error.message) &&
+      /supported npm project/.test(error.message) &&
+      /npm-dep-paths/.test(error.message) &&
+      !error.message.includes('secret-token'),
   )
 })
 
