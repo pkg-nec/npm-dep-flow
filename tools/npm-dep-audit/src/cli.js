@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs'
+import { dirname, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { loadProject } from './project.js'
 import { readNpmContext } from './npm-audit.js'
 import { getAudit } from './cache.js'
@@ -9,8 +12,13 @@ import { renderMarkdown, renderJson } from './render.js'
 const defaults = { loadProject, readNpmContext, getAudit, runNpmDepPaths }
 const severities = new Set(['info', 'low', 'moderate', 'high', 'critical'])
 const multipliers = { s: 1000, m: 60000, h: 3600000, d: 86400000 }
+const packageDir = resolve(dirname(fileURLToPath(import.meta.url)), '..')
+const packageJson = JSON.parse(readFileSync(resolve(packageDir, 'package.json'), 'utf8'))
+const versionOutput = `${packageJson.name} v${packageJson.version}\nLocation: ${packageDir}\n`
 
-const help = `Usage: npm-dep-audit [project] [options]
+const help = `${packageJson.name} v${packageJson.version}
+
+Usage: npm-dep-audit [project] [options]
 
 Options:
   --format markdown|json           Output format (default: markdown)
@@ -18,6 +26,7 @@ Options:
                                    Minimum row severity (default: info)
   --cache-ttl <duration>           Cache lifetime, e.g. 30m or 1h (default: 1h)
   --no-cache                       Run a fresh audit without cache access
+  --version                        Show version and tool directory
   --help                           Show this help
 `
 
@@ -56,6 +65,10 @@ function parse(argv) {
 export async function main(argv, io = process, deps = defaults) {
   if (argv.includes('--help')) {
     io.stdout.write(help)
+    return 0
+  }
+  if (argv.includes('--version')) {
+    io.stdout.write(versionOutput)
     return 0
   }
   try {

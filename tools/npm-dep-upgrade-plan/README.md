@@ -38,9 +38,10 @@ npm-dep-upgrade-plan /path/to/project
 npm-dep-upgrade-plan /path/to/project --format json
 npm-dep-upgrade-plan --format json
 npm-dep-upgrade-plan --help
+npm-dep-upgrade-plan --version
 ```
 
-The project path defaults to the current directory. Markdown is the default format. The planner requests all audit severities from `npm-dep-audit`, ordered critical, high, moderate, low, then info. `moderate` is npm's name for the severity commonly called medium.
+The project path defaults to the current directory. Markdown is the default format. `--version` prints the tool version and the absolute directory containing its installed code; `--help` also shows the version. The planner requests all audit severities from `npm-dep-audit`, ordered critical, high, moderate, low, then info. `moderate` is npm's name for the severity commonly called medium.
 
 ## How eligibility is reported
 
