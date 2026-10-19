@@ -7,7 +7,7 @@ import test from 'node:test'
 import { main } from '../src/cli.js'
 import { renderJson, renderMarkdown } from '../src/report.js'
 
-const scratchRoot = fileURLToPath(new URL('../../../tmp/npm-dep-upgrade-plan-cli/', import.meta.url))
+const scratchRoot = process.env.NPM_DEP_FLOW_TEST_TMPDIR || fileURLToPath(new URL('../../../tmp/npm-dep-upgrade-plan-cli/', import.meta.url))
 const binPath = fileURLToPath(new URL('../bin/npm-dep-upgrade-plan.js', import.meta.url))
 
 function dependent(name, version, location, targetLocation) {
@@ -309,4 +309,13 @@ test('executable emits no partial stdout when the second registry query fails', 
   assert.equal(result.stdout, '')
   assert.match(result.stderr, /npm-dep-upgrade-plan: npm view failed for left-pad with exit code 1/)
   assert.deepEqual(readFileSync(fixture.callLog, 'utf8').trim().split('\n'), ['brace-expansion', 'left-pad'])
+})
+
+test('failed audit diagnostics reach stderr without a partial report', async () => {
+  const io = createIo()
+  const deps = injectedDeps(braceReport())
+  deps.runNpmDepAudit = async () => { throw new Error('npm-dep-audit failed with exit code 1: Unsupported npm workspaces') }
+  assert.equal(await main([], io.io, deps), 1)
+  assert.equal(io.stdout, '')
+  assert.match(io.stderr, /npm-dep-upgrade-plan: npm-dep-audit failed with exit code 1: Unsupported npm workspaces/)
 })
