@@ -64,9 +64,13 @@ Markdown is the default report. It shows one row per target location, the vulner
 
 JSON is a versioned consumer contract with `schemaVersion: 2`, the source `auditedAt`, and `rows`. Each row contains `package`, `version`, `targetLocation`, `severity`, `minimumSafeVersion`, `minimumSafeVersionReleasedAt`, `status`, and `strategy`. It does not repeat the audit's advisories or requirements. The row identity is the composite `(package, version, targetLocation)`; more than one row may share a package and version.
 
+Human-readable reports begin with one `# npm-dep-upgrade-plan` heading. Empty output retains the heading and the tool-specific no-matches message without an empty table. User-controlled values in Markdown cells and headings escape backslashes, pipes, brackets, emphasis and code markers, and HTML characters. LF, CR, and tab display as visible escapes; other C0 controls and DEL display as `\xNN`. Preserve Unicode and original JSON values.
+
 ## Errors and exit behavior
 
-A completed report exits 0, including when no target location is eligible. Invalid arguments, a missing or failed `npm-dep-audit` command, malformed or unsupported audit JSON, a failed registry query, or malformed registry output exits nonzero, writes a specific error to stderr, and emits no partial report to stdout. Unsupported dependency requirement syntax is a reported strategy outcome, not a CLI error.
+A completed report exits 0, including when no target location is eligible. Invalid arguments, a missing or failed `npm-dep-audit` command, malformed or unsupported audit JSON, a failed registry query, or malformed registry output exits 1, writes a specific error to stderr, and emits no partial report to stdout. Unsupported dependency requirement syntax is a reported strategy outcome, not a CLI error.
+
+A failed audit subprocess reports its command name, exit code, and trimmed stderr when available; otherwise it retains supported-project and PATH guidance. It does not dump child stdout into diagnostics.
 
 Subprocess invocation must remain portable: invoke commands with argument arrays on Unix-like platforms and use the established Windows `npm.cmd` shell behavior. Do not expose npm credentials or registry configuration in output or errors.
 
@@ -99,4 +103,4 @@ The tool's `node:test` suite should cover:
 - One registry query per distinct package name, schema validation, malformed registry data, missing commands, nonzero subprocess exits, Windows command launching, and no partial stdout on errors.
 - Empty audit results and successful reports with no eligible strategy.
 
-Do not change `tools/npm-dep-audit/` as part of this implementation. Update the root tool index and add a dedicated README for the new CLI. The future mutator remains a separate project and is not part of this spec or its implementation plan.
+The planner remains independent from the audit implementation. Keep the root tool index and dedicated CLI guide current. The future mutator remains a separate project and is not part of this spec or its implementation plan.

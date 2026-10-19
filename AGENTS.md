@@ -5,7 +5,7 @@
 - This repository contains small command-line tools for maintaining Node.js project dependencies. The root contains shared documentation; it is not an npm package or workspace.
 - Each `tools/<name>/` directory is an independent Node.js project with its own manifest, lockfile, executable, source, tests, and README. Keep tool dependencies and npm commands within the relevant tool directory.
 - Tools should exchange data through documented command-line output, including versioned JSON, rather than importing another tool's private source files.
-- Start with the [repository README](README.md) for the tool index. The current tool is [npm-dep-audit](tools/npm-dep-audit/README.md); its detailed design is in [the audit spec](docs/superpowers/specs/2026-10-09-npm-dep-audit-design.md).
+- Start with the [repository README](README.md) for all three tool guides and design documents.
 
 ## Versioning
 
@@ -25,10 +25,30 @@
 - Keep unrelated changes in separate commits.
 - Never request a review while the working tree has uncommitted changes. Commit the changes on a local branch or worktree before requesting review.
 
+## Shared development and output contracts
+
+- Use Node.js 20 or newer. From the relevant `tools/<name>/` directory, run `npm ci --ignore-scripts` and `npm test`. There is no root-level `npm test`.
+- Preserve each tool's documented CLI and schema version 2 JSON interface. Human-readable reports use Markdown with one tool-name H1; an empty report has a message without a table. Paths retains `--format text` as an alias for `markdown`.
+- Completed reports exit 0 even when findings exist or all strategies are ineligible. Errors exit 1 with stderr diagnostics and no partial report on stdout.
+- Tools must not install dependencies, run lifecycle scripts, or modify target project files. Audit's cache lives outside the target project.
+- Keep npm and sibling-command subprocess launching portable: Windows uses `.cmd` through a shell; Unix-like systems spawn commands directly. Test both paths when changing subprocess behavior.
+
 ## Working on npm-dep-audit
 
-- Use Node.js 20 or newer. From `tools/npm-dep-audit/`, run `npm ci --ignore-scripts` to install the tool's dependencies and `npm test` to run its `node:test` suite. There is no root-level `npm test`.
-- The executable is `bin/npm-dep-audit.js`. `src/cli.js` coordinates project loading, npm context, caching, row construction, and rendering; focused tests live in `test/`.
-- The tool reads a target project's `package.json` and `package-lock.json` and runs `npm audit --json` from that project's directory. It must not install dependencies, run lifecycle scripts, or modify files in the target project. Its cache lives outside the target project.
-- Preserve the documented CLI and output contracts in the [tool README](tools/npm-dep-audit/README.md): Markdown and versioned JSON reports, exit 0 for a completed report even when vulnerabilities are found, and exit 1 for errors without a partial report on stdout.
-- Keep npm subprocess launching portable: Windows uses `npm.cmd` through a shell; Unix-like systems spawn `npm` directly. Test both paths when changing subprocess behavior.
+- Entry point: `bin/npm-dep-audit.js`. `src/cli.js` coordinates project loading, npm context, caching, row construction, and rendering; tests live in `test/`.
+- Reads the target manifest and lockfile, invokes `npm audit --json`, and uses the separately installed `npm-dep-paths` CLI on `PATH` for dependency requirements. Preserve cache validation and no-cache behavior.
+- Set `NPM_DEP_PATHS_INTEGRATION=1` to test the real paths CLI boundary. See the [audit guide](tools/npm-dep-audit/README.md).
+
+## Working on npm-dep-paths
+
+- Entry point: `bin/npm-dep-paths.js`. `src/cli.js` coordinates selector validation, lockfile graph construction, summaries, upstream selection, and rendering.
+- Needs no npm subprocess, registry, sibling CLI, or target `node_modules` at runtime. Preserve graph completeness, alias identity, installation counts, and the unfiltered summary when upstream filters are used.
+- `npm test` includes the real executable checks with no integration switch. See the [paths guide](tools/npm-dep-paths/README.md).
+
+## Working on npm-dep-upgrade-plan
+
+- Entry point: `bin/npm-dep-upgrade-plan.js`. `src/cli.js` coordinates the audit adapter, registry lookups, strategy evaluation, and rendering.
+- Uses the separately installed audit CLI (which uses paths) and npm registry queries. Preserve per-target-location eligibility and ordered strategy selection.
+- Set `NPM_DEP_AUDIT_INTEGRATION=1` to test the real audit CLI boundary with fixture npm/paths responses. See the [planner guide](tools/npm-dep-upgrade-plan/README.md).
+
+For test scratch directories, `NPM_DEP_FLOW_TEST_TMPDIR` overrides checkout-local audit/planner integration and planner executable scratch roots; `NPM_DEP_PATHS_TEST_TMPDIR` overrides paths fixture roots. Other temporary fixtures follow the operating system temporary directory (`TMPDIR` on Unix-like systems).

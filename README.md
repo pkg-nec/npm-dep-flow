@@ -23,3 +23,5 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the contribution guide, including the
 ## Design documents
 
 - [Audit CLI design](docs/superpowers/specs/2026-10-09-npm-dep-audit-design.md)
+- [Paths CLI design](docs/superpowers/specs/2026-10-13-npm-dep-paths-design.md)
+- [Upgrade planner CLI design](docs/superpowers/specs/2026-10-13-npm-dep-upgrade-plan-design.md)
