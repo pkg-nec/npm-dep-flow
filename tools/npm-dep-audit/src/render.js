@@ -47,14 +47,16 @@ function requirementsCell(row) {
 }
 
 export function renderMarkdown(rows) {
+  if (rows.length === 0) return '# npm-dep-audit\n\nNo matching direct advisories.\n'
   const output = [
+    '# npm-dep-audit',
+    '',
     '| Package | Version | Highest severity | Advisories | Declared requirements |',
     '| --- | --- | --- | --- | --- |',
   ]
   for (const row of rows) {
     output.push(`| ${cell(row.package)} | ${cell(row.version)} | ${severity(row.severity)} | ${row.advisories.map(link).join('<br>')} | ${requirementsCell(row)} |`)
   }
-  if (rows.length === 0) output.push('', 'No matching direct advisories.')
   return `${output.join('\n')}\n`
 }
 

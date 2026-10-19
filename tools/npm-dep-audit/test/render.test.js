@@ -79,3 +79,8 @@ test('renders stable schema version 2 JSON without the internal paths field', ()
   assert.equal(Object.hasOwn(result.rows[0], 'paths'), false)
   assert.ok(renderJson(rows, '2026-10-09T00:00:00.000Z').endsWith('\n'))
 })
+
+ test('uses a single report title and omits empty tables', () => {
+  assert.ok(renderMarkdown(rows).startsWith('# npm-dep-audit\n\n'))
+  assert.equal(renderMarkdown([]), '# npm-dep-audit\n\nNo matching direct advisories.\n')
+})

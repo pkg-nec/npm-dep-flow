@@ -39,7 +39,7 @@ test('puts each declared requirement before its direct dependents and identifies
   assert.match(text, /^\| 5\.0\.9 \| nx@1\.0\.0 \\\[dependencies\\\] \|$/m)
   assert.match(text, /^\| \^5\.0\.5 \| mini@1\.0\.0 \\\[dependencies\\\] \(2 installations\) \|$/m)
   assert.equal(text.endsWith('\n'), true)
-  assert.equal(renderSummaryText(project, []), 'No matching installed packages.\n')
+  assert.equal(renderSummaryText(project, []), '# npm-dep-paths\n\nNo matching installed packages.\n')
 })
 
 test('normal JSON has two-key requirement groups and no graph or routes', () => {
@@ -114,5 +114,12 @@ test('preserves unusual specs in JSON and escapes text controls without losing a
   const text = renderSummaryText(project, [odd])
   assert.match(text, /npm:real@\^5\\\\n🌱/)
   assert.match(text, /requested as alias/)
-  assert.equal(text.split('\n').length, 6)
+  assert.equal(text.split('\n').length, 8)
+})
+
+test('uses one report title and second-level headings for multiple versions', () => {
+  const text = renderSummaryText(project, [result, { ...result, version: '6.0.0' }])
+  assert.ok(text.startsWith('# npm-dep-paths\n\n'))
+  assert.equal(text.match(/^# /gm).length, 1)
+  assert.deepEqual(text.match(/^## .*$/gm), ['## brace-expansion@5.0.9', '## brace-expansion@6.0.0'])
 })
