@@ -16,6 +16,10 @@ Each tool is an independent Node.js project under `tools/`, with its own package
 
 `npm-dep-upgrade-plan` consumes the public JSON output from `npm-dep-audit` and checks stable versions from the configured npm registry. Its versioned report has one row per vulnerable package version and target installation location, and it does not change the target project. Install `npm-dep-paths`, `npm-dep-audit`, and `npm-dep-upgrade-plan` as standalone commands and keep them on `PATH` when using the planner.
 
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the contribution guide, including the required Conventional Commit format for commit messages and pull request titles.
+
 ## Design documents
 
 - [Audit CLI design](docs/superpowers/specs/2026-10-09-npm-dep-audit-design.md)
