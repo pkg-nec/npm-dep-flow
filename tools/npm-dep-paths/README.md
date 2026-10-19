@@ -19,6 +19,8 @@ Keep npm's global executable directory on `PATH` so audit can invoke this indepe
 ## Usage
 
 ```sh
+npm-dep-paths brace-expansion
+npm-dep-paths --format json brace-expansion@5.0.9
 npm-dep-paths /path/to/project brace-expansion
 npm-dep-paths /path/to/project brace-expansion@5.0.9
 npm-dep-paths /path/to/project brace-expansion@5.0.9 --format json
@@ -30,7 +32,7 @@ npm-dep-paths --version
 
 For local execution without a global install, from `tools/npm-dep-paths/`, use `node bin/npm-dep-paths.js /path/to/project brace-expansion` with the same options.
 
-Both the project directory and selector are required. `--format markdown|json` defaults to `markdown`; `text` is retained as a compatibility alias for the same Markdown output. `--version` prints the version and absolute installed tool directory; `--help` also shows the version.
+Usage: `npm-dep-paths [project] <package-selector> [options]`. The project directory defaults to `.` (the caller’s current directory); the package selector is required. With one positional argument, it is the selector; with two, they are the project directory followed by the selector. Options may appear before or after positional arguments. `--format markdown|json` defaults to `markdown`; `text` is retained as a compatibility alias for the same Markdown output. `--version` prints the version and absolute installed tool directory; `--help` also shows the version.
 
 A name-only query produces one result per reachable installed version. An exact-version query produces one result. `npm-dep-audit` uses name-only JSON queries to identify affected dependent links; see the [audit guide](../npm-dep-audit/README.md).
 

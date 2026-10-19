@@ -22,6 +22,8 @@ Keep npm's global executable directory on `PATH`. Global installation is optiona
 ## Usage
 
 ```sh
+npm-dep-audit
+npm-dep-audit --format json
 npm-dep-audit /path/to/project
 npm-dep-audit /path/to/project --min-severity high --format json
 npm-dep-audit /path/to/project --cache-ttl 30m
@@ -32,7 +34,7 @@ npm-dep-audit --help
 
 For local development, from `tools/npm-dep-audit/`, use `node bin/npm-dep-audit.js /path/to/project` with the same options.
 
-The project path defaults to the current directory. `--format markdown|json` defaults to `markdown`. `--version` prints the version and absolute installed tool directory; `--help` also shows the version. `--min-severity` accepts `info`, `low`, `moderate`, `high`, or `critical` (default `info`). A row is kept when its highest advisory severity meets the threshold; all matching direct advisories remain in that row.
+The project path defaults to `.` (the caller’s current directory). Options may appear directly after the command when the project path is omitted, or before or after an explicit project path. `--format markdown|json` defaults to `markdown`. `--version` prints the version and absolute installed tool directory; `--help` also shows the version. `--min-severity` accepts `info`, `low`, `moderate`, `high`, or `critical` (default `info`). A row is kept when its highest advisory severity meets the threshold; all matching direct advisories remain in that row.
 
 ## Human-readable report
 

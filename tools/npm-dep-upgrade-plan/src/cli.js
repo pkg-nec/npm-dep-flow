@@ -16,6 +16,9 @@ const help = `${packageJson.name} v${packageJson.version}
 
 Usage: npm-dep-upgrade-plan [project] [options]
 
+Arguments:
+  project                 Project directory (default: ., the caller's current directory)
+
 Options:
   --format markdown|json  Output format (default: markdown)
   --version               Show version and tool directory

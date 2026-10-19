@@ -12,6 +12,8 @@
 - Every plan that changes a tool must include a version bump for each affected tool package.
 - Use a patch bump for bug fixes or corrections to existing behavior. Use a minor bump for new features or capabilities.
 - Keep the `version` in each affected `package.json` and its `package-lock.json` root metadata in sync.
+- Bump each affected tool only once per pull request, relative to the PR's base version. Put all tool version bumps together in the final planned commit, after implementation, documentation, and verification; earlier planned commits must not bump versions.
+- After a PR is created, follow-up fixes may be committed on top of the version-bump commit. Keep the intended release version unchanged unless the fixes require a different release version, such as upgrading a planned patch release to a minor release. In that case, update the version and lockfile metadata to the revised release version; do not increment the already planned version merely because another fix commit was added.
 
 ## Commit messages and pull request titles
 

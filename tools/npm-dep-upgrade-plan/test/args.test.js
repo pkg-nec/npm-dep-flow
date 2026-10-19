@@ -43,3 +43,18 @@ test('argument parser rejects unknown options', () => {
 test('argument parser rejects multiple project paths', () => {
   assert.throws(() => parseArgs(['one', 'two']), /Only one project path is allowed/)
 })
+
+test('argument parser accepts flags first with an omitted or explicit project path', () => {
+  for (const [pathArgs, expectedPath] of [
+    [[], path.resolve('/workspace/project')],
+    [['.'], path.resolve('/workspace/project')],
+    [['../target'], '/workspace/target'],
+    [['/another/project'], '/another/project'],
+  ]) {
+    assert.deepEqual(parseArgs(['--format', 'json', ...pathArgs], path.resolve('/workspace/project')), {
+      projectPath: path.resolve(expectedPath),
+      format: 'json',
+      help: false,
+    })
+  }
+})

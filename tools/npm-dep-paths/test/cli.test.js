@@ -1,15 +1,15 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { mkdtemp, writeFile, rm } from 'node:fs/promises'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { spawn } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { main } from '../src/cli.js'
 
 const tempRoot = process.env.NPM_DEP_PATHS_TEST_TMPDIR || tmpdir()
 
-async function fixture(t, parents = 2, twoVersions = true) {
+async function fixture(t, parents = 2, twoVersions = true, packageName = 'dep') {
   const dir = await mkdtemp(join(tempRoot, 'npm-dep-paths-cli-'))
   t.after(() => rm(dir, { recursive: true, force: true }))
   const dependencies = {}
@@ -17,13 +17,13 @@ async function fixture(t, parents = 2, twoVersions = true) {
   for (let i = 0; i < parents; i++) {
     const name = `parent-${String(i).padStart(4, '0')}`
     dependencies[name] = '1.0.0'
-    packages[`node_modules/${name}`] = { version: '1.0.0', dependencies: { dep: i === 0 ? '^5.0.5' : '5.0.9' } }
+    packages[`node_modules/${name}`] = { version: '1.0.0', dependencies: { [packageName]: i === 0 ? '^5.0.5' : '5.0.9' } }
   }
-  packages['node_modules/dep'] = { version: '5.0.9' }
+  packages[`node_modules/${packageName}`] = { version: '5.0.9' }
   if (twoVersions) {
     dependencies.old = '1.0.0'
-    packages['node_modules/old'] = { version: '1.0.0', dependencies: { dep: '^2' } }
-    packages['node_modules/old/node_modules/dep'] = { version: '2.1.7' }
+    packages['node_modules/old'] = { version: '1.0.0', dependencies: { [packageName]: '^2' } }
+    packages[`node_modules/old/node_modules/${packageName}`] = { version: '2.1.7' }
   }
   await writeFile(join(dir, 'package.json'), JSON.stringify({ name: 'app', version: '1.0.0', dependencies }))
   await writeFile(join(dir, 'package-lock.json'), JSON.stringify({ name: 'app', version: '1.0.0', lockfileVersion: 3, packages }))
@@ -92,7 +92,7 @@ test('help and invalid requests never emit a partial report', async t => {
   assert.match(help.stdout, /--upstream-of/)
   assert.match(help.stdout, /--from/)
   for (const args of [
-    [], [dir], [dir, 'dep', '--wat'], [dir, 'dep', '--format', 'xml'], [dir, 'dep@9.9.9'], [dir, 'dep@^5'],
+    [], ['--format', 'json'], [dir], [dir, 'dep', 'extra'], [dir, 'dep', '--format'], [dir, 'dep', '--upstream-of'], [dir, 'dep', '--wat'], [dir, 'dep', '--format', 'xml'], [dir, 'dep@9.9.9'], [dir, 'dep@^5'],
     [dir, 'dep@5.0.9', '--from', 'parent-0000@1.0.0'],
     [dir, 'dep', '--upstream-of', 'parent-0000@1.0.0'],
     [dir, 'dep@5.0.9', '--upstream-of', 'parent-0000'],
@@ -156,4 +156,41 @@ test('Markdown default and text alias preserve summaries with safely fenced upst
   const output = capture()
   assert.equal(await main([dir, 'dep@5.0.9', '--upstream-of', 'parent-0000@1.0.0', '--from', 'parent-0000@1.0.0'], output.io), 0, output.stderr)
   assert.match(output.stdout, /\n````text\napp```name@1.0.0[\s\S]+\n````\n$/)
+})
+
+
+test('executable defaults to the caller directory with flags first and preserves explicit paths', async t => {
+  const bin = fileURLToPath(new URL('../bin/npm-dep-paths.js', import.meta.url))
+  for (const name of ['dep', '@scope/dep']) {
+    const dir = await fixture(t, 2, true, name)
+    for (const selector of [name, `${name}@5.0.9`]) {
+      for (const args of [
+        [selector, '--format', 'json'],
+        ['--format', 'json', selector],
+        ['--format', 'json', '.', selector],
+        [join('..', basename(dir)), selector, '--format', 'json'],
+        [dir, selector, '--format', 'json'],
+      ]) {
+        const result = spawnSync(process.execPath, [bin, ...args], { cwd: dir, encoding: 'utf8' })
+        assert.equal(result.status, 0, `${args.join(' ')}: ${result.stderr || result.error?.message}`)
+        assert.equal(result.stderr, '')
+        const report = JSON.parse(result.stdout)
+        assert.equal(report.schemaVersion, 2)
+        assert.deepEqual(report.project, { name: 'app', version: '1.0.0' })
+        assert.equal(report.selector, selector)
+        if (selector === name) {
+          assert.deepEqual(report.results.map(item => item.version), ['2.1.7', '5.0.9'])
+        } else {
+          assert.equal(report.result.version, '5.0.9')
+          assert.deepEqual(report.result.requirements.map(item => item.declaredRequirement), ['5.0.9', '^5.0.5'])
+        }
+      }
+    }
+    const markdown = spawnSync(process.execPath, [bin, name], { cwd: dir, encoding: 'utf8' })
+    assert.equal(markdown.status, 0, markdown.stderr)
+    assert.match(markdown.stdout, /^# npm-dep-paths/m)
+    const upstream = spawnSync(process.execPath, [bin, '--format', 'json', `${name}@5.0.9`, '--upstream-of', 'parent-0000@1.0.0', '--from', 'parent-0000@1.0.0'], { cwd: dir, encoding: 'utf8' })
+    assert.equal(upstream.status, 0, upstream.stderr)
+    assert.deepEqual(JSON.parse(upstream.stdout).upstream.topLevelLocations, ['node_modules/parent-0000'])
+  }
 })
