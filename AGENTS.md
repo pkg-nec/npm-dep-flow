@@ -7,6 +7,12 @@
 - Tools should exchange data through documented command-line output, including versioned JSON, rather than importing another tool's private source files.
 - Start with the [repository README](README.md) for the tool index. The current tool is [npm-dep-audit](tools/npm-dep-audit/README.md); its detailed design is in [the audit spec](docs/superpowers/specs/2026-10-09-npm-dep-audit-design.md).
 
+## Versioning
+
+- Every plan that changes a tool must include a version bump for each affected tool package.
+- Use a patch bump for bug fixes or corrections to existing behavior. Use a minor bump for new features or capabilities.
+- Keep the `version` in each affected `package.json` and its `package-lock.json` root metadata in sync.
+
 ## Working on npm-dep-audit
 
 - Use Node.js 20 or newer. From `tools/npm-dep-audit/`, run `npm ci --ignore-scripts` to install the tool's dependencies and `npm test` to run its `node:test` suite. There is no root-level `npm test`.
