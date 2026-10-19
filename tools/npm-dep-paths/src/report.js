@@ -12,10 +12,7 @@ function markdownCell(value) {
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
-    .replace(/\\/g, '\\\\')
-    .replace(/\|/g, '\\|')
-    .replace(/\[/g, '\\[')
-    .replace(/\]/g, '\\]')
+    .replace(/([\\|\[\]*_`])/g, '\\$1')
 }
 
 function nodeLabel(node) {
@@ -23,8 +20,8 @@ function nodeLabel(node) {
 }
 
 function dependentLabel(item, targetName) {
-  const alias = item.requestedName === targetName ? '' : `; requested as ${safe(item.requestedName)}`
-  return `${nodeLabel(item)} [${safe(item.type)}${alias}]`
+  const alias = item.requestedName === targetName ? '' : `; requested as ${item.requestedName}`
+  return `${item.name}@${item.version} [${item.type}${alias}]`
 }
 
 function visibleDependents(group, targetName) {
@@ -37,11 +34,11 @@ function visibleDependents(group, targetName) {
 }
 
 export function renderSummaryText(project, results) {
-  if (!results.length) return 'No matching installed packages.\n'
+  if (!results.length) return '# npm-dep-paths\n\nNo matching installed packages.\n'
   const sections = results.map(result => {
     const requirements = result.requirements
     const lines = [
-      `### ${safe(result.package)}@${safe(result.version)}`,
+      `## ${markdownCell(result.package)}@${markdownCell(result.version)}`,
       '',
       '| Declared requirement | Direct dependents |',
       '| --- | --- |',
@@ -51,7 +48,7 @@ export function renderSummaryText(project, results) {
     }
     return lines.join('\n')
   })
-  return `${sections.join('\n\n')}\n`
+  return `# npm-dep-paths\n\n${sections.join('\n\n')}\n`
 }
 
 export function renderSummaryJson(project, selector, results, upstream) {

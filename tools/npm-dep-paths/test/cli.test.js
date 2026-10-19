@@ -130,3 +130,30 @@ test('real executable emits a complete compact summary without node_modules', as
   assert.equal(result.requirements[0].directDependents.at(-1).name, 'parent-1024')
   assert.ok(Buffer.byteLength(stdout) < 500000)
 })
+
+test('Markdown default and text alias preserve summaries with safely fenced upstream detail', async t => {
+  const dir = await fixture(t)
+  for (const extra of [[], ['--upstream-of', 'parent-0000@1.0.0'], ['--upstream-of', 'parent-0000@1.0.0', '--from', 'parent-0000@1.0.0']]) {
+    const outputs = []
+    for (const format of [[], ['--format', 'markdown'], ['--format', 'text']]) {
+      const output = capture()
+      assert.equal(await main([dir, 'dep@5.0.9', ...extra, ...format], output.io), 0, output.stderr)
+      outputs.push(output.stdout)
+    }
+    assert.equal(outputs[0], outputs[1])
+    assert.equal(outputs[0], outputs[2])
+    assert.equal(outputs[0].match(/^# /gm).length, 1)
+    if (extra.length) assert.match(outputs[0], /\n\n```text\n[\s\S]+\n```\n$/)
+  }
+  const manifestPath = join(dir, 'package.json')
+  const lockPath = join(dir, 'package-lock.json')
+  const { readFile } = await import('node:fs/promises')
+  const manifest = JSON.parse(await readFile(manifestPath, 'utf8'))
+  const lock = JSON.parse(await readFile(lockPath, 'utf8'))
+  manifest.name = lock.packages[''].name = 'app```name'
+  await writeFile(manifestPath, JSON.stringify(manifest))
+  await writeFile(lockPath, JSON.stringify(lock))
+  const output = capture()
+  assert.equal(await main([dir, 'dep@5.0.9', '--upstream-of', 'parent-0000@1.0.0', '--from', 'parent-0000@1.0.0'], output.io), 0, output.stderr)
+  assert.match(output.stdout, /\n````text\napp```name@1.0.0[\s\S]+\n````\n$/)
+})

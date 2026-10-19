@@ -114,13 +114,20 @@ test('audit adapter rejects invalid JSON without echoing its content', async () 
   )
 })
 
-test('audit adapter rejects a nonzero command result without echoing stderr', async () => {
+test('audit adapter preserves trimmed failed-command diagnostics', async () => {
   await assert.rejects(
-    runNpmDepAudit('/project', fakeSpawn({ code: 1, stderr: 'secret-token' }, []), 'linux'),
-    error => /exit code 1/.test(error.message) &&
-      /supported npm project/.test(error.message) &&
-      /npm-dep-paths/.test(error.message) &&
-      !error.message.includes('secret-token'),
+    runNpmDepAudit('/project', fakeSpawn({ code: 1, stderr: '  npm-dep-audit: Unsupported npm workspaces\n', stdout: 'do not echo' }, []), 'linux'),
+    error => /npm-dep-audit failed with exit code 1/.test(error.message) &&
+      error.message.endsWith('npm-dep-audit: Unsupported npm workspaces') &&
+      !error.message.includes('do not echo'),
+  )
+})
+
+test('audit adapter retains guidance when a failed command has no diagnostic', async () => {
+  await assert.rejects(
+    runNpmDepAudit('/project', fakeSpawn({ code: 2, stderr: '  \n', stdout: 'do not echo' }, []), 'linux'),
+    error => /exit code 2/.test(error.message) && /supported npm project/.test(error.message) &&
+      /npm-dep-paths/.test(error.message) && !error.message.includes('do not echo'),
   )
 })
 

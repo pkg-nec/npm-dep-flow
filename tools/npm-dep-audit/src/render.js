@@ -1,13 +1,18 @@
+function safe(value) {
+  return String(value).replace(/[\x00-\x1f\x7f]/g, char => {
+    if (char === '\n') return '\\n'
+    if (char === '\r') return '\\r'
+    if (char === '\t') return '\\t'
+    return `\\x${char.charCodeAt(0).toString(16).padStart(2, '0')}`
+  })
+}
+
 function cell(value) {
-  return String(value)
+  return safe(value)
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
-    .replace(/\\/g, '\\\\')
-    .replace(/\|/g, '\\|')
-    .replace(/\[/g, '\\[')
-    .replace(/\]/g, '\\]')
-    .replace(/[\r\n]/g, ' ')
+    .replace(/([\\|\[\]*_`])/g, '\\$1')
 }
 
 function link(advisory) {
@@ -47,14 +52,16 @@ function requirementsCell(row) {
 }
 
 export function renderMarkdown(rows) {
+  if (rows.length === 0) return '# npm-dep-audit\n\nNo matching direct advisories.\n'
   const output = [
+    '# npm-dep-audit',
+    '',
     '| Package | Version | Highest severity | Advisories | Declared requirements |',
     '| --- | --- | --- | --- | --- |',
   ]
   for (const row of rows) {
     output.push(`| ${cell(row.package)} | ${cell(row.version)} | ${severity(row.severity)} | ${row.advisories.map(link).join('<br>')} | ${requirementsCell(row)} |`)
   }
-  if (rows.length === 0) output.push('', 'No matching direct advisories.')
   return `${output.join('\n')}\n`
 }
 

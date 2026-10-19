@@ -43,17 +43,21 @@ export function sortFindings(rows) {
   return [...rows].sort(compareRows)
 }
 
+function safe(value) {
+  return String(value).replace(/[\x00-\x1f\x7f]/g, char => {
+    if (char === '\n') return '\\n'
+    if (char === '\r') return '\\r'
+    if (char === '\t') return '\\t'
+    return `\\x${char.charCodeAt(0).toString(16).padStart(2, '0')}`
+  })
+}
+
 function escapeMarkdown(value) {
-  return String(value)
-    .replace(/\\/g, '\\\\')
-    .replace(/\|/g, '\\|')
-    .replace(/\[/g, '\\[')
-    .replace(/\]/g, '\\]')
-    .replace(/([*_`])/g, '\\$1')
+  return safe(value)
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
-    .replace(/[\r\n]/g, ' ')
+    .replace(/([\\|\[\]*_`])/g, '\\$1')
 }
 
 function displayValue(value) {

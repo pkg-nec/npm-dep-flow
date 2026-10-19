@@ -14,14 +14,14 @@ const packageJson = JSON.parse(readFileSync(resolve(packageDir, 'package.json'),
 const versionOutput = `${packageJson.name} v${packageJson.version}\nLocation: ${packageDir}\n`
 const help = `${packageJson.name} v${packageJson.version}
 
-Usage: npm-dep-paths <project> <package-selector> [--format text|json] [--upstream-of <package@exact-version> [--from <package@exact-version>]]
+Usage: npm-dep-paths <project> <package-selector> [--format markdown|json] [--upstream-of <package@exact-version> [--from <package@exact-version>]]
 
 Selectors:
   package-name                     Summarize all reachable installed versions
   package-name@exact-version       Summarize one exact installed version
 
 Options:
-  --format text|json               Output format (default: text)
+  --format markdown|json               Output format (default: markdown; text is an alias)
   --upstream-of package@version    Explain a direct dependent of an exact target version
   --from package@version           Focus upstream detail on one top-level package
   --version                        Show version and tool directory
@@ -30,14 +30,14 @@ Options:
 
 function parseArgs(argv) {
   const positional = []
-  let format = 'text'
+  let format = 'markdown'
   let upstreamOf
   let from
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i]
     if (arg === '--format') {
       const value = argv[++i]
-      if (!['text', 'json'].includes(value)) throw new Error(`Invalid format: ${value ?? '(missing)'}`)
+      if (!['markdown', 'text', 'json'].includes(value)) throw new Error(`Invalid format: ${value ?? '(missing)'}`)
       format = value
     } else if (arg === '--upstream-of') {
       upstreamOf = argv[++i]
@@ -53,6 +53,13 @@ function parseArgs(argv) {
   }
   if (positional.length !== 2) throw new Error('Expected a project directory and package selector')
   return { path: positional[0], selectorText: positional[1], format, upstreamOf, from }
+}
+
+function fencedText(text) {
+  const content = text.trimEnd()
+  const longestRun = Math.max(0, ...[...content.matchAll(/`+/g)].map(match => match[0].length))
+  const fence = '`'.repeat(Math.max(3, longestRun + 1))
+  return `${fence}text\n${content}\n${fence}`
 }
 
 export async function main(argv, io = process, deps = defaults) {
@@ -79,7 +86,7 @@ export async function main(argv, io = process, deps = defaults) {
     const upstream = dependent ? deps.collectUpstream(graph, results[0], dependent, from) : undefined
     const report = options.format === 'json'
       ? deps.renderSummaryJson(project, selector, results, upstream)
-      : `${deps.renderSummaryText(project, results).trimEnd()}${upstream ? `\n\n${deps.renderUpstreamText(project, results[0], upstream, from).trimEnd()}` : ''}\n`
+      : `${deps.renderSummaryText(project, results).trimEnd()}${upstream ? `\n\n${fencedText(deps.renderUpstreamText(project, results[0], upstream, from))}` : ''}\n`
     io.stdout.write(report)
     return 0
   } catch (error) {

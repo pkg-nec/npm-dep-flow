@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises'
+import { mkdtemp, mkdir, writeFile, rm, realpath } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { loadProject } from '../src/project.js'
@@ -28,7 +28,7 @@ test('loads ordinary v2 and v3 projects', async t => {
     lock.lockfileVersion = version
     await writeFile(join(dir, 'package-lock.json'), JSON.stringify(lock))
     const project = await loadProject(dir)
-    assert.equal(project.root, dir)
+    assert.equal(project.root, await realpath(dir))
     assert.equal(project.manifest.name, 'app')
     assert.equal(project.lock.lockfileVersion, version)
   }

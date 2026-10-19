@@ -4,11 +4,11 @@
 
 `npm-dep-paths` is a standalone command in `tools/npm-dep-paths/` for deciding how to update an installed package version. Its normal report groups the exact dependency requirements that resolved to that version and lists the direct dependents making each declaration. When a maintainer needs to see why one of those dependents is present, an explicit upstream query supplies its complete logical dependency graph. This keeps the normal report short even when shared installations yield thousands of root-to-target routes.
 
-This branch develops the tool independently. It does not change `npm-dep-audit`. The command reads a target project's `package.json` and `package-lock.json` without installing packages or changing the target. It supports npm lockfile versions 2 and 3 for ordinary, single-package projects. npm workspaces, local `file:` dependencies, linked packages, shrinkwrap files, and other package managers remain unsupported and fail clearly. A successful `npm install` is expected before querying; absent optional dependencies and optional peers are allowed.
+The command reads a target project's `package.json` and `package-lock.json` without installing packages or changing the target. It supports npm lockfile versions 2 and 3 for ordinary, single-package projects. npm workspaces, local `file:` dependencies, linked packages, shrinkwrap files, and other package managers remain unsupported and fail clearly. A successful `npm install` is expected before querying; absent optional dependencies and optional peers are allowed.
 
 ## Command and selection
 
-The command is `npm-dep-paths <project> <package-selector> [--format text|json] [--upstream-of <package@exact-version> [--from <package@exact-version>]]`. Text is the default. The project is a directory containing the target files. The selector is either a resolved package name, including scoped names, or that name followed by an exact installed version. A range is not an exact-version selector.
+The command is `npm-dep-paths <project> <package-selector> [--format markdown|json] [--upstream-of <package@exact-version> [--from <package@exact-version>]]`. Markdown is the default; `text` remains an accepted alias with identical output. The project is a directory containing the target files. The selector is either a resolved package name, including scoped names, or that name followed by an exact installed version. A range is not an exact-version selector.
 
 A name-only query returns one result per reachable installed version, sorted by semantic version. An exact-version query returns one result. A name-only query with no match succeeds with an empty result list; an absent exact version fails. `--upstream-of` requires an exact target selector and names a direct dependent by its resolved name and exact version. It selects every installed copy of that dependent with a qualifying direct edge to the selected target version. `--from` requires `--upstream-of`, names a top-level package by resolved name and exact version, and keeps only upstream connections through matching direct root dependencies. The normal target summary remains unchanged by either filter.
 
@@ -18,18 +18,25 @@ An `--upstream-of` dependent that does not directly lead to the selected target,
 
 Each result represents one resolved package name and exact installed version. Its two logical columns are **Declared requirement** and **Direct dependents**. Requirements are grouped by their verbatim declaration strings: `^5.0.5` and `^5.0.6` occupy separate rows even if both resolve to `5.0.9`. Every direct dependency link that can end a simple root-to-target route contributes to its requirement group. Each direct dependent carries its resolved name, version, dependency type, requested dependency name, parent lockfile location, and target lockfile location. Distinct physical links remain distinct in JSON. Text may combine repeated visible package labels only if it shows their installation count and does not hide distinct requirements or dependency types.
 
-For example, a `brace-expansion@5.0.9` text section may be:
+For example, a `brace-expansion@5.0.9` report may be:
 
-```text
-brace-expansion@5.0.9
+```markdown
+# npm-dep-paths
 
-Declared requirement  Direct dependents
-5.0.9                 nx@23.1.2 [dependencies]
-^5.0.5                minimatch@10.2.5 [dependencies]
-^5.0.6                other-tool@1.0.0 [dependencies]
+## brace-expansion@5.0.9
+
+| Declared requirement | Direct dependents |
+| --- | --- |
+| 5.0.9 | nx@23.1.2 \[dependencies\] |
+| ^5.0.5 | minimatch@10.2.5 \[dependencies\] |
+| ^5.0.6 | other-tool@1.0.0 \[dependencies\] |
 ```
 
+Each result uses an H2 below the report H1. Upstream overview and tree detail are appended inside a `text` code block, with a backtick fence longer than any backtick run in its content. Code-block values retain Markdown punctuation while control characters remain visible escapes.
+
 Results and requirement groups have deterministic order. Versions sort by semantic version; requirement strings sort lexically; dependent links sort by resolved name, version, parent location, target location, type, then requested name. The report has no route count because the number of possible routes can be much larger than the number of distinct dependency relationships.
+
+Human-readable reports begin with one `# npm-dep-paths` heading. Empty output retains the heading and the tool-specific no-matches message without an empty table. User-controlled values in Markdown cells and headings escape backslashes, pipes, brackets, emphasis and code markers, and HTML characters. LF, CR, and tab display as visible escapes; other C0 controls and DEL display as `\xNN`. Preserve Unicode and original JSON values.
 
 ## JSON contract
 

@@ -98,7 +98,9 @@ export async function runNpmDepAudit(projectRoot, spawnImpl = spawn, platform = 
 
   if (result.code !== 0) {
     throw new Error(
-      `npm-dep-audit failed with exit code ${result.code}; check that this is a supported npm project and npm-dep-paths is installed and available on PATH`,
+      result.stderr.trim()
+        ? `npm-dep-audit failed with exit code ${result.code}: ${result.stderr.trim()}`
+        : `npm-dep-audit failed with exit code ${result.code}; check that this is a supported npm project and npm-dep-paths is installed and available on PATH`,
     )
   }
 

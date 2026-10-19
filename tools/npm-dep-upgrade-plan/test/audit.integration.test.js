@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url'
 import test from 'node:test'
 
 const enabled = process.env.NPM_DEP_AUDIT_INTEGRATION === '1'
-const scratchRoot = fileURLToPath(new URL('../../../tmp/npm-dep-upgrade-plan-audit-integration/', import.meta.url))
+const scratchRoot = process.env.NPM_DEP_FLOW_TEST_TMPDIR || fileURLToPath(new URL('../../../tmp/npm-dep-upgrade-plan-audit-integration/', import.meta.url))
 const plannerBinPath = fileURLToPath(new URL('../bin/npm-dep-upgrade-plan.js', import.meta.url))
 
 function createFixture(t) {
