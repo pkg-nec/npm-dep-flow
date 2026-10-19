@@ -20,6 +20,9 @@ const help = `${packageJson.name} v${packageJson.version}
 
 Usage: npm-dep-audit [project] [options]
 
+Arguments:
+  project                 Project directory (default: ., the caller's current directory)
+
 Options:
   --format markdown|json           Output format (default: markdown)
   --min-severity info|low|moderate|high|critical

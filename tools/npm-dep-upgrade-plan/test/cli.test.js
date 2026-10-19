@@ -289,6 +289,12 @@ test('executable emits Markdown and JSON, distinguishes both brace-expansion lin
   assert.equal(report.rows[1].strategy, null)
   assert.equal('advisories' in report.rows[0], false)
   assert.equal('requirements' in report.rows[0], false)
+  for (const projectPath of ['.', path.join('..', path.basename(fixture.project)), fixture.project]) {
+    const explicit = fixture.run(['--format', 'json', projectPath])
+    assert.equal(explicit.status, 0, explicit.stderr || explicit.error?.message)
+    assert.equal(explicit.stderr, '')
+    assert.deepEqual(JSON.parse(explicit.stdout), report)
+  }
   assert.deepEqual(readFileSync(path.join(fixture.project, 'package.json')), manifestBefore)
   assert.deepEqual(readFileSync(path.join(fixture.project, 'package-lock.json')), lockBefore)
 })

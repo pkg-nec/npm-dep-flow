@@ -107,6 +107,18 @@ test('accepts project path, JSON, severity, TTL, and cache bypass', async () => 
   assert.deepEqual(h.pathCalls, ['dep'])
 })
 
+test('accepts flags first with an omitted or explicit project path', async () => {
+  for (const pathArgs of [[], ['.'], ['../target'], ['/another/project']]) {
+    const h = harness()
+    assert.equal(await main(['--format', 'json', '--min-severity', 'high', '--cache-ttl', '30m', '--no-cache', ...pathArgs], h.io, h.deps), 0, h.stderr)
+    assert.equal(h.loadedPath, pathArgs[0] ?? process.cwd())
+    assert.equal(h.options.ttlMs, 1800000)
+    assert.equal(h.options.noCache, true)
+    assert.deepEqual(JSON.parse(h.stdout).rows.map(row => row.version), ['1.1.1', '1.1.2'])
+    assert.equal(h.stderr, '')
+  }
+})
+
 test('queries each distinct kept package name once and attaches only matching versions', async () => {
   const h = harness()
   const multiLock = {
@@ -234,4 +246,10 @@ test('bin renders dependency requirements in Markdown and JSON', async t => {
   assert.equal(report.schemaVersion, 2)
   assert.deepEqual(report.rows.map(row => row.version), ['1.1.1', '1.1.2'])
   assert.ok(report.rows.every(row => Array.isArray(row.requirements) && !Object.hasOwn(row, 'paths')))
+  for (const pathArgs of [[], ['.'], ['../project'], [projectDir]]) {
+    const current = spawnSync(process.execPath, [executable, '--format', 'json', '--min-severity', 'high', '--no-cache', ...pathArgs], { cwd: projectDir, env, encoding: 'utf8' })
+    assert.equal(current.status, 0, current.stderr || current.error?.message)
+    assert.equal(current.stderr, '')
+    assert.deepEqual(JSON.parse(current.stdout).rows, report.rows)
+  }
 })
