@@ -14,7 +14,11 @@ const packageJson = JSON.parse(readFileSync(resolve(packageDir, 'package.json'),
 const versionOutput = `${packageJson.name} v${packageJson.version}\nLocation: ${packageDir}\n`
 const help = `${packageJson.name} v${packageJson.version}
 
-Usage: npm-dep-paths <project> <package-selector> [--format markdown|json] [--upstream-of <package@exact-version> [--from <package@exact-version>]]
+Usage: npm-dep-paths [project] <package-selector> [--format markdown|json] [--upstream-of <package@exact-version> [--from <package@exact-version>]]
+
+Arguments:
+  project                          Project directory (default: ., the caller's current directory)
+  package-selector                 Required package name or exact version selector
 
 Selectors:
   package-name                     Summarize all reachable installed versions
@@ -51,8 +55,9 @@ function parseArgs(argv) {
       positional.push(arg)
     }
   }
-  if (positional.length !== 2) throw new Error('Expected a project directory and package selector')
-  return { path: positional[0], selectorText: positional[1], format, upstreamOf, from }
+  if (positional.length < 1 || positional.length > 2) throw new Error('Expected a package selector and optional project directory')
+  const [path, selectorText] = positional.length === 1 ? [process.cwd(), positional[0]] : positional
+  return { path, selectorText, format, upstreamOf, from }
 }
 
 function fencedText(text) {
