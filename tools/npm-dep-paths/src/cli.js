@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs'
+import { dirname, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { loadProject } from './project.js'
 import { buildGraph } from './graph.js'
 import { parseSelector } from './selector.js'
@@ -6,7 +9,12 @@ import { collectUpstream } from './upstream.js'
 import { renderSummaryText, renderSummaryJson, renderUpstreamText } from './report.js'
 
 const defaults = { loadProject, buildGraph, parseSelector, collectSummaryResults, collectUpstream, renderSummaryText, renderSummaryJson, renderUpstreamText }
-const help = `Usage: npm-dep-paths <project> <package-selector> [--format text|json] [--upstream-of <package@exact-version> [--from <package@exact-version>]]
+const packageDir = resolve(dirname(fileURLToPath(import.meta.url)), '..')
+const packageJson = JSON.parse(readFileSync(resolve(packageDir, 'package.json'), 'utf8'))
+const versionOutput = `${packageJson.name} v${packageJson.version}\nLocation: ${packageDir}\n`
+const help = `${packageJson.name} v${packageJson.version}
+
+Usage: npm-dep-paths <project> <package-selector> [--format text|json] [--upstream-of <package@exact-version> [--from <package@exact-version>]]
 
 Selectors:
   package-name                     Summarize all reachable installed versions
@@ -16,6 +24,7 @@ Options:
   --format text|json               Output format (default: text)
   --upstream-of package@version    Explain a direct dependent of an exact target version
   --from package@version           Focus upstream detail on one top-level package
+  --version                        Show version and tool directory
   --help                           Show this help
 `
 
@@ -49,6 +58,10 @@ function parseArgs(argv) {
 export async function main(argv, io = process, deps = defaults) {
   if (argv.includes('--help')) {
     io.stdout.write(help)
+    return 0
+  }
+  if (argv.includes('--version')) {
+    io.stdout.write(versionOutput)
     return 0
   }
   try {

@@ -11,6 +11,7 @@ cd tools/npm-dep-paths
 npm ci --ignore-scripts
 npm install --global . --ignore-scripts
 npm-dep-paths --help
+npm-dep-paths --version
 ```
 
 For local development without a global install, run its entry point directly:
@@ -22,6 +23,8 @@ node bin/npm-dep-paths.js /path/to/project brace-expansion@5.0.9 --format json
 node bin/npm-dep-paths.js /path/to/project brace-expansion@5.0.9 --upstream-of minimatch@10.2.5
 node bin/npm-dep-paths.js /path/to/project brace-expansion@5.0.9 --upstream-of minimatch@10.2.5 --from @nx/devkit@23.1.2
 ```
+
+`--version` prints the tool version and the absolute directory containing its installed code. `--help` also shows the version.
 
 A name-only query produces one result per reachable installed version. An exact-version query produces one result. The default text report lists each distinct declared requirement first, followed by all direct dependents that made it. `^5.0.5` and `^5.0.6` remain separate even if both resolved to `5.0.9`. A dependent's dependency type is shown beside its name; repeated physical installations are counted. The summary has no route count.
 
