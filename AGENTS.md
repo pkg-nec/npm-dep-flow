@@ -13,6 +13,12 @@
 - Use a patch bump for bug fixes or corrections to existing behavior. Use a minor bump for new features or capabilities.
 - Keep the `version` in each affected `package.json` and its `package-lock.json` root metadata in sync.
 
+## Commit messages and pull request titles
+
+- Follow the commit message and pull request title rules in [CONTRIBUTING.md](CONTRIBUTING.md).
+- Every commit message and pull request title you create must use the Conventional Commits header format described there. Choose a type and optional scope that match the change, and mark breaking changes as specified.
+- Before presenting a commit or pull request for review, check that its message or title follows the format.
+
 ## Review and commits
 
 - In the plan step, list the intended commits and their contents before implementation begins.
