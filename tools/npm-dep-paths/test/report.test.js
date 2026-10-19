@@ -123,3 +123,23 @@ test('uses one report title and second-level headings for multiple versions', ()
   assert.equal(text.match(/^# /gm).length, 1)
   assert.deepEqual(text.match(/^## .*$/gm), ['## brace-expansion@5.0.9', '## brace-expansion@6.0.0'])
 })
+
+const literalInput = 'a|b [x] *x* _x_ ` \\ <tag>&\n\r\t\x1b\x7f 🌱'
+const literalExpected = 'a\\|b \\[x\\] \\*x\\* \\_x\\_ \\` \\\\ &lt;tag&gt;&amp;\\\\n\\\\r\\\\t\\\\x1b\\\\x7f 🌱'
+
+test('renders headings and dependent values literally without changing JSON data', () => {
+  const odd = structuredClone(result)
+  odd.package = literalInput
+  odd.requirements[0].declaredRequirement = literalInput
+  odd.requirements[0].directDependents[0].name = literalInput
+  odd.requirements[0].directDependents[0].requestedName = literalInput
+  const output = renderSummaryText(project, [odd])
+  assert.ok(output.includes(`## ${literalExpected}@5.0.9`), output)
+  assert.ok(output.includes(`| ${literalExpected} | ${literalExpected}@1.0.0`))
+  assert.equal(output.split('\n').filter(line => line.startsWith('|')).length, 4)
+  assert.doesNotMatch(output, /[\x00-\x09\x0b-\x1f\x7f]/)
+  const json = JSON.parse(renderSummaryJson(project, selector, [odd]))
+  assert.equal(json.result.package, literalInput)
+  assert.equal(json.result.requirements[0].directDependents[0].name, literalInput)
+  assert.equal(json.result.requirements[0].declaredRequirement, literalInput)
+})

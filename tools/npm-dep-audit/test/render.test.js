@@ -80,7 +80,28 @@ test('renders stable schema version 2 JSON without the internal paths field', ()
   assert.ok(renderJson(rows, '2026-10-09T00:00:00.000Z').endsWith('\n'))
 })
 
- test('uses a single report title and omits empty tables', () => {
+test('uses a single report title and omits empty tables', () => {
   assert.ok(renderMarkdown(rows).startsWith('# npm-dep-audit\n\n'))
   assert.equal(renderMarkdown([]), '# npm-dep-audit\n\nNo matching direct advisories.\n')
+})
+
+const literalInput = 'a|b [x] *x* _x_ ` \\ <tag>&\n\r\t\x1b\x7f 🌱'
+const literalExpected = 'a\\|b \\[x\\] \\*x\\* \\_x\\_ \\` \\\\ &lt;tag&gt;&amp;\\\\n\\\\r\\\\t\\\\x1b\\\\x7f 🌱'
+
+test('renders unusual values literally without changing JSON data', () => {
+  const odd = structuredClone(rows)
+  odd[0].package = literalInput
+  odd[0].advisories[0].title = literalInput
+  odd[0].requirements[0].declaredRequirement = literalInput
+  odd[0].requirements[0].directDependents[0].requestedName = `alias-${literalInput}`
+  const output = renderMarkdown(odd)
+  assert.ok(output.includes(literalExpected), output)
+  assert.ok(output.includes(`) ${literalExpected}`))
+  assert.ok(output.includes(`requested as alias-${literalExpected}`))
+  assert.equal(output.split('\n').filter(line => line.startsWith('|')).length, 3)
+  assert.doesNotMatch(output, /[\x00-\x09\x0b-\x1f\x7f]/)
+  const json = JSON.parse(renderJson(odd, '2026-10-19T00:00:00.000Z'))
+  assert.equal(json.rows[0].package, literalInput)
+  assert.equal(json.rows[0].advisories[0].title, literalInput)
+  assert.equal(json.rows[0].requirements[0].declaredRequirement, literalInput)
 })

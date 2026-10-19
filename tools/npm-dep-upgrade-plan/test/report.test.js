@@ -129,3 +129,17 @@ test('renders schema version 2 rows without audit details', () => {
   assert.equal('requirements' in report.rows[0], false)
   assert.equal(renderJson([], '2026-10-13T06:00:00.000Z').includes('"rows": []'), true)
 })
+
+const literalInput = 'a|b [x] *x* _x_ ` \\ <tag>&\n\r\t\x1b\x7f 🌱'
+const literalExpected = 'a\\|b \\[x\\] \\*x\\* \\_x\\_ \\` \\\\ &lt;tag&gt;&amp;\\\\n\\\\r\\\\t\\\\x1b\\\\x7f 🌱'
+
+test('renders unusual values literally without changing JSON data', () => {
+  const odd = row({ package: literalInput, targetLocation: literalInput })
+  const output = renderMarkdown([odd])
+  assert.ok(output.includes(`| ${literalExpected} |`), output)
+  assert.equal(output.split('\n').filter(line => line.startsWith('|')).length, 3)
+  assert.doesNotMatch(output, /[\x00-\x09\x0b-\x1f\x7f]/)
+  const json = JSON.parse(renderJson([odd], '2026-10-19T00:00:00.000Z'))
+  assert.equal(json.rows[0].package, literalInput)
+  assert.equal(json.rows[0].targetLocation, literalInput)
+})
