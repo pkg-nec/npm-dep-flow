@@ -7,6 +7,17 @@ function safe(value) {
   })
 }
 
+function markdownCell(value) {
+  return safe(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/\\/g, '\\\\')
+    .replace(/\|/g, '\\|')
+    .replace(/\[/g, '\\[')
+    .replace(/\]/g, '\\]')
+}
+
 function nodeLabel(node) {
   return `${safe(node.name)}@${safe(node.version)}`
 }
@@ -29,14 +40,14 @@ export function renderSummaryText(project, results) {
   if (!results.length) return 'No matching installed packages.\n'
   const sections = results.map(result => {
     const requirements = result.requirements
-    const width = Math.max('Declared requirement'.length, ...requirements.map(group => safe(group.declaredRequirement).length))
     const lines = [
-      `${safe(result.package)}@${safe(result.version)}`,
+      `### ${safe(result.package)}@${safe(result.version)}`,
       '',
-      `${'Declared requirement'.padEnd(width)}  Direct dependents`,
+      '| Declared requirement | Direct dependents |',
+      '| --- | --- |',
     ]
     for (const group of requirements) {
-      lines.push(`${safe(group.declaredRequirement).padEnd(width)}  ${visibleDependents(group, result.package)}`)
+      lines.push(`| ${markdownCell(group.declaredRequirement)} | ${markdownCell(visibleDependents(group, result.package))} |`)
     }
     return lines.join('\n')
   })

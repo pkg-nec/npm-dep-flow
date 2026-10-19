@@ -26,7 +26,7 @@ node bin/npm-dep-paths.js /path/to/project brace-expansion@5.0.9 --upstream-of m
 
 `--version` prints the tool version and the absolute directory containing its installed code. `--help` also shows the version.
 
-A name-only query produces one result per reachable installed version. An exact-version query produces one result. The default text report lists each distinct declared requirement first, followed by all direct dependents that made it. `^5.0.5` and `^5.0.6` remain separate even if both resolved to `5.0.9`. A dependent's dependency type is shown beside its name; repeated physical installations are counted. The summary has no route count.
+A name-only query produces one result per reachable installed version. An exact-version query produces one result. The default text report renders each result as a Markdown table with **Declared requirement** and **Direct dependents** columns. `^5.0.5` and `^5.0.6` remain separate rows even if both resolved to `5.0.9`. A dependent's dependency type is shown beside its name; repeated physical installations are counted. The summary has no route count.
 
 `npm-dep-audit` runs a name-only JSON query and uses the declared requirements and direct dependent links to replace its former installed-paths column. The integration requires this CLI to be separately installed and available on `PATH`; see the [npm-dep-audit guide](../npm-dep-audit/README.md) for setup and its report format.
 
