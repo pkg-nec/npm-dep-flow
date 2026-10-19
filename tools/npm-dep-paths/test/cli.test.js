@@ -51,8 +51,8 @@ test('name and exact queries return schema v2 requirement summaries', async t =>
   assert.equal(Object.hasOwn(JSON.parse(exact.stdout), 'results'), false)
   const human = capture()
   assert.equal(await main([dir, 'dep@5.0.9'], human.io), 0)
-  assert.match(human.stdout, /Declared requirement\s+Direct dependents/)
-  assert.match(human.stdout, /\^5\.0\.5\s+parent-0000@1\.0\.0/)
+  assert.match(human.stdout, /^\| Declared requirement \| Direct dependents \|$/m)
+  assert.match(human.stdout, /^\| \^5\.0\.5 \| parent-0000@1\.0\.0/m)
 })
 
 test('upstream JSON keeps the summary and --from filters only its graph', async t => {

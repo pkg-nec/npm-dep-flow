@@ -34,9 +34,10 @@ const upstream = {
 
 test('puts each declared requirement before its direct dependents and identifies repeated installations', () => {
   const text = renderSummaryText(project, [result])
-  assert.match(text, /Declared requirement\s+Direct dependents/)
-  assert.match(text, /5\.0\.9\s+nx@1\.0\.0 \[dependencies\]/)
-  assert.match(text, /\^5\.0\.5\s+mini@1\.0\.0 \[dependencies\] \(2 installations\)/)
+  assert.match(text, /^\| Declared requirement \| Direct dependents \|$/m)
+  assert.match(text, /^\| --- \| --- \|$/m)
+  assert.match(text, /^\| 5\.0\.9 \| nx@1\.0\.0 \\\[dependencies\\\] \|$/m)
+  assert.match(text, /^\| \^5\.0\.5 \| mini@1\.0\.0 \\\[dependencies\\\] \(2 installations\) \|$/m)
   assert.equal(text.endsWith('\n'), true)
   assert.equal(renderSummaryText(project, []), 'No matching installed packages.\n')
 })
@@ -111,7 +112,7 @@ test('preserves unusual specs in JSON and escapes text controls without losing a
   assert.equal(json.result.requirements[0].declaredRequirement, 'npm:real@^5\n🌱')
   assert.equal(json.result.requirements[0].directDependents[0].requestedName, 'alias')
   const text = renderSummaryText(project, [odd])
-  assert.match(text, /npm:real@\^5\\n🌱/)
+  assert.match(text, /npm:real@\^5\\\\n🌱/)
   assert.match(text, /requested as alias/)
-  assert.equal(text.split('\n').length, 5)
+  assert.equal(text.split('\n').length, 6)
 })
