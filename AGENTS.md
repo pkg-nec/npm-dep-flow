@@ -13,6 +13,12 @@
 - Use a patch bump for bug fixes or corrections to existing behavior. Use a minor bump for new features or capabilities.
 - Keep the `version` in each affected `package.json` and its `package-lock.json` root metadata in sync.
 
+## Review and commits
+
+- In the plan step, list the intended commits and their contents before implementation begins.
+- Keep unrelated changes in separate commits.
+- Never request a review while the working tree has uncommitted changes. Commit the changes on a local branch or worktree before requesting review.
+
 ## Working on npm-dep-audit
 
 - Use Node.js 20 or newer. From `tools/npm-dep-audit/`, run `npm ci --ignore-scripts` to install the tool's dependencies and `npm test` to run its `node:test` suite. There is no root-level `npm test`.
