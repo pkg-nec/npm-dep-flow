@@ -38,25 +38,25 @@
 - Keep correctness changes separate from mechanical formatting commits and explain any behavioral corrections. See [CONTRIBUTING.md](CONTRIBUTING.md) for the full setup and integration checks.
 - Preserve each tool's documented CLI and schema version 2 JSON interface. Human-readable reports use Markdown with one tool-name H1; an empty report has a message without a table. Paths retains `--format text` as an alias for `markdown`.
 - Completed reports exit 0 even when findings exist or all strategies are ineligible. Errors exit 1 with stderr diagnostics and no partial report on stdout.
-- The three analysis tools must not install dependencies, run lifecycle scripts, or modify target project files. `npm-dep-upgrade` is an explicitly invoked mutator: it may install with scripts disabled, edit the selected project's dependency files, and commit its verified changes under its documented guards. Audit's cache lives outside the target project.
+- The three analysis tools must not install dependencies, run lifecycle scripts, or modify target project files. `npm-dep-upgrade` is an explicitly invoked mutator: it may install with scripts disabled, edit the selected project's dependency files, and commit its verified changes under its documented guards. Analysis caches live outside the target project by default.
 - Keep npm and sibling-command subprocess launching portable: Windows uses `.cmd` through a shell; Unix-like systems spawn commands directly. Test both paths when changing subprocess behavior.
 
 ## Working on npm-dep-audit
 
 - Entry point: `bin/npm-dep-audit.js`. `src/cli.js` coordinates project loading, npm context, caching, row construction, and rendering; tests live in `test/`.
-- Reads the target manifest and lockfile, invokes `npm audit --json`, and uses the separately installed `npm-dep-paths` CLI on `PATH` for dependency requirements. Preserve cache validation and no-cache behavior.
+- Reads the target manifest and lockfile, invokes `npm audit --json`, and uses the separately installed `npm-dep-paths` CLI on `PATH` for dependency requirements. Preserve raw/enriched cache validation, original advisory expiry, and no-cache propagation to paths.
 - Set `NPM_DEP_PATHS_INTEGRATION=1` to test the real paths CLI boundary. See the [audit guide](tools/npm-dep-audit/README.md).
 
 ## Working on npm-dep-paths
 
 - Entry point: `bin/npm-dep-paths.js`. `src/cli.js` coordinates selector validation, lockfile graph construction, summaries, upstream selection, and rendering.
-- Needs no npm subprocess, registry, sibling CLI, or target `node_modules` at runtime. Preserve graph completeness, alias identity, installation counts, and the unfiltered summary when upstream filters are used.
+- Needs no npm subprocess, registry, sibling CLI, or target `node_modules` at runtime. Structured result caching is content-based; validate project inputs before cache hits and preserve `--no-cache`. Preserve graph completeness, alias identity, installation counts, and the unfiltered summary when upstream filters are used.
 - `npm test` includes the real executable checks with no integration switch. See the [paths guide](tools/npm-dep-paths/README.md).
 
 ## Working on npm-dep-upgrade-plan
 
 - Entry point: `bin/npm-dep-upgrade-plan.js`. `src/cli.js` coordinates the audit adapter, registry lookups, strategy evaluation, and rendering.
-- Uses the separately installed audit CLI (which uses paths) and npm registry queries. Preserve per-target-location eligibility and ordered strategy selection.
+- Uses the separately installed audit CLI (which uses paths) and npm registry queries. Preserve per-target-location eligibility and ordered strategy selection. Planner caches must include effective npm configuration and sibling versions/locations, retain upstream advisory expiry, and forward TTL/bypass controls to audit.
 - Set `NPM_DEP_AUDIT_INTEGRATION=1` to test the real audit CLI boundary with fixture npm/paths responses. See the [planner guide](tools/npm-dep-upgrade-plan/README.md).
 
 For test scratch directories, `NPM_DEP_FLOW_TEST_TMPDIR` overrides checkout-local audit/planner integration and planner executable scratch roots; `NPM_DEP_PATHS_TEST_TMPDIR` overrides paths fixture roots. Other temporary fixtures follow the operating system temporary directory (`TMPDIR` on Unix-like systems).

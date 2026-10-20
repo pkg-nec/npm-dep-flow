@@ -102,7 +102,11 @@ An illustrative response is:
 
 ## Cache behavior
 
-The cache defaults to one hour and lives under `XDG_CACHE_HOME/npm-dep-audit` or `~/.cache/npm-dep-audit`. It is keyed by the project and hashes of both manifest files, npm version, and audit registry. `--cache-ttl` takes a positive number followed by `s`, `m`, `h`, or `d`. `--no-cache` bypasses reads and writes.
+The cache defaults to one hour and lives under `XDG_CACHE_HOME/npm-dep-audit` or `~/.cache/npm-dep-audit`, outside the target project by default. The raw npm audit response is keyed by canonical project directory, exact dependency-file contents, npm version, audit registry and cache version.
+
+An additional result cache reuses the complete enriched report, including dependency requirements from `npm-dep-paths`. Its key also includes the audit tool version, original audit data/timestamp and the paths tool version/location. Severity filtering and Markdown/JSON rendering happen after enrichment, so output options reuse one result. On a miss, requirements are collected for all advisory rows even when the requested severity filter hides some of them. A result hit avoids paths queries; project validation, npm context discovery and raw audit-cache validation still run.
+
+`--cache-ttl` takes a positive number followed by `s`, `m`, `h`, or `d`. Enriched results retain the original `auditedAt` and cannot outlive the underlying audit's requested TTL. `--no-cache` bypasses both audit caches and forwards bypass to paths. It neither reads nor replaces cached results. Malformed or inaccessible cache entries trigger computation; writes are atomic, and cache-storage failure does not prevent a valid report. Failed refreshes remain errors and never fall back to stale data.
 
 ## Supported projects
 
