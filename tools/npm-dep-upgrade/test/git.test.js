@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { writeFile, readFile, unlink, symlink } from 'node:fs/promises'
+import { writeFile, readFile, unlink, symlink, realpath } from 'node:fs/promises'
 import path from 'node:path'
 import test from 'node:test'
 import { preflightGit, assertGitState } from '../src/git.js'
@@ -9,7 +9,7 @@ test('Git guard allows unrelated unstaged work in a nested project', async (t) =
   const f = await gitProject(t, { nested: true })
   await writeFile(path.join(f.repo, 'unrelated.txt'), 'user edit\n')
   const guard = await preflightGit(f.root)
-  assert.equal(guard.repoRoot, f.repo)
+  assert.equal(await realpath(guard.repoRoot), await realpath(f.repo))
   assert.match(guard.projectPrefix, /project with spaces/)
   await assertGitState(guard, 'before-write')
   assert.equal(await readFile(path.join(f.repo, 'unrelated.txt'), 'utf8'), 'user edit\n')
