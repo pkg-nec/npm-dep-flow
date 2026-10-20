@@ -5,7 +5,8 @@ const capture=()=>{let stdout='',stderr='';return {io:{stdout:{write:s=>stdout+=
 test('help/version bypass project mutation and argument failures emit no success report',async()=>{
  const c=capture()
  assert.equal(await main(['--help'],c.io),0)
- assert.match(c.out(),/npm-dep-upgrade.*id/i)
+ assert.match(c.out(),/Usage: npm-dep-upgrade \[project\] <id-or-prefix>/)
+ assert.match(c.out(),/default:.*current directory/)
  const bad=capture()
  assert.equal(await main(['--to','6.0.12'],bad.io),1)
  assert.equal(bad.out(),'')
@@ -42,4 +43,13 @@ test('direct transaction verifies then commits before emitting a completed resul
  assert.equal(result.newVersion,'6.0.12')
  assert.match(result.commit.hash,/^[a-f0-9]{40,64}$/)
  assert.deepEqual(events,['plan','install','install','install','security'])
+})
+
+test('CLI passes the explicit resolved project to preflight without changing cwd',async()=>{
+ const path=await import('node:path'),cwd=process.cwd(),target=path.resolve(cwd,'../target project & symbols'),seen=[]
+ const c=capture()
+ assert.equal(await main(['../target project & symbols','abcdef0'],c.io,{preflightGit:async root=>{seen.push(root);throw new Error('fixture preflight stopped')}}),1)
+ assert.deepEqual(seen,[target])
+ assert.equal(process.cwd(),cwd)
+ assert.equal(c.out(),'')
 })

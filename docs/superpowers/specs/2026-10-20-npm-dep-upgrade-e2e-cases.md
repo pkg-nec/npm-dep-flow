@@ -2022,3 +2022,7 @@ Publish minimal helper leaf manifests for `e2e-helper@2.0.5` and `e2e-helper@3.0
 ### Matrix extension
 
 Run the real hash-selection, Git preflight/commit, and supporting-upgrade success paths on default npm 12.1.0. Repeat H02, G03, and S01 on npm 11.10.0. Keep pure full-collision, ID-canonicalization, range-boundary, and exact-time-boundary cases in focused unit/adapter suites; retain real resolver/installer/registry/Git boundaries in the main E2E cases.
+
+### Project-directory follow-up
+
+The CLI accepts `npm-dep-upgrade [project] <id-or-prefix>`. One positional argument is the ID in the caller's directory; two are project then ID. Relative paths resolve against the caller. H05's multiple-ID control supplies a project plus two IDs, exceeding the two allowed positionals. Add absolute/relative path cases from another repository with dirty dependency files and staged unrelated work; those caller files, index and HEAD remain untouched while the selected nested target project is upgraded and committed.

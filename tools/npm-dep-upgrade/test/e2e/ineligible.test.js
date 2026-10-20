@@ -18,5 +18,5 @@ for(const kind of ['D03','D04 exact','T06','T07 pinned','T08','O02','F04 clean']
 })
 test('H05 invalid selectors, options, package filter and unknown ID',async t=>{
  const f=await createProject(direct(),{},t),[row]=await plan(f)
- for(const args of [[],['abc'],['a'.repeat(65)],['ghijklm'],[row.id,row.id],['--unknown'],[row.id,'--package','missing-package'],['0'.repeat(64)]]) await assertUnchanged(f,await runUpgrade(f,args),/argument|selector|unknown|not found|no planner|usage|multiple/i)
+ for(const args of [[],['abc'],['a'.repeat(65)],['ghijklm'],['.',row.id,row.id],['--unknown'],[row.id,'--package','missing-package'],['0'.repeat(64)]]) await assertUnchanged(f,await runUpgrade(f,args),/argument|selector|unknown|not found|no planner|usage|multiple/i)
 })

@@ -15,16 +15,20 @@ npm install --global . --ignore-scripts
 
 ## Usage
 
-Run from the target npm project, including a project nested inside a Git repository:
+Pass an optional project directory before the item ID, or omit it to use the caller's current directory. Relative paths resolve against the caller's directory. Projects may be nested inside a Git repository:
 
 ```sh
 cd '/path/to/my project'
 npm-dep-upgrade-plan .
 npm-dep-upgrade abc1234
+npm-dep-upgrade "/path/to/another project" abc1234
+npm-dep-upgrade ../another-project abc1234
 npm-dep-upgrade <full-id> --package @scope/package --format json
 npm-dep-upgrade --help
 npm-dep-upgrade --version
 ```
+
+With two positional arguments, the first is always the project directory and the second is the item ID, matching `npm-dep-paths`. Flags may appear before or after them. Git guards, npm configuration, installation and commits apply to the selected project; the caller's working directory is not changed.
 
 The selector is a lowercase hexadecimal prefix of 7–64 characters. Planner JSON contains the full SHA-256 of `package + "__" + targetLocation`; Markdown shows seven characters. IDs identify package/location, independent of the installed version and absolute project path. A short prefix can collide. `--package` filters by exact package name before uniqueness checking; two locations of the same package may still need a longer prefix. Automation should use full IDs plus package names.
 

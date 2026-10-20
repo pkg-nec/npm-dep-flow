@@ -17,7 +17,7 @@ Each tool is an independent Node.js project under `tools/`, with its own package
 
 `npm-dep-upgrade-plan` consumes the public JSON output from `npm-dep-audit` and checks stable versions from the configured npm registry. Its versioned report has one row per vulnerable package version and target installation location, and it does not change the target project. Install `npm-dep-paths`, `npm-dep-audit`, and `npm-dep-upgrade-plan` as standalone commands and keep them on `PATH` when using the planner.
 
-`npm-dep-upgrade` reruns the planner, accepts one full or abbreviated item hash, and applies a verified upgrade with scripts disabled before creating a local commit. It requires all three analysis CLIs on `PATH` and clean dependency files with an empty staging area.
+`npm-dep-upgrade` reruns the planner, accepts an optional project directory plus one full or abbreviated item hash, and applies a verified upgrade with scripts disabled before creating a local commit. It requires all three analysis CLIs on `PATH` and clean dependency files with an empty staging area.
 
 ## Contributing
 

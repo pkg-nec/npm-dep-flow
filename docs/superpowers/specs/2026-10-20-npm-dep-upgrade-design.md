@@ -16,7 +16,7 @@ Keep `tools/npm-dep-upgrade/` independent, with its own manifest, lockfile, exec
 
 Use the separately installed planner, audit, and paths CLIs through their documented JSON contracts. The planner supplies item identity and eligibility. Fresh audit and paths results supply advisories, incoming requirements, requested names, and parent locations needed to validate and apply the change.
 
-Support ordinary single-package registry-backed npm projects with lockfile versions 2 and 3. Retain the existing exclusions for workspaces, local links, `file:` dependencies, shrinkwrap, and other package managers. The project root is the caller's current directory and must contain tracked `package.json` and `package-lock.json` files in a Git working tree. The Git repository may contain the project below its root.
+Support ordinary single-package registry-backed npm projects with lockfile versions 2 and 3. Retain the existing exclusions for workspaces, local links, `file:` dependencies, shrinkwrap, and other package managers. The project root is the optional positional project directory, defaulting to the caller's current directory, and must contain tracked `package.json` and `package-lock.json` files in a Git working tree. The Git repository may contain the project below its root.
 
 Direct application supports literal caret and tilde semantic-version requirements in `dependencies`, `devDependencies`, `peerDependencies`, and `optionalDependencies`. Preserve the section and operator. If a direct package has multiple applicable declarations, they must all be supported and admit the selected version; update all of them. An exact or otherwise unsupported direct declaration prevents application to that shared installation. Preserve `peerDependenciesMeta` and optional-dependency precedence.
 
@@ -47,14 +47,14 @@ An ID identifies a package/location within the current project, not a historical
 ## CLI and selection
 
 ```text
-npm-dep-upgrade <id-or-prefix> [--package <name>] [--format markdown|json]
+npm-dep-upgrade [project] <id-or-prefix> [--package <name>] [--format markdown|json]
 npm-dep-upgrade --help
 npm-dep-upgrade --version
 ```
 
-The selector accepts lowercase hexadecimal strings between 7 and 64 characters. Reject missing selectors, multiple positional arguments, unsupported options, and invalid lengths or characters before project mutation. Option order may vary. The default output is Markdown, consistent with sibling tools. `--help` and `--version` need no project or Git repository; version output includes the tool version and absolute installed tool directory.
+The selector accepts lowercase hexadecimal strings between 7 and 64 characters. Accept one positional argument as the item ID in the current directory, or two as project directory followed by item ID, matching `npm-dep-paths`. Resolve relative project paths against the caller's directory. Reject missing or invalid selectors, more than two positional arguments, and unsupported options before project mutation. Option order may vary. The default output is Markdown, consistent with sibling tools. `--help` and `--version` need no project or Git repository; version output includes the tool version and absolute installed tool directory.
 
-Normal execution invokes `npm-dep-upgrade-plan . --format json`. Match the selector as a prefix of the returned full IDs. Apply the optional exact package-name filter before checking uniqueness. Selection requires one matching row and the `update-within-declared-range` strategy with eligible status. Invalid planner output, zero matches, ambiguous matches, an ineligible match, or an unsupported strategy exits with an error and no project changes.
+Normal execution invokes `npm-dep-upgrade-plan . --format json` with the selected project as its working directory. Git guards, npm configuration, evidence, installation and commits all use that project; the caller's working directory is not changed. Match the selector as a prefix of the returned full IDs. Apply the optional exact package-name filter before checking uniqueness. Selection requires one matching row and the `update-within-declared-range` strategy with eligible status. Invalid planner output, zero matches, ambiguous matches, an ineligible match, or an unsupported strategy exits with an error and no project changes.
 
 Ambiguity diagnostics list package, old version, location, and full ID for each candidate. Suggest a longer hash or the package-name filter. A package-name filter can disambiguate different packages, but cannot guarantee uniqueness for prefix collisions between locations of the same package. Full IDs are recommended for automation. Unexpected full-ID collisions must still fail.
 

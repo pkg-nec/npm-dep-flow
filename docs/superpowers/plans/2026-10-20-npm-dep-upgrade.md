@@ -13,7 +13,7 @@
 ## Global Constraints
 
 - Only `update-within-declared-range` is supported. Parent upgrades, forcing versions outside original requirements, exact-pinned direct dependencies, batch execution, orchestration, pushing commits, and additional remediation strategies are excluded.
-- The project root is the caller's current directory. The command is `npm-dep-upgrade <id-or-prefix> [--package <name>] [--format markdown|json]`; help and version work without a project. No `--to`, saved-plan input, or item-number selector.
+- The project root is the optional positional project directory, defaulting to the caller's current directory; resolve relative paths against that directory. The command is `npm-dep-upgrade [project] <id-or-prefix> [--package <name>] [--format markdown|json]`; help and version work without a project. No `--to`, saved-plan input, or item-number selector.
 - IDs are lowercase hexadecimal SHA-256 of UTF-8 `package + "__" + targetLocation`; JSON contains all 64 characters, Markdown the first seven. Accept lowercase hexadecimal selectors between 7 and 64 characters.
 - Retain existing schema version 2 fields and semantics; planner `id` is additive. Do not change the planner's minimum-safe version policy to newest-version selection.
 - Choose the newest stable, safe, verifiably at-least-seven-day-old candidate satisfying every original incoming requirement, newer than installed, and at least the minimum-safe bound.
@@ -66,7 +66,7 @@ Do not build a generic plugin, strategy registry, orchestration engine, or arbit
 
 Define these JSDoc types in `src/model.js`; all later tasks consume them:
 
-- `Options = { selector: string|null, packageName: string|null, format: 'markdown'|'json', action: 'upgrade'|'help'|'version' }`.
+- `Options = { projectPath: string, selector: string|null, packageName: string|null, format: 'markdown'|'json', action: 'upgrade'|'help'|'version' }`.
 - `PlanRow` retains the planner schema fields and adds full `id`; `SelectedItem` is a validated eligible `PlanRow` for `update-within-declared-range`.
 - `Project = { root, manifest, lock, manifestBytes, lockBytes }`, where `root` is absolute, bytes are Buffers, and lock has a validated `packages` map.
 - `Graph = { nodes: Map<string, GraphNode>, edges: GraphEdge[] }`; node key/location is `''` for root or canonical project-relative location. `GraphNode = { location, name, version, resolved: string|null, integrity: string|null }`; `GraphEdge = { from, to: string|null, requestedName, type, rawSpec, effectiveSpec, optional, valid }`. Dependency `type` uses manifest field names. Preserve every root declaration even if Arborist coalesces its effective edges.
@@ -115,7 +115,7 @@ Define these JSDoc types in `src/model.js`; all later tasks consume them:
 **Interfaces:** Produce `parseArgs(argv: string[]) -> Options`; `UpgradeError(code, stage, message, recovery = {})`; `runProcess(command: string, args: string[], options: { cwd, env?, platform?, spawnImpl?, onStderr?, maxBytes? }) -> Promise<{ code, stdout, stderr }>`; default combined capture limit is 32 MiB.
 
 - [ ] **Step 1 — Package setup:** Create development version 0.0.0 with `private: true`, `type: module`, approved engine range, bin mapping, `test: node --test test/*.test.js`, and `test:e2e: node --test test/e2e/*.test.js`. Pin the four dependencies in Tech Stack. Generate its lockfile with `npm install --package-lock-only --ignore-scripts`, then `npm ci --ignore-scripts` inside the new tool only. Use the approved tmp/cache directories; do not install dependencies into the repository root or target fixtures yet.
-- [ ] **Step 2 — Failing tests:** Assert a seven-character or full lowercase selector, exact scoped `--package`, optional flag order, Markdown default, JSON format, and help/version without project access. Reject selectors of 6/65 characters, uppercase/nonhex characters, extra positionals, `--to`, `--item`, `--plan`, unknown options, and missing option values. Process tests assert argument-array Unix launching; safely quoted `.cmd` launching on Windows; `cwd` never interpolated into shell text; Git uses its executable rather than a fabricated `git.cmd`; reject spawn errors, oversized output, and null/abnormal exit.
+- [ ] **Step 2 — Failing tests:** Assert a seven-character or full lowercase selector, exact scoped `--package`, optional flag order, Markdown default, JSON format, and help/version without project access. Reject selectors of 6/65 characters, uppercase/nonhex characters, more than two positionals, `--to`, `--item`, `--plan`, unknown options, and missing option values. Process tests assert argument-array Unix launching; safely quoted `.cmd` launching on Windows; `cwd` never interpolated into shell text; Git uses its executable rather than a fabricated `git.cmd`; reject spawn errors, oversized output, and null/abnormal exit.
 - [ ] **Step 3 — Red:** Run `node --test test/args.test.js test/process.test.js`; expect missing module/behavior failures.
 - [ ] **Step 4 — Implement:** Add shared contracts/errors, parser and process adapter. On Windows quote/escape validated argument tokens instead of copying the sibling runner's simple string join for Git subjects or path arguments. Do not log environment/configuration. Parser tests prove help/version actions need no project; the actual executable and completed command behavior are introduced together in Task 8.
 - [ ] **Step 5 — Green/commit:** Run the focused tests and `npm test`; commit Task 2 files. Keep version 0.0.0 until Task 13.
@@ -276,3 +276,7 @@ This plan implements the approved design; it does not authorize implementation b
 Recommended execution method: **Native**. The tasks share the same evidence, mutation, graph, and recovery contracts, so one implementer can maintain those invariants without repeatedly transferring the full context. Complete one fresh independent whole-branch review at the end. **Subagent-driven** is also available if the user prefers per-task implementer/reviewer gates and the additional context cost.
 
 After plan approval and method selection, use the corresponding execution skill, run the required baseline checks, and implement task-by-task. Preserve the user's worktree/tmp paths and package-version sequencing. If review identifies a necessary change to the approved behavior rather than an implementation choice, update the specification for review before implementing that behavior.
+
+## Project-directory follow-up
+
+The user added the optional `[project]` positional argument after initial implementation. Preserve one-argument ID usage, treat two positionals as project then ID, resolve relative paths against the caller, and route all project operations through the selected root. Verify absolute/relative paths with spaces from a separate dirty/staged caller repository, including direct/transitive upgrades in nested target projects. Keep the existing release versions on this unmerged branch.

@@ -64,7 +64,7 @@ For test scratch directories, `NPM_DEP_FLOW_TEST_TMPDIR` overrides checkout-loca
 ## Working on npm-dep-upgrade
 
 - Entry point: `bin/npm-dep-upgrade.js`; independent package with public planner/audit/paths subprocess boundaries. Never import sibling private modules.
-- One selector identifies one current installation by SHA-256 prefix, optionally filtered by exact package name. Only update-within-declared-range is supported.
+- CLI: `npm-dep-upgrade [project] <id-or-prefix> [--package <name>] [--format markdown|json]`. The project defaults to the caller's current directory. One selector identifies one current installation by SHA-256 prefix, optionally filtered by exact package name. Only update-within-declared-range is supported.
 - Preserve direct ^/~ operators. Use reversible scoped overrides for transitive targets. Never force an incompatible incoming pin, leave an unnecessary override, or upgrade other target copies. Supporting closure changes are permitted after validation.
 - All installs must ignore scripts and enforce at least seven days of release age. Fresh candidate-version and final advisory checks are mandatory.
 - Require clean tracked dependency files and an empty repository-wide index; preserve unrelated unstaged work. Stage only verified dependency files and use the exact documented dependency commit subject. Never reset HEAD or overwrite concurrent work during recovery.
