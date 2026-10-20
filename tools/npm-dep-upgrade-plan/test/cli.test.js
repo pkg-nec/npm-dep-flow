@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
+import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import test from 'node:test'
 import { main } from '../src/cli.js'
@@ -395,7 +396,7 @@ test('failed audit diagnostics reach stderr without a partial report', async () 
 })
 
 test('planner reuses findings and forwards cache controls', async (t) => {
-  const root = mkdtempSync(path.join(process.env.TMPDIR || '/tmp', 'planner-result-cache-'))
+  const root = mkdtempSync(path.join(tmpdir(), 'planner-result-cache-'))
   t.after(() => rmSync(root, { recursive: true, force: true }))
   const report = { ...braceReport(), auditedAt: new Date().toISOString() }
   const deps = injectedDeps(report, new Map([['brace-expansion', ['5.0.9', '5.0.12']]]), { renderJson, renderMarkdown })
@@ -450,7 +451,7 @@ test('separate planner processes reuse results and invalidate on files, scoped r
 })
 
 test('a shorter TTL refreshes a newly cached plan backed by an older audit', async (t) => {
-  const root = mkdtempSync(path.join(process.env.TMPDIR || '/tmp', 'planner-shorter-ttl-'))
+  const root = mkdtempSync(path.join(tmpdir(), 'planner-shorter-ttl-'))
   t.after(() => rmSync(root, { recursive: true, force: true }))
   const freshAt = new Date().toISOString()
   const oldReport = { ...braceReport(), auditedAt: new Date(Date.now() - 50 * 60000).toISOString() }
