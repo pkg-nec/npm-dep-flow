@@ -1,0 +1,28 @@
+{
+  "different": [
+    {
+      "name": "e2e-collision-6281",
+      "location": "node_modules/e2e-collision-6281",
+      "id": "cb24e51e9eb3fa24f4848b1c7a0251f911474c8a53cde491d7bba46a27da6ffe"
+    },
+    {
+      "name": "e2e-collision-22007",
+      "location": "node_modules/e2e-collision-22007",
+      "id": "cb24e517f554a0816cbbb0b90143735de15d7051c076800607d002c6a4e7b8b5"
+    }
+  ],
+  "same": [
+    {
+      "name": "e2e-target",
+      "parent": "e2e-collision-parent-2259",
+      "location": "node_modules/e2e-collision-parent-2259/node_modules/e2e-target",
+      "id": "16208432eec275533ad547d5970f1f9d6b7632df54a8f9a23e0bdf6393d21c33"
+    },
+    {
+      "name": "e2e-target",
+      "parent": "e2e-collision-parent-7141",
+      "location": "node_modules/e2e-collision-parent-7141/node_modules/e2e-target",
+      "id": "16208437498e238704cfe7f72c27337aeeb92d7fc70ec9c21553472e4d47a090"
+    }
+  ]
+}

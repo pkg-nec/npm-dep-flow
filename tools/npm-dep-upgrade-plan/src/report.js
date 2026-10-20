@@ -1,4 +1,5 @@
 import semver from 'semver'
+import { findingId } from './ids.js'
 
 const severityOrder = new Map([
   ['critical', 0],
@@ -101,12 +102,12 @@ export function renderMarkdown(rows) {
   const output = [
     '# npm-dep-upgrade-plan',
     '',
-    '| Package | Installed | Highest severity | Minimum safe version | Released at | Target location | Status | Strategy |',
-    '| --- | --- | --- | --- | --- | --- | --- | --- |',
+    '| ID | Package | Installed | Highest severity | Minimum safe version | Released at | Target location | Status | Strategy |',
+    '| --- | --- | --- | --- | --- | --- | --- | --- | --- |',
   ]
 
   for (const row of orderedRows) {
-    output.push(`| ${escapeMarkdown(row.package)} | ${escapeMarkdown(row.version)} | ${renderSeverity(row.severity)} | ${displayValue(row.minimumSafeVersion)} | ${displayReleasedAt(row.minimumSafeVersionReleasedAt)} | ${escapeMarkdown(displayLocation(row.targetLocation))} | ${escapeMarkdown(row.status)} | ${renderStrategy(row.strategy)} |`)
+    output.push(`| ${findingId(row.package, row.targetLocation).slice(0, 7)} | ${escapeMarkdown(row.package)} | ${escapeMarkdown(row.version)} | ${renderSeverity(row.severity)} | ${displayValue(row.minimumSafeVersion)} | ${displayReleasedAt(row.minimumSafeVersionReleasedAt)} | ${escapeMarkdown(displayLocation(row.targetLocation))} | ${escapeMarkdown(row.status)} | ${renderStrategy(row.strategy)} |`)
   }
 
   return `${output.join('\n')}\n`
@@ -114,6 +115,7 @@ export function renderMarkdown(rows) {
 
 export function renderJson(rows, auditedAt) {
   const orderedRows = sortFindings(rows).map(row => ({
+    id: findingId(row.package, row.targetLocation),
     package: row.package,
     version: row.version,
     targetLocation: row.targetLocation,

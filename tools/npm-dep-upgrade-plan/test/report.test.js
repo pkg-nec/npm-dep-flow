@@ -56,10 +56,10 @@ test('renders one Markdown row per package version and target location', () => {
     }),
     row(),
   ])
-  const resultRows = markdown.split('\n').filter(line => line.startsWith('| brace-expansion |'))
+  const resultRows = markdown.split('\n').filter(line => /^\| [a-f0-9]{7} \| brace-expansion \|/.test(line))
 
   assert.equal(resultRows.length, 2)
-  assert.match(markdown, /\| Package \| Installed \| Highest severity \| Minimum safe version \| Released at \| Target location \| Status \| Strategy \|/)
+  assert.match(markdown, /\| ID \| Package \| Installed \| Highest severity \| Minimum safe version \| Released at \| Target location \| Status \| Strategy \|/)
   assert.match(markdown, /<strong style="color: red">high<\/strong>/)
   assert.match(markdown, /Update within declared range: brace-expansion@5\.0\.9 → brace-expansion@5\.0\.12/)
   assert.ok(resultRows.some(line => line.includes('| ineligible | — |')))
@@ -99,6 +99,7 @@ test('renders schema version 2 rows without audit details', () => {
     auditedAt: '2026-10-13T06:00:00.000Z',
     rows: [
       {
+        id: 'ea47178ea641751ab935afac50eb277e52a29d6778025d7ce978b0226d5967b1',
         package: 'brace-expansion',
         version: '5.0.9',
         targetLocation: 'node_modules/brace-expansion',
@@ -114,6 +115,7 @@ test('renders schema version 2 rows without audit details', () => {
         },
       },
       {
+        id: 'eaddeac214c24d42eb5ca413c98c9a8fb9958b89ded137215d73322ab22bfb78',
         package: 'brace-expansion',
         version: '5.0.9',
         targetLocation: 'node_modules/nx/node_modules/brace-expansion',

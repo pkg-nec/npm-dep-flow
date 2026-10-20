@@ -13,7 +13,7 @@ export default defineConfig([
   ]),
   {
     files: [
-      'tools/{npm-dep-paths,npm-dep-audit,npm-dep-upgrade-plan}/**/*.{js,mjs,cjs}',
+      'tools/{npm-dep-paths,npm-dep-audit,npm-dep-upgrade-plan,npm-dep-upgrade}/**/*.{js,mjs,cjs}',
       'dev-tooling/**/*.{js,mjs,cjs}',
     ],
     extends: [js.configs.recommended, stylistic.configs.recommended],

@@ -61,16 +61,16 @@ Markdown starts with the tool name and contains one row per vulnerable installat
 ```markdown
 # npm-dep-upgrade-plan
 
-| Package | Installed | Highest severity | Minimum safe version | Released at | Target location | Status | Strategy |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| brace-expansion | 5.0.9 | <strong style="color: red">high</strong> | 5.0.12 | 2026-10-01 12:00:00.000 UTC | node\_modules/brace-expansion | eligible | Update within declared range: brace-expansion@5.0.9 → brace-expansion@5.0.12 |
+| ID | Package | Installed | Highest severity | Minimum safe version | Released at | Target location | Status | Strategy |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| ea47178 | brace-expansion | 5.0.9 | <strong style="color: red">high</strong> | 5.0.12 | 2026-10-01 12:00:00.000 UTC | node\_modules/brace-expansion | eligible | Update within declared range: brace-expansion@5.0.9 → brace-expansion@5.0.12 |
 ```
 
 An empty report contains the title and `No vulnerable package findings.`, without a table. Highest severity uses the same bold and color styling as audit. Markdown and HTML characters in values display literally, and control characters appear as visible escapes; JSON preserves original strings.
 
 ## JSON contract
 
-Use `--format json` for the versioned consumer contract. The composite row identity is `package`, `version`, and `targetLocation`; multiple rows may share a package and version.
+Use `--format json` for the versioned consumer contract. Each row includes a full lowercase SHA-256 `id` of UTF-8 `package + "__" + targetLocation`. Markdown shows its first seven characters. The ID identifies the package/location within this project and does not depend on the installed version. The composite row identity is `package`, `version`, and `targetLocation`; multiple rows may share a package and version.
 
 ```json
 {
@@ -78,6 +78,7 @@ Use `--format json` for the versioned consumer contract. The composite row ident
   "auditedAt": "2026-10-13T06:00:00.000Z",
   "rows": [
     {
+      "id": "ea47178ea641751ab935afac50eb277e52a29d6778025d7ce978b0226d5967b1",
       "package": "brace-expansion",
       "version": "5.0.9",
       "targetLocation": "node_modules/brace-expansion",
@@ -93,6 +94,7 @@ Use `--format json` for the versioned consumer contract. The composite row ident
       }
     },
     {
+      "id": "eaddeac214c24d42eb5ca413c98c9a8fb9958b89ded137215d73322ab22bfb78",
       "package": "brace-expansion",
       "version": "5.0.9",
       "targetLocation": "node_modules/nx/node_modules/brace-expansion",
@@ -123,3 +125,7 @@ A failed audit command's error includes the command name, exit code, and trimmed
 From `tools/npm-dep-upgrade-plan/`, run `npm ci --ignore-scripts` and `npm test`. Set `NPM_DEP_AUDIT_INTEGRATION=1` to include the test against the separately installed audit CLI on `PATH`. That integration uses fixture responses for paths and npm, so it needs no live registry and is not a full three-tool end-to-end test.
 
 The [planner design](../../docs/superpowers/specs/2026-10-13-npm-dep-upgrade-plan-design.md) describes eligibility and report contracts.
+
+## Applying a recommendation
+
+The separate [npm-dep-upgrade](../npm-dep-upgrade/README.md) command reruns this planner and accepts a full item ID or a unique prefix of at least seven hexadecimal characters, optionally with `--package <exact-name>`. It applies one installation per invocation and commits verified dependency-file changes. IDs do not encode the old version; the current planner report determines eligibility. The mutator independently chooses the newest safe stable release within every original incoming range and the effective age policy, rather than assuming that every version above the minimum is safe.
