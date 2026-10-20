@@ -81,6 +81,7 @@ function createFixture(t) {
 const args = process.argv.slice(2)
 fs.appendFileSync(process.env.PLAN_NPM_CALLS, args.join(' ') + '\\n')
 if (args[0] === '--version') process.stdout.write('12.1.0\\n')
+else if (args[0] === 'config' && args[1] === 'list') process.stdout.write('{}')
 else if (args[0] === 'config' && args[2] === 'audit-registry') process.stdout.write('undefined\\n')
 else if (args[0] === 'config' && args[2] === 'registry') process.stdout.write('https://registry.example/\\n')
 else if (args[0] === 'audit') { process.stdout.write(process.env.PLAN_AUDIT_JSON); process.exitCode = 1 }
@@ -88,9 +89,10 @@ else if (args[0] === 'view' && args[1] === 'brace-expansion' && args[2] === 'ver
 else if (args[0] === 'view' && args[1] === 'brace-expansion' && args[2] === 'time' && args[3] === '--json') process.stdout.write(process.env.PLAN_TIMES_JSON)
 else { process.stderr.write('unexpected npm arguments: ' + args.join(' ')); process.exitCode = 2 }
 `
-  const pathsScript = `const fs = require('node:fs')
+  const pathsScript = `if (process.argv.includes('--version')) { console.log('npm-dep-paths v1.0.0'); process.exit(0); }
+const fs = require('node:fs')
 const args = process.argv.slice(2)
-if (JSON.stringify(args) !== JSON.stringify(['.', 'brace-expansion', '--format', 'json'])) { process.stderr.write('unexpected npm-dep-paths arguments: ' + args.join(' ')); process.exitCode = 2 }
+if (JSON.stringify(args.filter(arg => arg !== '--no-cache')) !== JSON.stringify(['.', 'brace-expansion', '--format', 'json'])) { process.stderr.write('unexpected npm-dep-paths arguments: ' + args.join(' ')); process.exitCode = 2 }
 else { fs.appendFileSync(process.env.PLAN_PATHS_CALLS, args.join(' ') + '\\n'); process.stdout.write(process.env.PLAN_PATHS_JSON) }
 `
   writeFileSync(path.join(commandDirectory, 'fake-npm.js'), `#!/usr/bin/env node\n${npmScript}`)
@@ -132,7 +134,7 @@ else { fs.appendFileSync(process.env.PLAN_PATHS_CALLS, args.join(' ') + '\\n'); 
     XDG_CACHE_HOME: path.join(base, 'cache'),
   }
 
-  const run = () => spawnSync(process.execPath, [plannerBinPath, project, '--format', 'json'], {
+  const run = (args = []) => spawnSync(process.execPath, [plannerBinPath, project, ...args, '--format', 'json'], {
     cwd: project,
     env,
     encoding: 'utf8',
@@ -169,4 +171,14 @@ test('planner consumes JSON emitted by the real npm-dep-audit CLI', { skip: !ena
   assert.ok(npmCalls.includes('view brace-expansion versions --json'))
   assert.ok(npmCalls.includes('view brace-expansion time --json'))
   assert.equal(readFileSync(fixture.pathsCalls, 'utf8').trim(), '. brace-expansion --format json')
+  const warm = fixture.run()
+  assert.equal(warm.status, 0, warm.stderr)
+  assert.deepEqual(JSON.parse(warm.stdout), report)
+  const warmCalls = readFileSync(fixture.npmCalls, 'utf8').trim().split('\n')
+  assert.equal(warmCalls.filter(call => call.startsWith('audit ')).length, 1)
+  assert.equal(warmCalls.filter(call => call.startsWith('view ')).length, 2)
+  const fresh = fixture.run(['--no-cache'])
+  assert.equal(fresh.status, 0, fresh.stderr)
+  assert.equal(readFileSync(fixture.npmCalls, 'utf8').trim().split('\n').filter(call => call.startsWith('audit ')).length, 2)
+  assert.match(readFileSync(fixture.pathsCalls, 'utf8'), /--no-cache/)
 })

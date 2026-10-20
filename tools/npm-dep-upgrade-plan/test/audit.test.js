@@ -152,3 +152,13 @@ test('audit adapter gives installation guidance when the command is missing', as
     /npm-dep-audit is not available on PATH/,
   )
 })
+
+test('planner forwards TTL and bypass to audit on Unix and Windows', async () => {
+  for (const platform of ['linux', 'win32']) {
+    const calls = []
+    const result = await runNpmDepAudit('/project', fakeSpawn({ stdout: JSON.stringify(auditReport()) }, calls), platform, { noCache: true, ttlMs: 1800000 })
+    assert.equal(result.rows[0].version, '5.0.9')
+    const argv = platform === 'win32' ? calls[0].command.split(' ').slice(1) : calls[0].args
+    assert.deepEqual(argv, ['.', '--min-severity', 'info', '--format', 'json', '--cache-ttl', '1800s', '--no-cache'])
+  }
+})
