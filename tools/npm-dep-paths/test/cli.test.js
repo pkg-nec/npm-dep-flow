@@ -206,3 +206,69 @@ test('executable defaults to the caller directory with flags first and preserves
     assert.deepEqual(JSON.parse(upstream.stdout).upstream.topLevelLocations, ['node_modules/parent-0000'])
   }
 })
+
+test('cached queries skip graph construction, share formats, and bypass on request', async (t) => {
+  const dir = await fixture(t)
+  const { buildGraph } = await import('../src/graph.js')
+  let builds = 0
+  const deps = {
+    ...await import('../src/project.js'), ...await import('../src/selector.js'),
+    ...await import('../src/summary.js'), ...await import('../src/upstream.js'),
+    ...await import('../src/report.js'),
+    buildGraph(project) {
+      builds++
+      return buildGraph(project)
+    },
+  }
+  for (const format of ['json', 'markdown', 'text']) {
+    const output = capture()
+    assert.equal(await main([dir, 'dep', '--format', format], output.io, deps), 0, output.stderr)
+  }
+  assert.equal(builds, 1)
+  const fresh = capture()
+  assert.equal(await main([dir, 'dep', '--no-cache', '--format', 'json'], fresh.io, deps), 0, fresh.stderr)
+  assert.equal(builds, 2)
+  const other = capture()
+  assert.equal(await main([dir, 'dep@5.0.9', '--format', 'json'], other.io, deps), 0, other.stderr)
+  assert.equal(builds, 3)
+  const { readFile } = await import('node:fs/promises')
+  const lockPath = join(dir, 'package-lock.json')
+  const lock = JSON.parse(await readFile(lockPath, 'utf8'))
+  lock.packages['node_modules/dep'].version = '5.0.10'
+  await writeFile(lockPath, JSON.stringify(lock))
+  const changed = capture()
+  assert.equal(await main([dir, 'dep', '--format', 'json'], changed.io, deps), 0, changed.stderr)
+  assert.equal(builds, 4)
+  assert.deepEqual(JSON.parse(changed.stdout).results.map(r => r.version), ['2.1.7', '5.0.10'])
+  await writeFile(join(dir, 'npm-shrinkwrap.json'), '{}')
+  const invalid = capture()
+  assert.equal(await main([dir, 'dep'], invalid.io, deps), 1)
+  assert.equal(invalid.stdout, '')
+})
+
+test('separate paths processes reuse structured cache and recover from corrupt payloads', async (t) => {
+  const dir = await fixture(t)
+  const cache = await mkdtemp(join(tmpdir(), 'paths-cache-'))
+  t.after(() => rm(cache, { recursive: true, force: true }))
+  const { readdir, readFile, stat } = await import('node:fs/promises')
+  const bin = fileURLToPath(new URL('../bin/npm-dep-paths.js', import.meta.url))
+  const run = args => spawnSync(process.execPath, [bin, dir, 'dep', ...args], { env: { ...process.env, XDG_CACHE_HOME: cache }, encoding: 'utf8' })
+  const first = run(['--format', 'json'])
+  assert.equal(first.status, 0, first.stderr)
+  const cacheDir = join(cache, 'npm-dep-paths')
+  const file = join(cacheDir, (await readdir(cacheDir))[0])
+  const before = await readFile(file, 'utf8')
+  const modifiedAt = (await stat(file, { bigint: true })).mtimeNs
+  const second = run([])
+  assert.equal(second.status, 0, second.stderr)
+  assert.match(second.stdout, /parent-0000/)
+  assert.equal((await stat(file, { bigint: true })).mtimeNs, modifiedAt)
+  assert.equal(run(['--no-cache']).status, 0)
+  assert.equal(await readFile(file, 'utf8'), before)
+  const corrupt = JSON.parse(before)
+  corrupt.value.results = []
+  await writeFile(file, JSON.stringify(corrupt))
+  const recovered = run(['--format', 'json'])
+  assert.equal(recovered.status, 0, recovered.stderr)
+  assert.deepEqual(JSON.parse(recovered.stdout), JSON.parse(first.stdout))
+})

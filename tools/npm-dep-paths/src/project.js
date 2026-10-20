@@ -18,7 +18,7 @@ async function json(path, label) {
   try {
     const value = JSON.parse(bytes.toString('utf8'))
     if (!object(value)) throw new Error('expected an object')
-    return value
+    return { value, bytes }
   }
   catch (error) {
     throw new Error(`Invalid ${label}: ${error.message}`, { cause: error })
@@ -48,8 +48,8 @@ export async function loadProject(path) {
   catch (error) {
     if (error.code !== 'ENOENT') throw error
   }
-  const manifest = await json(join(root, 'package.json'), 'package.json')
-  const lock = await json(join(root, 'package-lock.json'), 'package-lock.json')
+  const { value: manifest, bytes: manifestBytes } = await json(join(root, 'package.json'), 'package.json')
+  const { value: lock, bytes: lockBytes } = await json(join(root, 'package-lock.json'), 'package-lock.json')
   if (typeof manifest.name !== 'string' || !manifest.name) throw new Error('Missing package.json name')
   if (typeof manifest.version !== 'string' || !manifest.version) throw new Error('Missing package.json version')
   if (manifest.packageManager !== undefined && !/^npm@\S+$/.test(manifest.packageManager)) {
@@ -85,5 +85,5 @@ export async function loadProject(path) {
     }
     declarations(entry, location || 'lockfile root')
   }
-  return { root, manifest, lock }
+  return { root, manifest, lock, manifestBytes, lockBytes }
 }

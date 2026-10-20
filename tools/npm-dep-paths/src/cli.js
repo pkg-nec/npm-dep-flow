@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { loadProject } from './project.js'
+import { cachedResult } from './result-cache.js'
 import { buildGraph } from './graph.js'
 import { parseSelector } from './selector.js'
 import { collectSummaryResults } from './summary.js'
@@ -28,6 +29,7 @@ Options:
   --format markdown|json               Output format (default: markdown; text is an alias)
   --upstream-of package@version    Explain a direct dependent of an exact target version
   --from package@version           Focus upstream detail on one top-level package
+  --no-cache                       Bypass result cache reads and writes
   --version                        Show version and tool directory
   --help                           Show this help
 `
@@ -35,11 +37,15 @@ Options:
 function parseArgs(argv) {
   const positional = []
   let format = 'markdown'
+  let noCache = false
   let upstreamOf
   let from
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i]
-    if (arg === '--format') {
+    if (arg === '--no-cache') {
+      noCache = true
+    }
+    else if (arg === '--format') {
       const value = argv[++i]
       if (!['markdown', 'text', 'json'].includes(value)) throw new Error(`Invalid format: ${value ?? '(missing)'}`)
       format = value
@@ -61,7 +67,7 @@ function parseArgs(argv) {
   }
   if (positional.length < 1 || positional.length > 2) throw new Error('Expected a package selector and optional project directory')
   const [path, selectorText] = positional.length === 1 ? [process.cwd(), positional[0]] : positional
-  return { path, selectorText, format, upstreamOf, from }
+  return { path, selectorText, format, upstreamOf, from, noCache }
 }
 
 function fencedText(text) {
@@ -90,9 +96,15 @@ export async function main(argv, io = process, deps = defaults) {
     if (dependent && dependent.kind !== 'exact') throw new Error('--upstream-of requires an exact dependent version')
     if (from && from.kind !== 'exact') throw new Error('--from requires an exact top-level package version')
     const project = await deps.loadProject(options.path)
-    const graph = deps.buildGraph(project)
-    const results = deps.collectSummaryResults(graph, selector)
-    const upstream = dependent ? deps.collectUpstream(graph, results[0], dependent, from) : undefined
+    const { results, upstream } = await cachedResult({
+      tool: packageJson.name, version: packageJson.version, project,
+      query: [selector, dependent ?? null, from ?? null], noCache: options.noCache,
+    }, async () => {
+      const graph = deps.buildGraph(project)
+      const results = deps.collectSummaryResults(graph, selector)
+      const upstream = dependent ? deps.collectUpstream(graph, results[0], dependent, from) : undefined
+      return { value: { results, ...(upstream ? { upstream } : {}) } }
+    })
     const report = options.format === 'json'
       ? deps.renderSummaryJson(project, selector, results, upstream)
       : `${deps.renderSummaryText(project, results).trimEnd()}${upstream ? `\n\n${fencedText(deps.renderUpstreamText(project, results[0], upstream, from))}` : ''}\n`
