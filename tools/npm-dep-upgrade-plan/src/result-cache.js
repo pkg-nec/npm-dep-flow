@@ -10,22 +10,24 @@ function digest(value) {
 // Each standalone tool owns its cache. No sibling private modules are imported.
 export async function cachedResult({ tool, version, project, identity = null, query = null, noCache = false, ttlMs = Infinity, cacheRoot = join(process.env.XDG_CACHE_HOME || join(homedir(), '.cache'), tool), now = Date.now }, compute) {
   if (noCache) return (await compute()).value
-  const key = digest([1, version, project.root, createHash('sha256').update(project.manifestBytes).digest('hex'), createHash('sha256').update(project.lockBytes).digest('hex'), identity, query])
+  const key = digest([2, version, project.root, createHash('sha256').update(project.manifestBytes).digest('hex'), createHash('sha256').update(project.lockBytes).digest('hex'), identity, query])
   const file = join(cacheRoot, `result-${digest([project.root, query])}.json`)
   try {
     const entry = JSON.parse(await readFile(file, 'utf8'))
     const age = now() - entry?.createdAt
+    const sourceAge = now() - entry?.freshAt
     if (entry?.key === key && Number.isFinite(entry.createdAt) && Number.isFinite(age) && age >= 0 && age < ttlMs
+      && Number.isFinite(entry.freshAt) && sourceAge >= 0 && sourceAge < ttlMs
       && (entry.expiresAt === null || (Number.isFinite(entry.expiresAt) && now() < entry.expiresAt))
-      && entry.checksum === digest([entry.createdAt, entry.expiresAt, entry.value])) {
+      && entry.checksum === digest([entry.createdAt, entry.freshAt, entry.expiresAt, entry.value])) {
       return entry.value
     }
   }
   catch { /* Missing, unreadable or malformed cache entries are misses. */ }
 
   const createdAt = now()
-  const { value, expiresAt = null } = await compute()
-  const entry = { key, createdAt, expiresAt, value, checksum: digest([createdAt, expiresAt, value]) }
+  const { value, expiresAt = null, freshAt = createdAt } = await compute()
+  const entry = { key, createdAt, freshAt, expiresAt, value, checksum: digest([createdAt, freshAt, expiresAt, value]) }
   const temporary = `${file}.${process.pid}.${randomUUID()}.tmp`
   try {
     await mkdir(cacheRoot, { recursive: true, mode: 0o700 })

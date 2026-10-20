@@ -96,7 +96,7 @@ export async function main(argv, io = process, deps = defaults) {
       for (const packageName of new Set(rows.map(row => row.package))) {
         summariesByPackage.set(packageName, await deps.runNpmDepPaths(project.root, packageName, undefined, undefined, { noCache: options.noCache }))
       }
-      return { value: attachRequirements(rows, summariesByPackage), expiresAt: Date.parse(auditedAt) + options.ttlMs }
+      return { value: attachRequirements(rows, summariesByPackage), freshAt: Date.parse(auditedAt), expiresAt: Date.parse(auditedAt) + options.ttlMs }
     })
     const enrichedRows = selectRows(enriched, options.minSeverity)
     io.stdout.write(options.format === 'json' ? renderJson(enrichedRows, auditedAt) : renderMarkdown(enrichedRows))

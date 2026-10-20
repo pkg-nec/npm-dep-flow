@@ -448,3 +448,20 @@ test('separate planner processes reuse results and invalidate on files, scoped r
   assert.equal(after.status, 0, after.stderr)
   assert.equal(readFileSync(fixture.callLog, 'utf8').trim().split('\n').length, 5)
 })
+
+test('a shorter TTL refreshes a newly cached plan backed by an older audit', async (t) => {
+  const root = mkdtempSync(path.join(process.env.TMPDIR || '/tmp', 'planner-shorter-ttl-'))
+  t.after(() => rmSync(root, { recursive: true, force: true }))
+  const freshAt = new Date().toISOString()
+  const oldReport = { ...braceReport(), auditedAt: new Date(Date.now() - 50 * 60000).toISOString() }
+  const deps = injectedDeps(oldReport, new Map([['brace-expansion', ['5.0.9', '5.0.12']]]), { renderJson })
+  deps.loadProject = async () => ({ root, manifestBytes: Buffer.from('{}'), lockBytes: Buffer.from('{}') })
+  let audits = 0
+  deps.runNpmDepAudit = async () => ({ ...oldReport, auditedAt: ++audits === 1 ? oldReport.auditedAt : freshAt })
+  const first = createIo()
+  assert.equal(await main(['--format', 'json'], first.io, deps), 0, first.stderr)
+  const shorter = createIo()
+  assert.equal(await main(['--format', 'json', '--cache-ttl', '30m'], shorter.io, deps), 0, shorter.stderr)
+  assert.equal(audits, 2)
+  assert.equal(JSON.parse(shorter.stdout).auditedAt, freshAt)
+})

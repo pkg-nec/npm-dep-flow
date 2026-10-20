@@ -63,6 +63,7 @@ export async function main(argv, io = process, deps = defaults) {
       }
       return {
         value: { findings: evaluateFindings(auditReport.rows, versionsByPackage), auditedAt: auditReport.auditedAt },
+        freshAt: Date.parse(auditReport.auditedAt),
         expiresAt: Date.parse(auditReport.auditedAt) + options.ttlMs,
       }
     })
