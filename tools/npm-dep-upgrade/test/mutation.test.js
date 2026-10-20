@@ -17,10 +17,11 @@ test('direct mutations preserve operators and all compatible declaration section
  const incoming=g.edges.filter(e=>e.to==='node_modules/e2e-target')
  const e={item:{package:'e2e-target',targetLocation:'node_modules/e2e-target'},graph:g,incoming,directDeclarations:incoming.map(x=>({field:x.type,requestedName:x.requestedName,spec:x.rawSpec}))}
  const m=await buildMutation(p,e,{version:'6.0.12'})
- const updated=JSON.parse(m.applyBytes)
+ const updated=JSON.parse(m.cleanupBytes)
+ assert.equal(JSON.parse(m.applyBytes).dependencies['e2e-target'],'6.0.12')
  assert.equal(updated.dependencies['e2e-target'],'^6.0.12')
  assert.equal(updated.devDependencies['e2e-target'],'~6.0.12')
- assert.equal(m.cleanupBytes,null)
+ assert.ok(m.cleanupBytes)
 })
 test('transitive mutations preserve direct parent specification and clean up exact original bytes',async t=>{
  const f=await gitProject(t)
@@ -32,7 +33,7 @@ test('transitive mutations preserve direct parent specification and clean up exa
  const p=await loadProject(f.root),graph=await loadGraph(f.root)
  const e={item:{package:'e2e-target',targetLocation:'node_modules/e2e-target'},graph,incoming:graph.edges.filter(x=>x.to==='node_modules/e2e-target'),directDeclarations:[],upstream:[]}
  const m=await buildMutation(p,e,{version:'6.0.12'},{scratchRoot:f.root})
- assert.deepEqual(JSON.parse(m.applyBytes).overrides,{'e2e-parent-a@1.2.4':{'.':'$e2e-parent-a','e2e-target':'^6.0.12'}})
+ assert.deepEqual(JSON.parse(m.applyBytes).overrides,{'e2e-parent-a@1.2.4':{'.':'$e2e-parent-a','e2e-target':'6.0.12'}})
  assert.deepEqual(m.cleanupBytes,p.manifestBytes)
  const probe=await createScopeProbe(p,f.root)
  const result=await probe(JSON.parse(m.applyBytes).overrides)
@@ -51,5 +52,5 @@ test('temporary target rule preserves nested existing supporting overrides',asyn
  const p=await loadProject(f.root),graph=await loadGraph(f.root)
  const e={item:{package:'e2e-target',targetLocation:'node_modules/e2e-target'},graph,incoming:graph.edges.filter(x=>x.to==='node_modules/e2e-target'),directDeclarations:[],upstream:[]}
  const m=await buildMutation(p,e,{version:'6.0.12'},{scratchRoot:f.root})
- assert.deepEqual(JSON.parse(m.applyBytes).overrides['e2e-parent-a@1.2.4']['e2e-target'],{'.':'^6.0.12','e2e-helper':'2.0.5'})
+ assert.deepEqual(JSON.parse(m.applyBytes).overrides['e2e-parent-a@1.2.4']['e2e-target'],{'.':'6.0.12','e2e-helper':'2.0.5'})
 })

@@ -41,5 +41,5 @@ test('direct transaction verifies then commits before emitting a completed resul
  const result=JSON.parse(c.out())
  assert.equal(result.newVersion,'6.0.12')
  assert.match(result.commit.hash,/^[a-f0-9]{40,64}$/)
- assert.deepEqual(events,['plan','install','security'])
+ assert.deepEqual(events,['plan','install','install','security'])
 })

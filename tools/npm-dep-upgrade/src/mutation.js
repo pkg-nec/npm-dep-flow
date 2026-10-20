@@ -19,7 +19,11 @@ export async function buildMutation(project,evidence,candidate,deps={}) {
      if(!/^[~^]\s*\d+\.\d+\.\d+(?:[+-][\w.+-]+)?\s*$/.test(d.spec)) fail('UNSUPPORTED_REQUIREMENT','mutation','Only caret/tilde direct declarations are supported')
      manifest[d.field][d.requestedName]=d.spec.trim()[0]+candidate.version
    }
-   return {kind:'direct',applyBytes:serialize(manifest,project.manifestBytes),cleanupBytes:null,scopedLocations:[evidence.item.targetLocation]}
+   const cleanupBytes=serialize(manifest,project.manifestBytes)
+   // npm's age filter admits absent timestamps. Resolve exactly what we checked,
+   // then restore the user's range and prove that the lock retains this version.
+   for(const d of evidence.directDeclarations) manifest[d.field][d.requestedName]=candidate.version
+   return {kind:'direct',applyBytes:serialize(manifest,project.manifestBytes),cleanupBytes,scopedLocations:[evidence.item.targetLocation]}
  }
  const probeScope=deps.probeScope || await createScopeProbe(project,deps.scratchRoot)
  const scope=await planScopes(project,evidence,candidate,{probeScope})

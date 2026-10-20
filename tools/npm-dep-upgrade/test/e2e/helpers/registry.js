@@ -13,7 +13,9 @@ export async function startRegistry(scenario) {
    const pathname=decodeURIComponent(new URL(req.url,'http://local').pathname)
    const call={path:pathname,method:req.method,phase,body:body.length?JSON.parse(body):null,encoding:req.headers['content-encoding']};calls.push(call)
    const reply=(status,value)=>{res.writeHead(status,{'content-type':'application/json','cache-control':'no-cache'});res.end(JSON.stringify(value))}
+   if(pathname==='/__checkpoint') return reply(200,await scenario.checkpoint?.(call.body)||{})
    const fault=await scenario.request?.({call,phase,setPhase:p=>phase=p})
+   if(fault?.raw) {res.writeHead(fault.status||200);res.end(fault.raw);return}
    if(fault) return reply(fault.status||500,fault.body||{error:'fixture failure'})
    if(pathname==='/-/npm/v1/security/advisories/bulk') {
     const result={}

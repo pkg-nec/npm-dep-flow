@@ -46,7 +46,7 @@ function mergeRule(base,route,target,requirement,graph) {
   else {
     const old=value[target]
     const oldRange=typeof old==='string' ? old : old?.['.']
-    if(oldRange && (!semver.validRange(oldRange) || !semver.satisfies(requirement.slice(1),oldRange))) fail('OVERRIDE_CONFLICT','scope','Existing override conflicts with selected version')
+    if(oldRange && (!semver.validRange(oldRange) || !semver.satisfies(semver.minVersion(requirement).version,oldRange))) fail('OVERRIDE_CONFLICT','scope','Existing override conflicts with selected version')
     value[target]=old && typeof old==='object' ? {...old,'.':requirement} : requirement
   }
   // More specific newly introduced rules precede broad existing rules, whose relative order stays intact.
@@ -58,7 +58,7 @@ export async function planScopes(project,evidence,candidate,{probeScope}) {
   for(const e of incoming) if(e.effectiveSpec!==e.rawSpec && (!semver.validRange(e.effectiveSpec) || !semver.satisfies(candidate.version,e.effectiveSpec))) fail('OVERRIDE_CONFLICT','scope','Existing override policy excludes the selected version')
   const routes=[]
   for(const edge of incoming) {
-    for(const route of routesTo(graph,edge.from)) routes.push({route,requirement:`${edge.rawSpec.trim().startsWith('~')?'~':'^'}${candidate.version}`})
+    for(const route of routesTo(graph,edge.from)) routes.push({route,requirement:candidate.version})
   }
   const maxDepth=Math.max(0,...routes.map(r=>r.route.length))
   for(let depth=1;depth<=maxDepth;depth++) {

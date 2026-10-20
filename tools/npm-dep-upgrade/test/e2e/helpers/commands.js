@@ -20,3 +20,20 @@ export async function createCommandPath(runtime,toolRoots=toolsRoot) {
 }
 export async function command(f,cmd,args,root=f.root) {return runProcess(cmd,args,{cwd:root,env:f.env})}
 export async function checked(f,cmd,args,root=f.root) {const r=await command(f,cmd,args,root);if(r.code) throw new Error(`${cmd} ${args.join(' ')}: ${r.stderr}\n${r.stdout}`);return r.stdout.trim()}
+export async function installCheckpoints(f) {
+ const {unlink}=await import('node:fs/promises')
+ const wrapper=path.join(f.scratch,'npm-checkpoint.mjs')
+ await writeFile(wrapper,`import {spawnSync} from 'node:child_process';import{readFileSync,writeFileSync}from'node:fs';
+const npmCli=${JSON.stringify(f.npmCli)},args=process.argv.slice(2),file=${JSON.stringify(path.join(f.scratch,'install-count'))};
+let count=0;try{count=Number(readFileSync(file,'utf8'))}catch{}
+const install=args[0]==='install';if(install){count++;writeFileSync(file,String(count))}
+async function checkpoint(stage){if(!install)return;const r=await fetch(${JSON.stringify(f.registry.url+'/__checkpoint')},{method:'POST',body:JSON.stringify({stage,count,args})});const data=await r.json();if(data.exit)process.exit(data.exit)}
+await checkpoint('before');const result=spawnSync(process.execPath,[npmCli,...args],{stdio:'inherit',env:process.env});await checkpoint('after');process.exit(result.status??1);
+`)
+ const bin=path.join(f.scratch,'bin')
+ if(process.platform==='win32') await writeFile(path.join(bin,'npm.cmd'),`@echo off\r\n"${process.execPath}" "${wrapper}" %*\r\n`)
+ else {await unlink(path.join(bin,'npm'));await writeFile(path.join(bin,'npm'),`#!/bin/sh\nexec '${process.execPath.replaceAll("'","'\\''")}' '${wrapper.replaceAll("'","'\\''")}' "$@"\n`,{mode:0o755})}
+ // Keep a quoted npm-cli.js reference in the launcher for effective builtin config discovery.
+ if(process.platform==='win32') await (await import('node:fs/promises')).appendFile(path.join(bin,'npm.cmd'),`rem "${f.npmCli}"\r\n`)
+ else await (await import('node:fs/promises')).appendFile(path.join(bin,'npm'),`# "${f.npmCli}"\n`)
+}
