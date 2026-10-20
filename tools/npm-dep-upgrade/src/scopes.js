@@ -21,18 +21,37 @@ export async function createScopeProbe(project,scratchRoot=tmpdir()) {
     } finally {await rm(dir,{recursive:true,force:true})}
   }
 }
-function routesTo(graph,location,seen=new Set()) {
-  if(location==='') return [[]]
-  if(seen.has(location)) return []
-  const next=new Set([...seen,location])
-  const routes=[]
-  for(const edge of graph.edges.filter(e=>e.to===location)) {
-    for(const prefix of routesTo(graph,edge.from,next)) {
-      routes.push([...prefix,location])
-      if(routes.length>1024) fail('UNSUPPORTED_SCOPE','scope','Too many ancestry routes to prove a safe override scope')
+// Keep one scope per selector sequence and the physical locations at its head.
+// Shared ancestry then stays a compact graph instead of becoming every route.
+function addScope(scopes,route,head,graph) {
+  const key=JSON.stringify(route.map(location=>{
+    const node=graph.nodes.get(location)
+    const rootEdge=graph.edges.find(e=>e.from==='' && e.to===location)
+    return [node.name,node.version,rootEdge?.requestedName]
+  }))
+  if(!scopes.has(key)) {
+    if(scopes.size>=1024) fail('UNSUPPORTED_SCOPE','scope','Too many distinct override scopes to isolate the selected installation')
+    scopes.set(key,{route,heads:new Set()})
+  }
+  scopes.get(key).heads.add(head)
+}
+function upstreamParents(upstream) {
+  const parents=new Map()
+  for(const report of upstream) for(const edge of report.edges) {
+    if(!parents.has(edge.to)) parents.set(edge.to,new Set())
+    parents.get(edge.to).add(edge.from)
+  }
+  return parents
+}
+function expandScopes(scopes,parents,graph) {
+  const next=new Map()
+  for(const {route,heads} of scopes.values()) for(const head of heads) {
+    for(const parent of parents.get(head) || []) {
+      if(parent==='') addScope(next,route,head,graph)
+      else addScope(next,[parent,...route],parent,graph)
     }
   }
-  return routes
+  return next
 }
 function mergeRule(base,route,target,requirement,graph) {
   const node=graph.nodes.get(route[0])
@@ -56,18 +75,23 @@ export async function planScopes(project,evidence,candidate,{probeScope}) {
   const {graph,item,incoming}=evidence
   if(incoming.some(e=>e.requestedName!==item.package)) fail('UNSUPPORTED_SCOPE','scope','Alias override application is unsupported')
   for(const e of incoming) if(e.effectiveSpec!==e.rawSpec && (!semver.validRange(e.effectiveSpec) || !semver.satisfies(candidate.version,e.effectiveSpec))) fail('OVERRIDE_CONFLICT','scope','Existing override policy excludes the selected version')
-  const routes=[]
-  for(const edge of incoming) {
-    for(const route of routesTo(graph,edge.from)) routes.push({route,requirement:candidate.version.includes('+')?`>=${candidate.version} <=${candidate.version}`:candidate.version})
-  }
-  const maxDepth=Math.max(0,...routes.map(r=>r.route.length))
-  for(let depth=1;depth<=maxDepth;depth++) {
+  let scopes=new Map()
+  for(const dependent of evidence.directDependents) if(dependent.location) addScope(scopes,[dependent.location],dependent.location,graph)
+  const parents=upstreamParents(evidence.upstream)
+  const requirement=candidate.version.includes('+')?`>=${candidate.version} <=${candidate.version}`:candidate.version
+  const attempted=new Set()
+  // A useful acyclic context has at most one selector per package location.
+  // This bound also terminates searches through cyclic dependency graphs.
+  for(let depth=1;scopes.size && depth<=graph.nodes.size;depth++) {
     let overrides=structuredClone(project.manifest.overrides || {})
-    for(const r of routes) overrides=mergeRule(overrides,r.route.slice(-depth),item.package,r.requirement,graph)
+    for(const {route} of scopes.values()) overrides=mergeRule(overrides,route,item.package,requirement,graph)
+    const key=JSON.stringify(overrides)
+    if(attempted.has(key)) break
+    attempted.add(key)
     const impact=await probeScope(overrides)
     const targetEdges=impact.affectedEdges.filter(e=>graph.nodes.get(e.to)?.name===item.package)
-    if(impact.changedParentSpecs.length || targetEdges.some(e=>e.to!==item.targetLocation)) continue
-    if(incoming.every(original=>targetEdges.some(e=>e.from===original.from && e.requestedName===original.requestedName && e.type===original.type && semver.satisfies(candidate.version,e.effectiveSpec)))) return {overrides,scopedLocations:[item.targetLocation]}
+    if(!impact.changedParentSpecs.length && !targetEdges.some(e=>e.to!==item.targetLocation) && incoming.every(original=>targetEdges.some(e=>e.from===original.from && e.requestedName===original.requestedName && e.type===original.type && semver.satisfies(candidate.version,e.effectiveSpec)))) return {overrides,scopedLocations:[item.targetLocation]}
+    scopes=expandScopes(scopes,parents,graph)
   }
   fail('UNSUPPORTED_SCOPE','scope','Cannot express an override confined to the selected installation')
 }

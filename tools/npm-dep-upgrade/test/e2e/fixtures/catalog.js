@@ -30,6 +30,16 @@ export function ancestor() {
  s.packages['e2e-ancestor']={'1.0.0':{manifest:leaf('e2e-ancestor','1.0.0',{dependencies:{[parent]:'1.2.4'}}),releasedAt:ago(20)}}
  return s
 }
+export function sharedAncestry() {
+ const s=transitive()
+ s.manifest.dependencies={'e2e-layer-0-a':'1.0.0','e2e-layer-0-b':'1.0.0'}
+ for(let level=0;level<11;level++) for(const side of ['a','b']) {
+  const name=`e2e-layer-${level}-${side}`
+  const dependencies=level===10?{[parent]:'1.2.4'}:{[`e2e-layer-${level+1}-a`]:'1.0.0',[`e2e-layer-${level+1}-b`]:'1.0.0'}
+  s.packages[name]={'1.0.0':{manifest:leaf(name,'1.0.0',{dependencies}),releasedAt:ago(20)}}
+ }
+ return s
+}
 export function parentVersions() {
  const s=ancestor();s.manifest.dependencies['e2e-ancestor-b']='^1.0.0'
  s.packages['e2e-ancestor-b']={'1.0.0':{manifest:leaf('e2e-ancestor-b','1.0.0',{dependencies:{[parent]:'1.3.0'}}),releasedAt:ago(20)}}

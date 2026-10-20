@@ -13,6 +13,7 @@ The committed catalog and its final addendum define the inputs and expected beha
 | T05 | `transitive.test.js`: one shared installation, caret/tilde incoming consumers |
 | T06, T08 | `ineligible.test.js`: shared exact pin / sole exact pin refusal |
 | T07 | `transitive.test.js`: separate eligible and pinned copies, root7 unchanged, remaining finding; `ineligible.test.js`: pinned selector |
+| T09 regression | `transitive.test.js`: 25 package nodes with 2,048 ancestry routes upgrade through an immediate-parent scope, remove the temporary override, and reproduce the committed lockfile |
 | O01, O02 | `transitive.test.js`: original override bytes retained; `ineligible.test.js`: conflicting policy |
 | O03 | `compatibility.test.js` / `runner.js`: real npm12/11 EOVERRIDE without dot or with conflicting dot, followed by successful approved rule |
 | O04 | `recovery.test.js`: real cleanup install followed by deterministic reverted-result injection |
@@ -42,3 +43,5 @@ The committed catalog and its final addendum define the inputs and expected beha
 Independent-review regressions are in `review.test.js`: concurrent top-level lock metadata is preserved without committing, invalid private resolver output leaves original dependency files untouched, inconsistent v2 legacy data is rejected, and stable build-metadata releases retain exact identity. Unit Git tests additionally cover same-HEAD branch switches, clean CRLF normalization, and successful pre-commit/message hooks attempting to consume unrelated work or change the required subject. Private-stage configuration has its own adapter test.
 
 `project-location.test.js` covers absolute and relative project arguments for direct and transitive upgrades from a separate caller repository. It verifies nested target paths with spaces/shell symbols, preserves caller dependency edits/staged work/HEAD, and checks target commit contents plus clean reproduction. These cases also run in the Windows smoke workflow.
+
+`test/scopes.test.js` exercises the real paths CLI and Arborist scope probe. It covers the compact ancestry regression, same-version location filtering, repeated parent versions requiring ancestor scopes, multiple physical heads sharing one selector, cyclic ancestry refusal, and incomplete/conflicting direct-dependent evidence.

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import {readFile} from 'node:fs/promises'
 import path from 'node:path'
 import {createProject} from './helpers/project.js'
-import {transitive,shared,separate,ancestor,parentVersions,repeated,existingOverride} from './fixtures/catalog.js'
+import {transitive,shared,separate,ancestor,sharedAncestry,parentVersions,repeated,existingOverride} from './fixtures/catalog.js'
 import {plan,runUpgrade,assertSuccess,assertResolved,assertUnchanged} from './helpers/runner.js'
 export async function apply(t,s,runtime={}) {
  const f=await createProject(s,runtime,t),rows=await plan(f),row=rows.find(r=>r.status==='eligible')
@@ -17,6 +17,10 @@ for(const field of ['dependencies','devDependencies','peerDependencies','optiona
  const f=await apply(t,transitive(field,op));await assertResolved(f,'','e2e-parent-a','1.2.4')
 })
 test('T02 transitive parent',async t=>{await apply(t,ancestor())})
+test('T09 shared ancestry with 2048 routes upgrades without expanding every route',async t=>{
+ const f=await apply(t,sharedAncestry())
+ await assertResolved(f,'node_modules/e2e-parent-a','e2e-target','6.0.12')
+})
 test('T03 distinct parent versions',async t=>{
  const f=await apply(t,parentVersions());await assertResolved(f,'node_modules/e2e-ancestor-b/node_modules/e2e-parent-a','e2e-target','7.0.5')
 })

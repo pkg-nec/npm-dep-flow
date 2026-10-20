@@ -31,7 +31,7 @@ test('transitive mutations preserve direct parent specification and clean up exa
  await writeFile(path.join(f.root,'package.json'),JSON.stringify(f.manifest,null,2)+'\n')
  await writeFile(path.join(f.root,'package-lock.json'),JSON.stringify(f.lock))
  const p=await loadProject(f.root),graph=await loadGraph(f.root)
- const e={item:{package:'e2e-target',targetLocation:'node_modules/e2e-target'},graph,incoming:graph.edges.filter(x=>x.to==='node_modules/e2e-target'),directDeclarations:[],upstream:[]}
+ const e={item:{package:'e2e-target',targetLocation:'node_modules/e2e-target'},graph,incoming:graph.edges.filter(x=>x.to==='node_modules/e2e-target'),directDeclarations:[],directDependents:[{location:'node_modules/e2e-parent-a'}],upstream:[]}
  const m=await buildMutation(p,e,{version:'6.0.12'},{scratchRoot:f.root})
  assert.deepEqual(JSON.parse(m.applyBytes).overrides,{'e2e-parent-a@1.2.4':{'.':'$e2e-parent-a','e2e-target':'6.0.12'}})
  assert.deepEqual(m.cleanupBytes,p.manifestBytes)
@@ -50,7 +50,7 @@ test('temporary target rule preserves nested existing supporting overrides',asyn
  await writeFile(path.join(f.root,'package.json'),JSON.stringify(f.manifest))
  await writeFile(path.join(f.root,'package-lock.json'),JSON.stringify(f.lock))
  const p=await loadProject(f.root),graph=await loadGraph(f.root)
- const e={item:{package:'e2e-target',targetLocation:'node_modules/e2e-target'},graph,incoming:graph.edges.filter(x=>x.to==='node_modules/e2e-target'),directDeclarations:[],upstream:[]}
+ const e={item:{package:'e2e-target',targetLocation:'node_modules/e2e-target'},graph,incoming:graph.edges.filter(x=>x.to==='node_modules/e2e-target'),directDeclarations:[],directDependents:[{location:'node_modules/e2e-parent-a'}],upstream:[]}
  const m=await buildMutation(p,e,{version:'6.0.12'},{scratchRoot:f.root})
  assert.deepEqual(JSON.parse(m.applyBytes).overrides['e2e-parent-a@1.2.4']['e2e-target'],{'.':'6.0.12','e2e-helper':'2.0.5'})
 })
