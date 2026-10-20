@@ -28,3 +28,12 @@ test('context rejects failed commands and malformed configuration without exposi
       : valid(command, args)), error => /Invalid npm configuration/.test(error.message) && !error.message.includes('secret-token'))
   }
 })
+
+test('npm release-age derived before timestamps do not invalidate analysis metadata', async () => {
+  const config = { 'registry': 'https://registry.example/', 'min-release-age': null, 'before': '2026-10-13T11:00:00.000Z' }
+  const first = await readPlanningContext('/project', runner(config))
+  const second = await readPlanningContext('/project', runner({ ...config, before: '2026-10-13T11:00:00.100Z' }))
+  assert.deepEqual(first, second)
+  const registryChanged = await readPlanningContext('/project', runner({ ...config, registry: 'https://other.example/' }))
+  assert.notEqual(first.configHash, registryChanged.configHash)
+})
