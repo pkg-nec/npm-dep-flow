@@ -23,8 +23,12 @@ export async function readPlanningContext(root, run = runProcess) {
   }
   catch { throw new Error('Invalid npm configuration in planner cache context') }
   if (!config || typeof config !== 'object' || Array.isArray(config)) throw new Error('Invalid npm configuration in planner cache context')
-  // Includes effective scoped registries and npm config sources. Persist only a digest,
-  // never configuration values or credentials.
-  const configHash = createHash('sha256').update(JSON.stringify(Object.entries(config).sort(([a], [b]) => a.localeCompare(b)))).digest('hex')
+  // npm 11 converts min-release-age into a moving `before` timestamp. The
+  // planner queries complete version/time metadata and direct advisories, which
+  // do not use this installation cutoff. Upgrade enforces the current policy
+  // independently. Keep the cutoff out of analysis cache identity.
+  // Persist only a digest, never configuration values or credentials.
+  const analysisConfig = Object.entries(config).filter(([key]) => key !== 'before')
+  const configHash = createHash('sha256').update(JSON.stringify(analysisConfig.sort(([a], [b]) => a.localeCompare(b)))).digest('hex')
   return { npmVersion, configHash, audit, paths }
 }
