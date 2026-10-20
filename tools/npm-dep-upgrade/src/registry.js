@@ -1,3 +1,4 @@
+import { debugAction } from './debug.js'
 import npmFetch from 'npm-registry-fetch'
 import semver from 'semver'
 import { runProcess } from './process.js'
@@ -34,6 +35,7 @@ export async function readCatalog(root, name, context, run = runProcess) {
 }
 export async function readCandidateAdvisories(packageVersions, context, fetchImpl = npmFetch) {
   const result = new Map([...packageVersions.keys()].map(name => [name, []]))
+  const finish = debugAction('http', { method: 'POST', url: `${(context.auditRegistry || context.registry || '').replace(/\/$/, '')}/-/npm/v1/security/advisories/bulk` })
   try {
     const response = await fetchImpl('/-/npm/v1/security/advisories/bulk', { ...context.requestOptions, registry: context.auditRegistry || context.registry, method: 'POST', gzip: true, body: Object.fromEntries(packageVersions), preferOnline: true, retry: { retries: 0 } })
     let bytes = 0
@@ -54,7 +56,11 @@ export async function readCandidateAdvisories(packageVersions, context, fetchImp
         return { id: a.id, range }
       }))
     }
+    finish(`status=${response.status ?? response.statusCode ?? 'success'}`)
     return result
   }
-  catch { fail('SECURITY_FAILED', 'security', 'Candidate advisory security request failed or returned invalid advisory data') }
+  catch {
+    finish('error=request-failed')
+    fail('SECURITY_FAILED', 'security', 'Candidate advisory security request failed or returned invalid advisory data')
+  }
 }

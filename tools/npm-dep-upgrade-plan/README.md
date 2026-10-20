@@ -143,3 +143,15 @@ The [planner design](../../docs/superpowers/specs/2026-10-13-npm-dep-upgrade-pla
 ## Applying a recommendation
 
 The separate [npm-dep-upgrade](../npm-dep-upgrade/README.md) command reruns this planner and accepts a full item ID or a unique prefix of at least seven hexadecimal characters, optionally with `--package <exact-name>`. It applies one installation per invocation and commits verified dependency-file changes. IDs do not encode the old version; the current planner report determines eligibility. The mutator independently chooses the newest safe stable release within every original incoming range and the effective age policy, rather than assuming that every version above the minimum is safe.
+
+## Debug logging
+
+Use `--debug` to write external-action diagnostics to stderr while keeping the report on stdout:
+
+```sh
+npm-dep-upgrade-plan /path/to/project --debug --format json > report.json 2> debug.log
+```
+
+Logs show commands, arguments, working directories, durations and exit outcomes. Debug mode propagates through sibling tools, and their debug records stream to the caller. Cache hits, misses and bypasses explain when analysis is reused; debug mode preserves normal caching.
+
+Credentials in logged arguments and URLs are redacted. Debug records omit environment values, request bodies and subprocess output. Existing error diagnostics and installation progress retain their usual behavior. See the [shared debug guide](../../README.md#debug-logging) for propagation and scope.

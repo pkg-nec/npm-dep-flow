@@ -64,6 +64,18 @@ Failures in the private resolver project leave original dependency files untouch
 
 Completed reports exit 0 and use Markdown (default) or schema-version-2 JSON. JSON includes full ID, package, old/new versions, location, strategy, release timestamp, changed files, supporting changes and commit hash/subject. Errors exit 1 with stage-specific stderr and no success report on stdout.
 
+## Debug logging
+
+Use `--debug` to write external-action diagnostics to stderr while keeping the report on stdout:
+
+```sh
+npm-dep-upgrade /path/to/project <item-id> --debug --format json > report.json 2> debug.log
+```
+
+Logs show commands, arguments, working directories, durations and exit outcomes. Debug mode propagates through sibling tools, and their debug records stream to the caller. This includes npm installs, Git commands, the hook runner and direct HTTP security requests. Cache hits, misses and bypasses explain when analysis is reused; debug mode preserves normal caching.
+
+Credentials in logged arguments and URLs are redacted. Debug records omit environment values, request bodies and subprocess output. Existing error diagnostics and installation progress retain their usual behavior. See the [shared debug guide](../../README.md#debug-logging) for propagation and scope.
+
 ## Tests
 
 ```sh

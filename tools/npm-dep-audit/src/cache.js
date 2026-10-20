@@ -1,3 +1,4 @@
+import { debugLog } from './debug.js'
 import { createHash, randomUUID } from 'node:crypto'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
@@ -40,6 +41,7 @@ export async function getAudit(project, context, {
   fetchAudit = () => runNpmAudit(project.root),
 } = {}) {
   if (noCache) {
+    debugLog('cache bypass audit')
     const audit = validateAudit(await fetchAudit())
     return { audit, auditedAt: new Date(now()).toISOString() }
   }
@@ -59,12 +61,14 @@ export async function getAudit(project, context, {
       catch { /* invalid cache is a miss */ }
       if (entry.key === key && auditValid && Number.isFinite(age) && age >= 0 && age < ttlMs
         && entry.auditedAt === new Date(entry.timestamp).toISOString()) {
+        debugLog('cache hit audit')
         return { audit: entry.audit, auditedAt: entry.auditedAt }
       }
     }
   }
   catch { /* Missing, unreadable or malformed cache entries are misses. */ }
 
+  debugLog('cache miss audit')
   const audit = validateAudit(await fetchAudit())
   const timestamp = now()
   const auditedAt = new Date(timestamp).toISOString()

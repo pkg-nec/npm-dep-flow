@@ -1,3 +1,4 @@
+import { debugSpawn } from './debug.js'
 import { spawn } from 'node:child_process'
 import semver from 'semver'
 
@@ -36,7 +37,7 @@ function command(root, args, spawnImpl, platform) {
     let child
     try {
       const windows = platform === 'win32'
-      child = spawnImpl(windows ? `npm.cmd ${args.join(' ')}` : 'npm', windows ? [] : args,
+      child = debugSpawn(spawnImpl, windows ? `npm.cmd ${args.join(' ')}` : 'npm', windows ? [] : args,
         { cwd: root, shell: windows, stdio: ['ignore', 'pipe', 'pipe'] })
     }
     catch (error) {

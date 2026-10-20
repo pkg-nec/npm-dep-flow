@@ -1,3 +1,4 @@
+import { debugSpawn } from './debug.js'
 import { spawn } from 'node:child_process'
 
 const packageNamePattern = /^(?:[a-z0-9][a-z0-9._~-]*|@[a-z0-9][a-z0-9._~-]*\/[a-z0-9][a-z0-9._~-]*)$/i
@@ -42,7 +43,7 @@ function command(projectRoot, packageName, spawnImpl, platform, noCache) {
     const args = ['.', packageName, '--format', 'json', ...(noCache ? ['--no-cache'] : [])]
     let child
     try {
-      child = spawnImpl(
+      child = debugSpawn(spawnImpl,
         windows ? `npm-dep-paths.cmd ${args.join(' ')}` : 'npm-dep-paths',
         windows ? [] : args,
         { cwd: projectRoot, shell: windows, stdio: ['ignore', 'pipe', 'pipe'] },

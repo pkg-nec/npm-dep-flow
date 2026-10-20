@@ -111,3 +111,15 @@ A completed report exits 0, including name-only queries with no matches (`result
 From `tools/npm-dep-paths/`, run `npm ci --ignore-scripts` and `npm test`. The suite includes real executable checks without `node_modules` in the fixture project and needs no live registry or separately installed sibling tool.
 
 The [paths design](../../docs/superpowers/specs/2026-10-13-npm-dep-paths-design.md) describes selection, resolution, and graph contracts.
+
+## Debug logging
+
+Use `--debug` to write external-action diagnostics to stderr while keeping the report on stdout:
+
+```sh
+npm-dep-paths /path/to/project lodash --debug --format json > report.json 2> debug.log
+```
+
+Paths launches no external commands or registry requests. Debug mode reports cache hits, misses and bypasses. It preserves normal caching; add `--no-cache` to bypass the result cache.
+
+Credentials in logged arguments and URLs are redacted. Debug records omit environment values, request bodies and subprocess output. Existing error diagnostics and installation progress retain their usual behavior. See the [shared debug guide](../../README.md#debug-logging) for propagation and scope.

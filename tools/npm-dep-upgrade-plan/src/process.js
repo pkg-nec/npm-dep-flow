@@ -1,3 +1,4 @@
+import { debugSpawn } from './debug.js'
 import { spawn } from 'node:child_process'
 
 export function runProcess(commandName, args, cwd, spawnImpl = spawn, platform = process.platform) {
@@ -8,7 +9,7 @@ export function runProcess(commandName, args, cwd, spawnImpl = spawn, platform =
     let child
 
     try {
-      child = spawnImpl(command, commandArgs, {
+      child = debugSpawn(spawnImpl, command, commandArgs, {
         cwd,
         shell: windows,
         stdio: ['ignore', 'pipe', 'pipe'],
