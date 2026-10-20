@@ -43,5 +43,9 @@ export async function loadNpmContext(projectRoot, deps = {}) {
   if (!Number.isFinite(minAgeDays) || (before && !Number.isFinite(cutoffMs))) fail('NPM_CONTEXT','configuration','Invalid release-age policy')
   const installArgs=['install','--ignore-scripts',`--min-release-age=${minAgeDays}`,'--no-audit','--no-fund']
   if(before) installArgs.push(`--before=${new Date(cutoffMs).toISOString()}`)
-  return {version,registry,auditRegistry,requestOptions:{...config.flat},installArgs,minAgeDays,cutoffMs}
+  const stagingPathArgs=Object.entries(definitions).filter(([key,definition])=>definition.type===path && key!=='prefix' && !definition.deprecated).flatMap(([key])=>{
+    const value=config.get(key)
+    return typeof value==='string'&&value ? [`--${key}=${value}`] : []
+  })
+  return {version,registry,auditRegistry,stagingPathArgs,requestOptions:{...config.flat},installArgs,minAgeDays,cutoffMs}
 }

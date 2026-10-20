@@ -2,7 +2,11 @@ import npmFetch from 'npm-registry-fetch'
 import semver from 'semver'
 import { runProcess } from './process.js'
 import { fail } from './errors.js'
-export function stableVersion(value) { return typeof value==='string' && semver.valid(value)===value && semver.prerelease(value)===null }
+export function stableVersion(value) {
+  if(typeof value!=='string') return false
+  const parsed=semver.parse(value)
+  return !!parsed && parsed.prerelease.length===0 && parsed.format()+(parsed.build.length?'+'+parsed.build.join('.'):'')===value
+}
 export function normalizeTimestamp(value) {
   if(typeof value!=='string') return null
   const m=/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.exec(value)

@@ -25,3 +25,10 @@ test('project rejects unsupported workspaces and inconsistent root metadata', as
  await writeFile(path.join(f.root,'package.json'), JSON.stringify({ ...f.manifest, version: '2.0.0' }))
  await assert.rejects(loadProject(f.root), /root|stale/i)
 })
+test('review v2 requires a complete consistent legacy representation',async t=>{
+ const f=await gitProject(t);f.lock.lockfileVersion=2;f.lock.dependencies={'e2e-target':{version:'6.0.9'}}
+ const save=()=>writeFile(path.join(f.root,'package-lock.json'),JSON.stringify(f.lock))
+ await save();await loadProject(f.root)
+ f.lock.dependencies['e2e-target'].version='6.0.8';await save();await assert.rejects(loadProject(f.root),/legacy|inconsistent/i)
+ delete f.lock.dependencies['e2e-target'];await save();await assert.rejects(loadProject(f.root),/legacy|inconsistent/i)
+})

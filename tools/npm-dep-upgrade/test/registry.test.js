@@ -22,3 +22,8 @@ test('catalog accepts npm 12 singleton-array time output',async()=>{
  const result=await readCatalog('/project','e2e-target',{minAgeDays:7},async(cmd,args)=>({code:0,stdout:JSON.stringify(args[2]==='versions'?['6.0.12']:[{'6.0.12':'2026-01-01T00:00:00Z'}])}))
  assert.equal(result.releaseTimes.get('6.0.12'),'2026-01-01T00:00:00.000Z')
 })
+test('review stable build metadata retains the exact registry version identity',async()=>{
+ const {stableVersion}=await import('../src/registry.js')
+ assert.equal(stableVersion('6.0.12+build.1'),true)
+ for(const v of ['v6.0.12','6.0.12-beta.1','6.0','06.0.12']) assert.equal(stableVersion(v),false)
+})

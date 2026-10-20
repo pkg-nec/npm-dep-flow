@@ -29,17 +29,17 @@ test('direct transaction verifies then commits before emitting a completed resul
  const item={id:itemId('e2e-target','node_modules/e2e-target'),package:'e2e-target',version:'6.0.9',targetLocation:'node_modules/e2e-target',minimumSafeVersion:'6.0.10',status:'eligible',strategy:{id:'update-within-declared-range'}}
  const evidence={item,graph,auditRows:[],incoming:graph.edges,directDeclarations:[{field:'dependencies',requestedName:'e2e-target',spec:'^6.0.8'}],upstream:[]}
  const c=capture()
- const deps={preflightGit:async()=>guard,readPlanner:async()=>{events.push('plan');return {rows:[item]}},readEvidence:async()=>evidence,loadNpmContext:async()=>({minAgeDays:7}),readCatalog:async()=>({versions:['6.0.12'],releaseTimes:new Map([['6.0.12','2026-01-01T00:00:00Z']])}),readCandidateAdvisories:async()=>new Map(),installProject:async()=>{
+ const deps={preflightGit:async()=>guard,readPlanner:async()=>{events.push('plan');return {rows:[item]}},readEvidence:async()=>evidence,loadNpmContext:async()=>({minAgeDays:7,installArgs:['install','--ignore-scripts','--min-release-age=7']}),readCatalog:async()=>({versions:['6.0.12'],releaseTimes:new Map([['6.0.12','2026-01-01T00:00:00Z']])}),readCandidateAdvisories:async()=>new Map(),installProject:async installRoot=>{
    events.push('install')
-   const manifest=JSON.parse(await readFile(path.join(f.root,'package.json')))
+   const manifest=JSON.parse(await readFile(path.join(installRoot,'package.json')))
    const lock=structuredClone(f.lock);lock.packages['']=manifest;lock.packages['node_modules/e2e-target'].version='6.0.12'
-   await writeFile(path.join(f.root,'package-lock.json'),JSON.stringify(lock))
-   await mkdir(path.join(f.root,'node_modules','e2e-target'),{recursive:true})
-   await writeFile(path.join(f.root,'node_modules','e2e-target','package.json'),JSON.stringify({name:'e2e-target',version:'6.0.12'}))
+   await writeFile(path.join(installRoot,'package-lock.json'),JSON.stringify(lock))
+   await mkdir(path.join(installRoot,'node_modules','e2e-target'),{recursive:true})
+   await writeFile(path.join(installRoot,'node_modules','e2e-target','package.json'),JSON.stringify({name:'e2e-target',version:'6.0.12'}))
  },verifyFinalSecurity:async()=>{assert.equal(c.out(),'');events.push('security')}}
  assert.equal(await main([item.id,'--format','json'],c.io,deps),0,c.err())
  const result=JSON.parse(c.out())
  assert.equal(result.newVersion,'6.0.12')
  assert.match(result.commit.hash,/^[a-f0-9]{40,64}$/)
- assert.deepEqual(events,['plan','install','install','security'])
+ assert.deepEqual(events,['plan','install','install','install','security'])
 })

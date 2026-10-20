@@ -4,7 +4,7 @@ Upgrade one vulnerable npm installation selected by a fresh planner ID, verify i
 
 ## Setup
 
-Use Node.js 24.21.0 with npm 12.1.0 as the reference runtime. npm 11.10.0 is covered by the documented compatibility subset. The selected npm on `PATH` is used throughout; this tool never installs or changes npm itself. Other npm versions are not covered by this matrix.
+Use Git 2.36 or newer and Node.js 24.21.0 with npm 12.1.0 as the reference runtime. npm 11.10.0 is covered by the documented compatibility subset. The selected npm on `PATH` is used throughout; this tool never installs or changes npm itself. Other npm versions are not covered by this matrix.
 
 Each tool is independently installed. Install `npm-dep-paths`, `npm-dep-audit`, and `npm-dep-upgrade-plan` and keep their commands on `PATH`, then install this tool from its directory:
 
@@ -38,7 +38,7 @@ Direct dependencies in `dependencies`, `devDependencies`, `peerDependencies`, an
 
 For transitive targets, temporary parent-version/ancestor overrides must be proven to affect only the selected installation. A directly declared parent uses `".": "$parent-name"` within its scoped rule. Existing unrelated override policy is preserved; conflicting policy or unprovable isolation is refused. The temporary rule is removed and a second install must retain the selected version. The final manifest normally equals its original bytes.
 
-Both direct apply declarations and transitive temporary rules constrain resolution to the exact selected version during the first install. Direct final declarations then regain their original operator before the second install. This avoids npm selecting a higher release excluded by our security/timestamp checks; it does not leave permanent exact pins. Every install runs with `--ignore-scripts` and `--min-release-age` of at least 7. No lifecycle scripts run. Projects needing install-time builds may require separate trusted setup and application tests afterward.
+Both direct apply declarations and transitive temporary rules constrain resolution to the exact selected version during the first install. Direct final declarations then regain their original operator before the second install. This avoids npm selecting a higher release excluded by our security/timestamp checks; it does not leave permanent exact pins. Resolver installs run in a private temporary project using the same npm configuration and anchored path settings. Only verified dependency files are copied back after rechecking that the real project is unchanged. Then `npm ci` reproduces that pair in the real project. Invalid resolver output never touches user dependency files. Every install and ci runs with `--ignore-scripts` and `--min-release-age` of at least 7. No lifecycle scripts run. Projects needing install-time builds may require separate trusted setup and application tests afterward.
 
 The selected installation must retain its location and consumers; its parents and every other installation of the same package remain unchanged. Necessary additions, removals, upgrades, and relocations within its dependency closure are allowed and reported as supporting changes. Unrelated graph changes and newly introduced vulnerable supporting versions fail verification. Other pre-existing vulnerabilities may remain.
 
@@ -52,9 +52,9 @@ After uncached security checks and installed-target verification, only changed d
 deps: bump <package-name> from <old-version> to <new-version>
 ```
 
-Nothing is pushed or tagged. Git hooks still run. A rejected commit leaves verified working changes for inspection/retry and removes only staging owned by this operation when safe.
+Nothing is pushed or tagged. Git hooks still run. Guards after pre-commit and message hooks reject changed files, staged content, branch state, or commit subject before Git creates the dependency commit. Git clean filters are respected for CRLF files while recovery retains original working-file bytes. A rejected commit leaves verified working changes for inspection/retry and removes only staging owned by this operation when safe.
 
-Failures before staging restore captured dependency-file bytes when ownership and Git state still match. `node_modules` may have changed and can need rebuilding. Concurrent edits, staged work or HEAD movement are detected; recovery refuses to overwrite them. Inspect diagnostics and Git state if recovery cannot finish. A newly published advisory detected during application produces a stale-recommendation error and requires a fresh run; the same invocation never silently selects another version.
+Failures in the private resolver project leave original dependency files untouched. After publication, failures before Git staging restore captured dependency-file bytes when ownership and Git state still match. `node_modules` may have changed and can need rebuilding. Concurrent edits, staged work or HEAD movement are detected; recovery refuses to overwrite them. Inspect diagnostics and Git state if recovery cannot finish. A newly published advisory detected during application produces a stale-recommendation error and requires a fresh run; the same invocation never silently selects another version.
 
 Completed reports exit 0 and use Markdown (default) or schema-version-2 JSON. JSON includes full ID, package, old/new versions, location, strategy, release timestamp, changed files, supporting changes and commit hash/subject. Errors exit 1 with stage-specific stderr and no success report on stdout.
 

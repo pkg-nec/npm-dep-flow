@@ -26,8 +26,8 @@ export async function installCheckpoints(f) {
  await writeFile(wrapper,`import {spawnSync} from 'node:child_process';import{readFileSync,writeFileSync}from'node:fs';
 const npmCli=${JSON.stringify(f.npmCli)},args=process.argv.slice(2),file=${JSON.stringify(path.join(f.scratch,'install-count'))};
 let count=0;try{count=Number(readFileSync(file,'utf8'))}catch{}
-const install=args[0]==='install';if(install){count++;writeFileSync(file,String(count))}
-async function checkpoint(stage){if(!install)return;const r=await fetch(${JSON.stringify(f.registry.url+'/__checkpoint')},{method:'POST',body:JSON.stringify({stage,count,args})});const data=await r.json();if(data.exit)process.exit(data.exit)}
+const install=['install','ci'].includes(args[0]);if(install){count++;writeFileSync(file,String(count))}
+async function checkpoint(stage){if(!install)return;const r=await fetch(${JSON.stringify(f.registry.url+'/__checkpoint')},{method:'POST',body:JSON.stringify({stage,count,args,cwd:process.cwd()})});const data=await r.json();if(data.exit)process.exit(data.exit)}
 await checkpoint('before');const result=spawnSync(process.execPath,[npmCli,...args],{stdio:'inherit',env:process.env});await checkpoint('after');process.exit(result.status??1);
 `)
  const bin=path.join(f.scratch,'bin')

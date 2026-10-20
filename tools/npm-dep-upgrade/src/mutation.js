@@ -22,7 +22,7 @@ export async function buildMutation(project,evidence,candidate,deps={}) {
    const cleanupBytes=serialize(manifest,project.manifestBytes)
    // npm's age filter admits absent timestamps. Resolve exactly what we checked,
    // then restore the user's range and prove that the lock retains this version.
-   for(const d of evidence.directDeclarations) manifest[d.field][d.requestedName]=candidate.version
+   for(const d of evidence.directDeclarations) manifest[d.field][d.requestedName]=candidate.version.includes('+')?`>=${candidate.version} <=${candidate.version}`:candidate.version
    return {kind:'direct',applyBytes:serialize(manifest,project.manifestBytes),cleanupBytes,scopedLocations:[evidence.item.targetLocation]}
  }
  const probeScope=deps.probeScope || await createScopeProbe(project,deps.scratchRoot)
