@@ -1,5 +1,6 @@
 import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises'
 import path from 'node:path'
+import { tmpdir } from 'node:os'
 import { runProcess } from '../../src/process.js'
 export async function git(root, args) {
   const r = await runProcess('git', args, { cwd: root })
@@ -7,7 +8,7 @@ export async function git(root, args) {
   return r.stdout
 }
 export async function gitProject(t, { nested = false } = {}) {
-  const base = process.env.NPM_DEP_FLOW_TEST_TMPDIR || '/home/maw/src/nrc/npm-dep-flow-impl/tmp/npm-dep-upgrade-native/fixtures'
+  const base = process.env.NPM_DEP_FLOW_TEST_TMPDIR || path.join(tmpdir(),'npm-dep-upgrade-unit')
   await mkdir(base, { recursive: true })
   const repo = await mkdtemp(path.join(base, 'git-project-'))
   t.after(() => rm(repo, { recursive: true, force: true }))

@@ -14,3 +14,12 @@ test('harness D01 real registry, npm, audit, planner, Git and clean reproduction
  assert.ok(f.registry.calls.some(c=>c.path.includes('.tgz')))
  assert.deepEqual(f.registry.unexpected,[])
 })
+test('harness explicit phases, fixture integrity and unknown-request refusal',async t=>{
+ const {createHash}=await import('node:crypto'),{tarball}=await import('./helpers/tarballs.js'),{leaf}=await import('./fixtures/catalog.js')
+ const archive=tarball(leaf('e2e-test','1.0.0'))
+ assert.equal(archive.integrity,'sha512-'+createHash('sha512').update(archive.bytes).digest('base64'))
+ const f=await createProject(direct(),{},t)
+ assert.ok(f.root.startsWith(f.scratch));assert.notEqual(f.env.npm_config_cache,process.env.npm_config_cache)
+ const bad=await fetch(f.registry.url+'/unknown');assert.equal(bad.status,404);assert.equal(f.registry.unexpected.length,1)
+ f.registry.setPhase('snapshot');await fetch(f.registry.url+'/e2e-target');assert.equal(f.registry.calls.at(-1).phase,'snapshot')
+})

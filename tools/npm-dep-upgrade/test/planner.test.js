@@ -18,3 +18,13 @@ test('location validation excludes alternate spellings and escapes', () => {
   assert.equal(canonicalLocation(location), location)
   for (const value of ['', '/node_modules/a', '../node_modules/a', './node_modules/a', 'node_modules/../a', 'node_modules/a/', 'node_modules\\a', 'node_modules/a/extra', 'node_modules//a']) assert.throws(() => canonicalLocation(value), /location/i)
 })
+test('H05 adapter controls reject missing IDs, unknown strategy, failed or malformed planner',async()=>{
+ const {readPlanner}=await import('../src/planner.js')
+ const {id:omitted,...missing}=row
+ assert.throws(()=>validatePlanner(report([missing])),/ID/i)
+ assert.throws(()=>selectItem(report([{...row,strategy:{...row.strategy,id:'upgrade-parent'}}]),id),/unsupported/i)
+ await assert.rejects(readPlanner('/project',async()=>({code:1,stderr:'fixture error',stdout:''})),/failed/i)
+ await assert.rejects(readPlanner('/project',async()=>({code:0,stderr:'',stdout:'invalid'})),/JSON/i)
+ // Controlled duplicate: hypothetical full-collision handling, not a real SHA collision.
+ assert.throws(()=>validatePlanner(report([row,{...row}])),/Duplicate full/i)
+})
