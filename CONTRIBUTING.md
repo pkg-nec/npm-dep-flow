@@ -1,5 +1,39 @@
 # Contributing
 
+## Development setup and linting
+
+The repository root is not an npm package or workspace. Each CLI under `tools/` remains an independent package. Shared lint dependencies and their lockfile live in the private `dev-tooling/` package; do not add them to the CLI packages or introduce npm workspaces.
+
+Use Node.js 24 for development, matching CI. The lint tooling supports Node.js `^20.19.0 || ^22.13.0 || >=24`; the CLIs still support Node.js 20 or newer.
+
+From the repository root:
+
+```sh
+npm --prefix dev-tooling ci --ignore-scripts
+npm --prefix dev-tooling run lint
+npm --prefix dev-tooling run lint:fix
+```
+
+Alternatively, run `npm ci --ignore-scripts`, `npm run lint`, or `npm run lint:fix` inside `dev-tooling/`. After automatic fixes, resolve remaining findings and rerun lint and the affected tools' tests.
+
+The shared flat configuration is `dev-tooling/eslint.config.mjs`. The commands supply it explicitly and lint source, executables, tests, and test helpers across `npm-dep-paths`, `npm-dep-audit`, and `npm-dep-upgrade-plan`, plus development-tooling JavaScript. It configures Node.js globals, ESM for `.js`/`.mjs`, and CommonJS for `.cjs`. Generated `node_modules`, `tmp`, `coverage`, `dist`, and `.cache` directories are excluded.
+
+Use the unchanged `@eslint/js` recommended and `@stylistic/eslint-plugin` recommended configurations. Keep their upstream style defaults; do not add personal rule overrides, rule-disable comments to bypass findings, or Prettier. Keep the pinned versions and lockfile in sync when updating lint dependencies.
+
+Every future JavaScript change must pass shared lint with zero warnings. Pull requests must pass the GitHub Actions `lint` job and the tool test checks before merging. The lint workflow runs on every pull request targeting `main` and every push to `main`, including changes only to shared configuration or documentation.
+
+## Tests and compatibility
+
+From each affected `tools/<name>/` directory, run `npm ci --ignore-scripts` and `npm test`. There is no root-level test command. Before submitting changes across all three tools, run all three suites and their documented integration checks:
+
+- Paths includes real executable checks in `npm test` without an integration switch.
+- Audit: install this checkout's paths CLI separately on `PATH`, then run `NPM_DEP_PATHS_INTEGRATION=1 npm test` in `tools/npm-dep-audit/`.
+- Upgrade planner: install this checkout's audit CLI separately on `PATH`, then run `NPM_DEP_AUDIT_INTEGRATION=1 npm test` in `tools/npm-dep-upgrade-plan/`. This integration uses fixture npm/paths responses and needs no live registry.
+
+The environment assignment examples use POSIX shell syntax. In PowerShell, set the corresponding `$env:NPM_DEP_PATHS_INTEGRATION` or `$env:NPM_DEP_AUDIT_INTEGRATION` to `'1'` before running `npm test`. See each tool's README for installation and integration details.
+
+Preserve documented CLI behavior, exit codes, Markdown output, and schema version 2 JSON contracts. Keep necessary correctness changes separate from mechanical formatting commits and explain them in the pull request. Follow the versioning and commit sequencing policy in [AGENTS.md](AGENTS.md).
+
 ## Commit messages and pull request titles
 
 Use [Conventional Commits 1.0.0](https://www.conventionalcommits.org/en/v1.0.0/) for every commit message and pull request title.

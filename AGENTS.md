@@ -3,7 +3,8 @@
 ## Repository layout
 
 - This repository contains small command-line tools for maintaining Node.js project dependencies. The root contains shared documentation; it is not an npm package or workspace.
-- Each `tools/<name>/` directory is an independent Node.js project with its own manifest, lockfile, executable, source, tests, and README. Keep tool dependencies and npm commands within the relevant tool directory.
+- Each `tools/<name>/` directory is an independent Node.js project with its own manifest, lockfile, executable, source, tests, and README. Keep CLI dependencies and tool-specific npm commands within the relevant tool directory.
+- `dev-tooling/` is a separate private development package with the shared ESLint dependencies, lockfile, configuration, and commands. Keep the root a non-package and do not introduce npm workspaces.
 - Tools should exchange data through documented command-line output, including versioned JSON, rather than importing another tool's private source files.
 - Start with the [repository README](README.md) for all three tool guides and design documents.
 
@@ -30,6 +31,11 @@
 ## Shared development and output contracts
 
 - Use Node.js 20 or newer. From the relevant `tools/<name>/` directory, run `npm ci --ignore-scripts` and `npm test`. There is no root-level `npm test`.
+- Use Node.js 24 for development and CI; shared lint tooling requires `^20.19.0 || ^22.13.0 || >=24` independently of the CLI runtime minimum.
+- From the repository root, install lint dependencies with `npm --prefix dev-tooling ci --ignore-scripts`, check with `npm --prefix dev-tooling run lint`, and apply fixes with `npm --prefix dev-tooling run lint:fix`. The same npm commands without `--prefix dev-tooling` work inside `dev-tooling/`.
+- Run shared lint for every future JavaScript change, including executables, tests, and test helpers, and run affected tool tests after fixes. All pull requests must pass the GitHub Actions `lint` job with zero warnings and the tool test checks before merging.
+- Use the single shared `dev-tooling/eslint.config.mjs` with unchanged `@eslint/js` and `@stylistic/eslint-plugin` recommended configurations and upstream style defaults. Do not add personal rule overrides, rule-disable comments to bypass findings, or Prettier. Node.js globals and ESM/CommonJS file scopes belong in this config; generated `node_modules`, `tmp`, `coverage`, `dist`, and `.cache` directories are excluded.
+- Keep correctness changes separate from mechanical formatting commits and explain any behavioral corrections. See [CONTRIBUTING.md](CONTRIBUTING.md) for the full setup and integration checks.
 - Preserve each tool's documented CLI and schema version 2 JSON interface. Human-readable reports use Markdown with one tool-name H1; an empty report has a message without a table. Paths retains `--format text` as an alias for `markdown`.
 - Completed reports exit 0 even when findings exist or all strategies are ineligible. Errors exit 1 with stderr diagnostics and no partial report on stdout.
 - Tools must not install dependencies, run lifecycle scripts, or modify target project files. Audit's cache lives outside the target project.
