@@ -121,3 +121,15 @@ A completed report exits 0 even when vulnerabilities are found. Errors exit 1, w
 From `tools/npm-dep-audit/`, run `npm ci --ignore-scripts` and `npm test`. Set `NPM_DEP_PATHS_INTEGRATION=1` to include the integration test against the separately installed paths command on `PATH`. Normal tests use controlled audit data and do not need a live audit registry.
 
 The [audit design](../../docs/superpowers/specs/2026-10-09-npm-dep-audit-design.md) describes the data flow and contracts.
+
+## Debug logging
+
+Use `--debug` to write external-action diagnostics to stderr while keeping the report on stdout:
+
+```sh
+npm-dep-audit /path/to/project --debug --format json > report.json 2> debug.log
+```
+
+Logs show commands, arguments, working directories, durations and exit outcomes. Debug mode propagates through sibling tools, and their debug records stream to the caller. Cache hits, misses and bypasses explain when analysis is reused; debug mode preserves normal caching.
+
+Credentials in logged arguments and URLs are redacted. Debug records omit environment values, request bodies and subprocess output. Existing error diagnostics and installation progress retain their usual behavior. See the [shared debug guide](../../README.md#debug-logging) for propagation and scope.

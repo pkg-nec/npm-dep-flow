@@ -25,6 +25,20 @@ All three analysis tools cache structured results outside the target project by 
 
 Upgrade continues to rerun the planner for ID selection and independently performs fresh security checks before and after mutation. See each tool guide for cache keys, expiry and invalidation details.
 
+## Debug logging
+
+Add `--debug` to any tool to log external actions and cache decisions to stderr:
+
+```sh
+npm-dep-upgrade-plan /path/to/project --debug --format json > report.json 2> debug.log
+```
+
+The report stays on stdout. Each subprocess has a start record with its command, arguments and working directory, followed by an end record with its duration and exit status, signal or launch error. Records include a process ID and action number so concurrent operations can be paired. Logs cover npm context queries, registry lookups, audits, sibling tools, and upgrade's installs, Git commands and hook runner. Upgrade's direct security requests log their HTTP method, endpoint and outcome.
+
+Debug mode propagates to sibling tools and streams their debug records to the caller. Use versions of all four tools that support `--debug`. Cache hits, misses and bypasses are logged; debug mode keeps normal cache behavior. Use `--no-cache` on an analysis tool when you also want fresh analysis.
+
+Credentials in command arguments and URLs are redacted. Debug records omit environment values, request bodies and subprocess stdout/stderr. Existing error diagnostics and npm installation progress still follow each tool's normal behavior. Logging covers actions launched by these tools, rather than commands or network requests performed internally by npm or user hooks.
+
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the contribution guide, including the required Conventional Commit format for commit messages and pull request titles.
