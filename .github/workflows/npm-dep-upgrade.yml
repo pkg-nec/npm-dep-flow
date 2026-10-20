@@ -1,0 +1,55 @@
+name: npm-dep-upgrade
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up reference Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24.21.0'
+          package-manager-cache: false
+      - name: Install four independent tool packages
+        run: |
+          for tool in npm-dep-paths npm-dep-audit npm-dep-upgrade-plan npm-dep-upgrade; do
+            (cd "tools/$tool" && npm ci --ignore-scripts)
+          done
+      - name: Provision isolated pinned npm runtimes
+        run: node tools/npm-dep-upgrade/test/e2e/helpers/provision.js
+      - name: Run unit and executable tests
+        env:
+          NPM_DEP_PATHS_INTEGRATION: '1'
+          NPM_DEP_AUDIT_INTEGRATION: '1'
+        run: |
+          for tool in npm-dep-paths npm-dep-audit npm-dep-upgrade-plan npm-dep-upgrade; do
+            (cd "tools/$tool" && npm test)
+          done
+      - name: Run full Linux registry and compatibility matrix
+        if: runner.os == 'Linux'
+        working-directory: tools/npm-dep-upgrade
+        run: npm run test:e2e
+      - name: Run real Windows install, override and reproduction smoke
+        if: runner.os == 'Windows'
+        working-directory: tools/npm-dep-upgrade
+        run: node --test --test-name-pattern='D01|T01|O03 npm12|harness D01' test/e2e/direct.test.js test/e2e/transitive.test.js test/e2e/compatibility.test.js test/e2e/harness.test.js
+      - name: Check whitespace
+        run: git diff --check

@@ -125,3 +125,7 @@ A failed audit command's error includes the command name, exit code, and trimmed
 From `tools/npm-dep-upgrade-plan/`, run `npm ci --ignore-scripts` and `npm test`. Set `NPM_DEP_AUDIT_INTEGRATION=1` to include the test against the separately installed audit CLI on `PATH`. That integration uses fixture responses for paths and npm, so it needs no live registry and is not a full three-tool end-to-end test.
 
 The [planner design](../../docs/superpowers/specs/2026-10-13-npm-dep-upgrade-plan-design.md) describes eligibility and report contracts.
+
+## Applying a recommendation
+
+The separate [npm-dep-upgrade](../npm-dep-upgrade/README.md) command reruns this planner and accepts a full item ID or a unique prefix of at least seven hexadecimal characters, optionally with `--package <exact-name>`. It applies one installation per invocation and commits verified dependency-file changes. IDs do not encode the old version; the current planner report determines eligibility. The mutator independently chooses the newest safe stable release within every original incoming range and the effective age policy, rather than assuming that every version above the minimum is safe.

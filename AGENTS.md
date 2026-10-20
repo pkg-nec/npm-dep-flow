@@ -6,7 +6,7 @@
 - Each `tools/<name>/` directory is an independent Node.js project with its own manifest, lockfile, executable, source, tests, and README. Keep CLI dependencies and tool-specific npm commands within the relevant tool directory.
 - `dev-tooling/` is a separate private development package with the shared ESLint dependencies, lockfile, configuration, and commands. Keep the root a non-package and do not introduce npm workspaces.
 - Tools should exchange data through documented command-line output, including versioned JSON, rather than importing another tool's private source files.
-- Start with the [repository README](README.md) for all three tool guides and design documents.
+- Start with the [repository README](README.md) for all four tool guides and design documents.
 
 ## Versioning
 
@@ -38,7 +38,7 @@
 - Keep correctness changes separate from mechanical formatting commits and explain any behavioral corrections. See [CONTRIBUTING.md](CONTRIBUTING.md) for the full setup and integration checks.
 - Preserve each tool's documented CLI and schema version 2 JSON interface. Human-readable reports use Markdown with one tool-name H1; an empty report has a message without a table. Paths retains `--format text` as an alias for `markdown`.
 - Completed reports exit 0 even when findings exist or all strategies are ineligible. Errors exit 1 with stderr diagnostics and no partial report on stdout.
-- Tools must not install dependencies, run lifecycle scripts, or modify target project files. Audit's cache lives outside the target project.
+- The three analysis tools must not install dependencies, run lifecycle scripts, or modify target project files. `npm-dep-upgrade` is an explicitly invoked mutator: it may install with scripts disabled, edit the selected project's dependency files, and commit its verified changes under its documented guards. Audit's cache lives outside the target project.
 - Keep npm and sibling-command subprocess launching portable: Windows uses `.cmd` through a shell; Unix-like systems spawn commands directly. Test both paths when changing subprocess behavior.
 
 ## Working on npm-dep-audit
@@ -60,3 +60,12 @@
 - Set `NPM_DEP_AUDIT_INTEGRATION=1` to test the real audit CLI boundary with fixture npm/paths responses. See the [planner guide](tools/npm-dep-upgrade-plan/README.md).
 
 For test scratch directories, `NPM_DEP_FLOW_TEST_TMPDIR` overrides checkout-local audit/planner integration and planner executable scratch roots; `NPM_DEP_PATHS_TEST_TMPDIR` overrides paths fixture roots. Other temporary fixtures follow the operating system temporary directory (`TMPDIR` on Unix-like systems).
+
+## Working on npm-dep-upgrade
+
+- Entry point: `bin/npm-dep-upgrade.js`; independent package with public planner/audit/paths subprocess boundaries. Never import sibling private modules.
+- One selector identifies one current installation by SHA-256 prefix, optionally filtered by exact package name. Only update-within-declared-range is supported.
+- Preserve direct ^/~ operators. Use reversible scoped overrides for transitive targets. Never force an incompatible incoming pin, leave an unnecessary override, or upgrade other target copies. Supporting closure changes are permitted after validation.
+- All installs must ignore scripts and enforce at least seven days of release age. Fresh candidate-version and final advisory checks are mandatory.
+- Require clean tracked dependency files and an empty repository-wide index; preserve unrelated unstaged work. Stage only verified dependency files and use the exact documented dependency commit subject. Never reset HEAD or overwrite concurrent work during recovery.
+- Default E2E runtime is npm12.1.0 on Node24.21.0; compatibility runtime is npm11.10.0. Provision them outside isolated test cases and pass the test-only CLI entry variables documented in the tool README. Run `npm test` and `npm run test:e2e`; coverage and matrix details are in `test/e2e/COVERAGE.md`.
