@@ -51,3 +51,36 @@ export async function preflightGit(projectRoot) {
   }
   return { root, repoRoot, projectPrefix, head, branch: line(branchResult.stdout), dependencyPaths, originalFiles, ownedFiles: { ...originalFiles }, installedTreeMayHaveChanged: false }
 }
+export async function commitUpgrade(guard,expectedFiles,identity) {
+  await assertGitState(guard,'before-commit',expectedFiles)
+  const names=['package.json','package-lock.json'].filter(name=>!guard.originalFiles[name].equals(expectedFiles[name]))
+  if(!names.length) fail('NO_CHANGES','commit','No dependency changes to commit')
+  const paths=names.map(name=>guard.projectPrefix?`${guard.projectPrefix}/${name}`:name)
+  const subject=`deps: bump ${identity.package} from ${identity.oldVersion} to ${identity.newVersion}`
+  try {
+    await runGit(guard.repoRoot,['add','--',...paths])
+    const staged=(await runGit(guard.repoRoot,['diff','--cached','--name-only','-z'])).split('\0').filter(Boolean)
+    if(staged.length!==paths.length || staged.some(p=>!paths.includes(p))) fail('CONCURRENT_CHANGE','commit','Unexpected staged files before commit')
+    if(line(await runGit(guard.repoRoot,['rev-parse','HEAD']))!==guard.head) fail('CONCURRENT_CHANGE','commit','Git HEAD changed before commit')
+    await runGit(guard.repoRoot,['commit','-m',subject])
+    const hash=line(await runGit(guard.repoRoot,['rev-parse','HEAD']))
+    const parent=line(await runGit(guard.repoRoot,['rev-parse',`${hash}^`]))
+    const actualSubject=line(await runGit(guard.repoRoot,['log','-1','--format=%s']))
+    const committed=(await runGit(guard.repoRoot,['diff-tree','--no-commit-id','--name-only','-r','-z',hash])).split('\0').filter(Boolean)
+    if(parent!==guard.head || actualSubject!==subject || committed.length!==paths.length || committed.some(p=>!paths.includes(p))) fail('COMMIT_MISMATCH','commit',`Unexpected commit state; inspect ${hash}`)
+    const current=await readDependencyFiles(guard.root)
+    for(let i=0;i<names.length;i++) {
+      if(!current[names[i]].equals(expectedFiles[names[i]]) || !Buffer.from(await runGit(guard.repoRoot,['show',`${hash}:${paths[i]}`])).equals(expectedFiles[names[i]])) fail('COMMIT_MISMATCH','commit','Committed dependency files differ from verified contents')
+    }
+    return {hash,subject,changedFiles:names}
+  } catch(error) {
+    if(line(await runGit(guard.repoRoot,['rev-parse','HEAD']))===guard.head) {
+      for(let i=0;i<names.length;i++) {
+        const indexed=await runProcess('git',['show',`:${paths[i]}`],{cwd:guard.repoRoot})
+        if(!indexed.code && Buffer.from(indexed.stdout).equals(expectedFiles[names[i]])) await runGit(guard.repoRoot,['restore','--staged','--',paths[i]])
+      }
+    }
+    Object.assign(error,{stage:'commit',changesRemainUncommitted:true})
+    throw error
+  }
+}
