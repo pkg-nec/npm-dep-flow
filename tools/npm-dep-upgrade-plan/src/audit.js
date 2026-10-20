@@ -75,7 +75,7 @@ function validateAuditReport(report) {
   return { schemaVersion: 2, auditedAt: report.auditedAt, rows }
 }
 
-export async function runNpmDepAudit(projectRoot, spawnImpl = spawn, platform = process.platform) {
+export async function runNpmDepAudit(projectRoot, spawnImpl = spawn, platform = process.platform, { noCache = false, ttlMs = 3600000 } = {}) {
   if (typeof projectRoot !== 'string' || !projectRoot) {
     throw new Error('A project directory is required for npm-dep-audit')
   }
@@ -84,7 +84,7 @@ export async function runNpmDepAudit(projectRoot, spawnImpl = spawn, platform = 
   try {
     result = await runProcess(
       'npm-dep-audit',
-      ['.', '--min-severity', 'info', '--format', 'json'],
+      ['.', '--min-severity', 'info', '--format', 'json', ...(ttlMs !== 3600000 ? ['--cache-ttl', `${ttlMs / 1000}s`] : []), ...(noCache ? ['--no-cache'] : [])],
       projectRoot,
       spawnImpl,
       platform,

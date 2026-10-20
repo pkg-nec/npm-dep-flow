@@ -3,6 +3,8 @@ import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { loadProject } from './project.js'
 import { readNpmContext } from './npm-audit.js'
+import { cachedResult } from './result-cache.js'
+import { readPathsIdentity } from './identity.js'
 import { getAudit } from './cache.js'
 import { buildRows, selectRows } from './rows.js'
 import { runNpmDepPaths } from './dep-paths.js'
@@ -84,12 +86,19 @@ export async function main(argv, io = process, deps = defaults) {
     const project = await deps.loadProject(options.path)
     const context = await deps.readNpmContext(project.root)
     const { audit, auditedAt } = await deps.getAudit(project, context, { ttlMs: options.ttlMs, noCache: options.noCache })
-    const rows = selectRows(buildRows(project.lock, audit), options.minSeverity)
-    const summariesByPackage = new Map()
-    for (const packageName of new Set(rows.map(row => row.package))) {
-      summariesByPackage.set(packageName, await deps.runNpmDepPaths(project.root, packageName))
-    }
-    const enrichedRows = attachRequirements(rows, summariesByPackage)
+    const rows = buildRows(project.lock, audit)
+    const identity = options.noCache || !rows.length ? null : await (deps.readPathsIdentity ?? readPathsIdentity)(project.root)
+    const enriched = await cachedResult({
+      tool: packageJson.name, version: packageJson.version, project,
+      identity: [context, identity, auditedAt, audit], noCache: options.noCache, ttlMs: options.ttlMs,
+    }, async () => {
+      const summariesByPackage = new Map()
+      for (const packageName of new Set(rows.map(row => row.package))) {
+        summariesByPackage.set(packageName, await deps.runNpmDepPaths(project.root, packageName, undefined, undefined, { noCache: options.noCache }))
+      }
+      return { value: attachRequirements(rows, summariesByPackage), freshAt: Date.parse(auditedAt), expiresAt: Date.parse(auditedAt) + options.ttlMs }
+    })
+    const enrichedRows = selectRows(enriched, options.minSeverity)
     io.stdout.write(options.format === 'json' ? renderJson(enrichedRows, auditedAt) : renderMarkdown(enrichedRows))
     return 0
   }

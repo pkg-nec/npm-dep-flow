@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
+import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import test from 'node:test'
 import { main } from '../src/cli.js'
@@ -77,6 +78,8 @@ function createIo() {
 
 function injectedDeps(report, versions = new Map(), renderers = {}) {
   return {
+    async loadProject(root) { return { root, manifestBytes: Buffer.from('{}'), lockBytes: Buffer.from('{}') } },
+    async readPlanningContext() { return { fixture: true } },
     async runNpmDepAudit() {
       return report
     },
@@ -263,14 +266,20 @@ function createExecutableFixture(t, report, versions, failPackage = '') {
   mkdirSync(project, { recursive: true })
   mkdirSync(commandDirectory, { recursive: true })
   writeFileSync(path.join(project, 'package.json'), '{"name":"fixture-project","version":"1.0.0"}\n')
-  writeFileSync(path.join(project, 'package-lock.json'), '{"name":"fixture-project","lockfileVersion":3,"packages":{}}\n')
+  writeFileSync(path.join(project, 'package-lock.json'), '{"name":"fixture-project","lockfileVersion":3,"packages":{"":{}}}\n')
 
-  const auditScript = `const expected = ['.', '--min-severity', 'info', '--format', 'json'];
-if (JSON.stringify(process.argv.slice(2)) !== JSON.stringify(expected)) { process.stderr.write('unexpected audit args'); process.exit(2); }
+  const auditScript = `if (process.argv.includes('--version')) { process.stdout.write('npm-dep-audit v1.0.0\\nLocation: fixture\\n'); process.exit(0); }
+const fs = require('node:fs');
+if (process.env.PLAN_AUDIT_CALL_LOG) fs.appendFileSync(process.env.PLAN_AUDIT_CALL_LOG, process.argv.slice(2).join(' ') + '\\n');
+const expected = ['.', '--min-severity', 'info', '--format', 'json'];
+const actual = process.argv.slice(2).filter((arg, index, args) => arg !== '--no-cache' && arg !== '--cache-ttl' && args[index - 1] !== '--cache-ttl');
+if (JSON.stringify(actual) !== JSON.stringify(expected)) { process.stderr.write('unexpected audit args'); process.exit(2); }
 process.stdout.write(process.env.PLAN_AUDIT_JSON);
 `
   const npmScript = `const fs = require('node:fs');
 const args = process.argv.slice(2);
+if (args[0] === '--version') { console.log('12.1.0'); process.exit(0); }
+if (args[0] === 'config' && args[1] === 'list') { console.log(process.env.PLAN_CONFIG_JSON || '{}'); process.exit(0); }
 if (args[0] !== 'view' || !['versions', 'time'].includes(args[2]) || args[3] !== '--json') { process.stderr.write('unexpected npm args'); process.exit(2); }
 const packageName = args[1];
 if (args[2] === 'versions') fs.appendFileSync(process.env.PLAN_CALL_LOG, packageName + '\\n');
@@ -278,20 +287,26 @@ if (packageName === process.env.PLAN_FAIL_PACKAGE) { process.stderr.write('regis
 const byPackage = JSON.parse(args[2] === 'versions' ? process.env.PLAN_VERSIONS_JSON : process.env.PLAN_RELEASE_TIMES_JSON);
 process.stdout.write(JSON.stringify(byPackage[packageName] ?? (args[2] === 'versions' ? [] : {})));
 `
+  writeFileSync(path.join(commandDirectory, 'fake-paths.js'), `console.log('npm-dep-paths v' + (process.env.PLAN_PATHS_VERSION || '1.0.0') + '\\nLocation: fixture');`)
   writeFileSync(path.join(commandDirectory, 'fake-audit.js'), `#!/usr/bin/env node\n${auditScript}`)
   writeFileSync(path.join(commandDirectory, 'fake-npm.js'), `#!/usr/bin/env node\n${npmScript}`)
 
   if (process.platform === 'win32') {
     writeFileSync(path.join(commandDirectory, 'npm-dep-audit.cmd'), `@echo off\r\n"${process.execPath}" "%~dp0fake-audit.js" %*\r\n`)
+    writeFileSync(path.join(commandDirectory, 'npm-dep-paths.cmd'), `@echo off\r\n"${process.execPath}" "%~dp0fake-paths.js" %*\r\n`)
     writeFileSync(path.join(commandDirectory, 'npm.cmd'), `@echo off\r\n"${process.execPath}" "%~dp0fake-npm.js" %*\r\n`)
   }
   else {
     writeFileSync(path.join(commandDirectory, 'npm-dep-audit'), '#!/bin/sh\nexec node "$(dirname "$0")/fake-audit.js" "$@"\n')
+    writeFileSync(path.join(commandDirectory, 'npm-dep-paths'), '#!/bin/sh\nexec node "$(dirname "$0")/fake-paths.js" "$@"\n')
+    chmodSync(path.join(commandDirectory, 'npm-dep-paths'), 0o755)
     writeFileSync(path.join(commandDirectory, 'npm'), '#!/bin/sh\nexec node "$(dirname "$0")/fake-npm.js" "$@"\n')
     chmodSync(path.join(commandDirectory, 'npm-dep-audit'), 0o755)
     chmodSync(path.join(commandDirectory, 'npm'), 0o755)
   }
 
+  const auditLog = path.join(base, 'audit-calls.txt')
+  writeFileSync(auditLog, '')
   const callLog = path.join(base, 'registry-calls.txt')
   writeFileSync(callLog, '')
   const env = {
@@ -302,6 +317,8 @@ process.stdout.write(JSON.stringify(byPackage[packageName] ?? (args[2] === 'vers
     PLAN_RELEASE_TIMES_JSON: JSON.stringify({}),
     PLAN_FAIL_PACKAGE: failPackage,
     PLAN_CALL_LOG: callLog,
+    PLAN_AUDIT_CALL_LOG: auditLog,
+    XDG_CACHE_HOME: path.join(base, 'cache'),
   }
   const run = args => spawnSync(process.execPath, [binPath, ...args], {
     cwd: project,
@@ -309,7 +326,7 @@ process.stdout.write(JSON.stringify(byPackage[packageName] ?? (args[2] === 'vers
     encoding: 'utf8',
     timeout: 15000,
   })
-  return { project, callLog, run }
+  return { project, callLog, auditLog, env, run }
 }
 
 test('executable emits Markdown and JSON, distinguishes both brace-expansion links, and leaves project files unchanged', (t) => {
@@ -376,4 +393,76 @@ test('failed audit diagnostics reach stderr without a partial report', async () 
   assert.equal(await main([], io.io, deps), 1)
   assert.equal(io.stdout, '')
   assert.match(io.stderr, /npm-dep-upgrade-plan: npm-dep-audit failed with exit code 1: Unsupported npm workspaces/)
+})
+
+test('planner reuses findings and forwards cache controls', async (t) => {
+  const root = mkdtempSync(path.join(tmpdir(), 'planner-result-cache-'))
+  t.after(() => rmSync(root, { recursive: true, force: true }))
+  const report = { ...braceReport(), auditedAt: new Date().toISOString() }
+  const deps = injectedDeps(report, new Map([['brace-expansion', ['5.0.9', '5.0.12']]]), { renderJson, renderMarkdown })
+  deps.loadProject = async () => ({ root, manifestBytes: Buffer.from('{}'), lockBytes: Buffer.from('{}') })
+  deps.readPlanningContext = async () => ({ npm: '12.1.0', registry: 'one', audit: 'v1', paths: 'v1' })
+  const calls = []
+  deps.runNpmDepAudit = async (_root, _spawn, _platform, controls) => {
+    calls.push(controls)
+    return report
+  }
+  const first = createIo()
+  assert.equal(await main(['--format', 'json'], first.io, deps), 0, first.stderr)
+  const second = createIo()
+  assert.equal(await main([], second.io, deps), 0, second.stderr)
+  assert.equal(calls.length, 1)
+  assert.match(second.stdout, /brace-expansion/)
+  const bypass = createIo()
+  assert.equal(await main(['--no-cache', '--cache-ttl', '30m'], bypass.io, deps), 0, bypass.stderr)
+  assert.deepEqual(calls[1], { noCache: true, ttlMs: 1800000 })
+  deps.readPlanningContext = async () => ({ npm: '12.1.0', registry: 'two', audit: 'v1', paths: 'v1' })
+  const changed = createIo()
+  assert.equal(await main([], changed.io, deps), 0, changed.stderr)
+  assert.equal(calls.length, 3)
+})
+
+test('separate planner processes reuse results and invalidate on files, scoped registry and sibling version', (t) => {
+  const fixture = createExecutableFixture(t, { ...braceReport(), auditedAt: new Date().toISOString() }, { 'brace-expansion': ['5.0.9', '5.0.12'] })
+  const first = fixture.run(['--format', 'json'])
+  assert.equal(first.status, 0, first.stderr)
+  const second = fixture.run(['--format', 'json'])
+  assert.equal(second.status, 0, second.stderr)
+  assert.deepEqual(JSON.parse(second.stdout), JSON.parse(first.stdout))
+  assert.equal(readFileSync(fixture.callLog, 'utf8'), 'brace-expansion\n')
+  assert.equal(readFileSync(fixture.auditLog, 'utf8').trim().split('\n').length, 1)
+  // A project mutation invalidates the entire plan even though item IDs stay stable.
+  const file = path.join(fixture.project, 'package.json')
+  const manifest = JSON.parse(readFileSync(file, 'utf8'))
+  manifest.description = 'changed'
+  writeFileSync(file, JSON.stringify(manifest))
+  assert.equal(fixture.run([]).status, 0)
+  fixture.env.PLAN_CONFIG_JSON = JSON.stringify({ '@scope:registry': 'https://other.example/' })
+  assert.equal(fixture.run([]).status, 0)
+  fixture.env.PLAN_PATHS_VERSION = '2.0.0'
+  assert.equal(fixture.run([]).status, 0)
+  assert.equal(readFileSync(fixture.callLog, 'utf8').trim().split('\n').length, 4)
+  const bypass = fixture.run(['--no-cache', '--cache-ttl', '30m', '--format', 'json'])
+  assert.equal(bypass.status, 0, bypass.stderr)
+  assert.match(readFileSync(fixture.auditLog, 'utf8'), /--cache-ttl 1800s --no-cache/)
+  const after = fixture.run(['--format', 'json'])
+  assert.equal(after.status, 0, after.stderr)
+  assert.equal(readFileSync(fixture.callLog, 'utf8').trim().split('\n').length, 5)
+})
+
+test('a shorter TTL refreshes a newly cached plan backed by an older audit', async (t) => {
+  const root = mkdtempSync(path.join(tmpdir(), 'planner-shorter-ttl-'))
+  t.after(() => rmSync(root, { recursive: true, force: true }))
+  const freshAt = new Date().toISOString()
+  const oldReport = { ...braceReport(), auditedAt: new Date(Date.now() - 50 * 60000).toISOString() }
+  const deps = injectedDeps(oldReport, new Map([['brace-expansion', ['5.0.9', '5.0.12']]]), { renderJson })
+  deps.loadProject = async () => ({ root, manifestBytes: Buffer.from('{}'), lockBytes: Buffer.from('{}') })
+  let audits = 0
+  deps.runNpmDepAudit = async () => ({ ...oldReport, auditedAt: ++audits === 1 ? oldReport.auditedAt : freshAt })
+  const first = createIo()
+  assert.equal(await main(['--format', 'json'], first.io, deps), 0, first.stderr)
+  const shorter = createIo()
+  assert.equal(await main(['--format', 'json', '--cache-ttl', '30m'], shorter.io, deps), 0, shorter.stderr)
+  assert.equal(audits, 2)
+  assert.equal(JSON.parse(shorter.stdout).auditedAt, freshAt)
 })

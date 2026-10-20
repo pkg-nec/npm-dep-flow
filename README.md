@@ -19,6 +19,12 @@ Each tool is an independent Node.js project under `tools/`, with its own package
 
 `npm-dep-upgrade` reruns the planner, accepts an optional project directory plus one full or abbreviated item hash, and applies a verified upgrade with scripts disabled before creating a local commit. It requires all three analysis CLIs on `PATH` and clean dependency files with an empty staging area.
 
+## Analysis caches
+
+All three analysis tools cache structured results outside the target project by default. Paths invalidates by project content and query; audit and upgrade planning also enforce advisory TTLs (one hour by default). Output formats share results. Use `--no-cache` on any analysis tool to bypass its cache; planner and audit propagate bypass to their nested analysis calls. Audit and planner also accept `--cache-ttl`, such as `30m`.
+
+Upgrade continues to rerun the planner for ID selection and independently performs fresh security checks before and after mutation. See each tool guide for cache keys, expiry and invalidation details.
+
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the contribution guide, including the required Conventional Commit format for commit messages and pull request titles.

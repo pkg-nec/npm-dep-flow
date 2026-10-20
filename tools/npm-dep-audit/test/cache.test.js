@@ -111,3 +111,12 @@ test('null cache envelope triggers a fresh audit', async (t) => {
   assert.equal(calls, 2)
   assert.deepEqual(JSON.parse(await readFile(join(cacheRoot, name), 'utf8')).audit, audit)
 })
+
+test('unavailable cache storage does not prevent a fresh audit', async (t) => {
+  const dir = await cacheDir(t)
+  const cacheRoot = join(dir, 'regular-file')
+  await writeFile(cacheRoot, '')
+  const result = await getAudit(project, context, { cacheRoot, now: () => 1000000, fetchAudit: async () => audit })
+  assert.deepEqual(result.audit, audit)
+  assert.equal(result.auditedAt, '1970-01-01T00:16:40.000Z')
+})

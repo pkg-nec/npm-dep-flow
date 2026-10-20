@@ -26,6 +26,7 @@ npm-dep-paths /path/to/project brace-expansion@5.0.9
 npm-dep-paths /path/to/project brace-expansion@5.0.9 --format json
 npm-dep-paths /path/to/project brace-expansion@5.0.9 --upstream-of minimatch@10.2.5
 npm-dep-paths /path/to/project brace-expansion@5.0.9 --upstream-of minimatch@10.2.5 --from @nx/devkit@23.1.2
+npm-dep-paths /path/to/project brace-expansion --no-cache
 npm-dep-paths --help
 npm-dep-paths --version
 ```
@@ -90,6 +91,12 @@ A normal exact-version response looks like:
 ```
 
 With `--upstream-of`, exact-version JSON keeps the same unfiltered `result` and adds `upstream`. That object has `selectedDependent`, `rootLocation`, `selectedLocations`, `targetLocations`, `topLevelLocations`, `nodes`, and `edges`. Nodes contain `location`, `name`, and `version`. Edges contain `from`, `to`, `requestedName`, `type`, and the parent's verbatim `spec`. Every package location and relationship appears once. `--from` filters only `upstream`; it does not filter the result summary. Consumers can traverse the graph to inspect simple routes without expanding every possible route in the report.
+
+## Cache behavior
+
+Structured query results are cached under `XDG_CACHE_HOME/npm-dep-paths` or `~/.cache/npm-dep-paths`, outside the target project by default. Cache keys include the canonical project directory, exact `package.json` and `package-lock.json` contents, tool/cache version, and normalized target, upstream and branch selectors. JSON, Markdown and the text alias reuse the same result. Each invocation still reads and validates project inputs before accepting a hit.
+
+There is no time-based expiry: paths results depend only on local project contents. Changing either dependency file invalidates its queries. `--no-cache` bypasses cache reads and writes. Cache files are validated with an integrity checksum and replaced atomically; malformed or inaccessible cache entries trigger computation. Failed computations never serve stale data.
 
 ## Supported projects
 

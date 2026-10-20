@@ -36,6 +36,8 @@ npm-dep-upgrade-plan
 npm-dep-upgrade-plan --format json
 npm-dep-upgrade-plan /path/to/project
 npm-dep-upgrade-plan /path/to/project --format json
+npm-dep-upgrade-plan --cache-ttl 30m
+npm-dep-upgrade-plan --no-cache
 npm-dep-upgrade-plan --help
 npm-dep-upgrade-plan --version
 ```
@@ -53,6 +55,18 @@ For each vulnerable `(package, installed version)`, the planner asks the configu
 `status` is evaluated per target location. The current strategy is eligible only when one newer safe version satisfies every declared requirement associated with that location. If no strategy can resolve the finding at that location, `status` is `ineligible` and `strategy` is `null`. When eligible, `strategy` identifies the package and version change that can remediate that location. The planner chooses the first eligible strategy in its configured order.
 
 The planner invokes `npm-dep-audit` and `npm view` as standalone commands. It does not install dependencies, run lifecycle scripts, select an update, write a lockfile, or modify the target project.
+
+## Cache behavior
+
+Structured planner findings are cached for one hour by default under `XDG_CACHE_HOME/npm-dep-upgrade-plan` or `~/.cache/npm-dep-upgrade-plan`, outside the target project by default. A hit skips the audit analysis command and registry version/release-time queries. Markdown and JSON share the same cached findings.
+
+Each invocation first validates the project and checks its canonical directory, exact manifest/lockfile contents, planner/cache version, npm version, effective npm configuration (including scoped registries), and audit/paths tool versions and installed locations. npm configuration is represented only by a digest; configuration values and credentials are not saved in the planner cache. Context discovery uses local npm configuration and sibling `--version` calls even on a hit.
+
+`--cache-ttl <duration>` accepts a positive integer followed by `s`, `m`, `h`, or `d`, and forwards that lifetime to audit. A cached plan retains its original `auditedAt` and expires no later than that audit timestamp plus the requested lifetime. Repeated hits do not extend freshness. `--no-cache` bypasses planner reads/writes, forces fresh audit data and forwards bypass through audit to paths. A bypass does not replace existing cached entries.
+
+Malformed or inaccessible cache entries are misses, and writes replace entries atomically. Cache-storage failure does not prevent a valid report. A failed refresh exits with an error and never serves expired findings.
+
+`npm-dep-upgrade` still invokes this planner and validates the selected ID against its report, which may come from a valid cache. It separately checks the current target, runs uncached audits before mutation and during final verification, and fetches fresh candidate advisories and release-age evidence. Planner caching does not replace those checks. Dependency-file changes after an upgrade invalidate the prior plan even though IDs identify package/location independently of version.
 
 ## Human-readable report
 
