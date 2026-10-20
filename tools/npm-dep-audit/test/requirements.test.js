@@ -1,10 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-let attachRequirements
-try {
-  ({ attachRequirements } = await import('../src/requirements.js'))
-} catch {}
+import { attachRequirements } from '../src/requirements.js'
 
 function dependent(name, location, targetLocation, requestedName = 'dep') {
   return { name, version: '1.0.0', location, targetLocation, type: 'dependencies', requestedName }
@@ -57,11 +54,6 @@ const vulnerableRow = {
   paths: ['node_modules/dep-a', 'node_modules/dep-b'],
 }
 
-if (typeof attachRequirements !== 'function') {
-  test('exports the requirement join function', () => {
-    assert.equal(typeof attachRequirements, 'function')
-  })
-} else {
   test('matches exact versions and keeps only links to audit-affected locations', () => {
     const rows = attachRequirements([vulnerableRow], new Map([['dep', response()]]))
     assert.equal(rows.length, 1)
@@ -102,4 +94,3 @@ if (typeof attachRequirements !== 'function') {
       /npm-dep-paths summary.*dep/i,
     )
   })
-}

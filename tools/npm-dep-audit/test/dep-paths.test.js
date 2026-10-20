@@ -3,10 +3,7 @@ import assert from 'node:assert/strict'
 import { EventEmitter } from 'node:events'
 import { PassThrough } from 'node:stream'
 
-let runNpmDepPaths
-try {
-  ({ runNpmDepPaths } = await import('../src/dep-paths.js'))
-} catch {}
+import { runNpmDepPaths } from '../src/dep-paths.js'
 
 function summary(selector = 'brace-expansion') {
   return {
@@ -48,11 +45,6 @@ function fakeSpawn(responses, calls) {
   }
 }
 
-if (typeof runNpmDepPaths !== 'function') {
-  test('exports the npm-dep-paths CLI adapter', () => {
-    assert.equal(typeof runNpmDepPaths, 'function')
-  })
-} else {
 test('runs the standalone CLI with argv and a project cwd on Unix', async () => {
   const calls = []
   const root = '/tmp/project $(touch unexpected) with spaces'
@@ -119,5 +111,4 @@ for (const response of [
     await assert.rejects(runNpmDepPaths('/project', 'brace-expansion', fakeSpawn([response], calls)))
     assert.equal(calls.length, 1)
   })
-}
 }

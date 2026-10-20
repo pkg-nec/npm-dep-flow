@@ -99,7 +99,7 @@ test('renders unusual values literally without changing JSON data', () => {
   assert.ok(output.includes(`) ${literalExpected}`))
   assert.ok(output.includes(`requested as alias-${literalExpected}`))
   assert.equal(output.split('\n').filter(line => line.startsWith('|')).length, 3)
-  assert.doesNotMatch(output, /[\x00-\x09\x0b-\x1f\x7f]/)
+  assert.equal([...output].some(char => char !== '\n' && (char.charCodeAt(0) <= 0x1f || char.charCodeAt(0) === 0x7f)), false)
   const json = JSON.parse(renderJson(odd, '2026-10-19T00:00:00.000Z'))
   assert.equal(json.rows[0].package, literalInput)
   assert.equal(json.rows[0].advisories[0].title, literalInput)

@@ -69,7 +69,7 @@ function createIo() {
 
 function injectedDeps(report, versions = new Map(), renderers = {}) {
   return {
-    async runNpmDepAudit(projectRoot) { return report },
+    async runNpmDepAudit() { return report },
     async fetchStableVersions(projectRoot, packageName) { return versions.get(packageName) ?? [] },
     async fetchReleaseTimes() { return new Map() },
     renderMarkdown: renderers.renderMarkdown ?? (() => 'markdown report\n'),

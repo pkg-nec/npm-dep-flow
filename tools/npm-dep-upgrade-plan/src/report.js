@@ -44,12 +44,14 @@ export function sortFindings(rows) {
 }
 
 function safe(value) {
-  return String(value).replace(/[\x00-\x1f\x7f]/g, char => {
+  return Array.from(String(value), char => {
+    const code = char.charCodeAt(0)
+    if (code >= 0x20 && code !== 0x7f) return char
     if (char === '\n') return '\\n'
     if (char === '\r') return '\\r'
     if (char === '\t') return '\\t'
-    return `\\x${char.charCodeAt(0).toString(16).padStart(2, '0')}`
-  })
+    return `\\x${code.toString(16).padStart(2, '0')}`
+  }).join('')
 }
 
 function escapeMarkdown(value) {
@@ -57,7 +59,7 @@ function escapeMarkdown(value) {
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
-    .replace(/([\\|\[\]*_`])/g, '\\$1')
+    .replace(/([\\|[\]*_`])/g, '\\$1')
 }
 
 function displayValue(value) {
