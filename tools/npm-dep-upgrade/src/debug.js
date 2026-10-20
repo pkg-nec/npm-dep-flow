@@ -54,7 +54,7 @@ function write(ctx, message) {
 }
 
 export function runDebug(enabled, io, action) {
-  return scope.run({ enabled: enabled || process.env.NPM_DEP_FLOW_DEBUG === '1', io, next: 0 }, action)
+  return scope.run({ enabled: enabled ?? process.env.NPM_DEP_FLOW_DEBUG === '1', io, next: 0 }, action)
 }
 
 export function debugLog(message) {
@@ -79,7 +79,10 @@ export function debugAction(kind, details) {
 
 export function debugSpawn(spawnImpl, command, args, options) {
   const ctx = context()
-  if (!ctx?.enabled) return spawnImpl(command, args, options)
+  if (!ctx?.enabled) {
+    if (ctx && (options.env ?? process.env).NPM_DEP_FLOW_DEBUG === '1') return spawnImpl(command, args, { ...options, env: { ...(options.env ?? process.env), NPM_DEP_FLOW_DEBUG: '0' } })
+    return spawnImpl(command, args, options)
+  }
   const sibling = /^npm-dep-(?:audit|paths|upgrade-plan|upgrade)(?:\.cmd)?(?: |$)/.test(command)
   if (sibling) {
     if (options.shell) command += ' --debug'

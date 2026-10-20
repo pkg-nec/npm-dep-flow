@@ -3,6 +3,7 @@ import { readFile, writeFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import { parseArgs } from './args.js'
+import { resolveOptions } from './config.js'
 import { preflightGit, assertGitState, readDependencyFiles, commitUpgrade } from './git.js'
 import { recordOwnedFiles, restoreDependencyFiles } from './recovery.js'
 import { loadProject } from './project.js'
@@ -20,14 +21,20 @@ import { renderJson, renderMarkdown } from './report.js'
 const toolRoot = fileURLToPath(new URL('../', import.meta.url))
 const defaults = { preflightGit, assertGitState, loadProject, loadGraph, readPlanner, readEvidence, loadNpmContext, readCatalog, readCandidateAdvisories, selectCandidate, buildMutation, writeMutation, installProject, createStagingProject, verifyGraph, verifyFinalSecurity, commitUpgrade }
 export async function main(argv, io = process, overrides = {}) {
-  return runDebug(argv.includes('--debug'), io, () => mainWithDebug(argv, io, overrides))
+  try {
+    const options = await resolveOptions(parseArgs(argv))
+    return await runDebug(options.debug, io, () => mainWithDebug(options, io, overrides))
+  }
+  catch (error) {
+    io.stderr.write(`npm-dep-upgrade: ${error.stage || 'arguments'}: ${error.message}\n`)
+    return 1
+  }
 }
 
-async function mainWithDebug(argv, io = process, overrides = {}) {
+async function mainWithDebug(options, io = process, overrides = {}) {
   const d = { ...defaults, ...overrides }
   let guard, staging, mutated = false, committing = false, stage = 'arguments'
   try {
-    const options = parseArgs(argv)
     if (options.action !== 'upgrade') {
       const pkg = JSON.parse(await readFile(path.join(toolRoot, 'package.json'), 'utf8'))
       const help = `${pkg.name} v${pkg.version}
@@ -41,7 +48,13 @@ Arguments:
 Options:
   --package <name>                Filter the item ID by exact package name
   --format markdown|json          Output format (default: markdown)
+  --config <path>                 Load an explicit JSON configuration file
+  --module <name>                 Module scope used in the commit subject
+  --commit-message-template <text> Customize the commit subject using placeholders
+  --git-commit-arg=<arg>           Add a supported Git commit argument (repeatable)
+  --clear-git-commit-args          Replace configured Git arguments with an empty list
   --debug                         Log external actions and cache decisions to stderr
+  --no-debug                      Disable debug logging, overriding configuration
   --version                       Show version and tool directory
   --help                          Show this help
 
@@ -107,7 +120,7 @@ Upgrade one eligible planner installation in the selected project and commit the
     await d.assertGitState(guard, 'before-commit')
     stage = 'commit'
     committing = true
-    const committed = await d.commitUpgrade(guard, guard.ownedFiles, { package: item.package, oldVersion: item.version, newVersion: candidate.version })
+    const committed = await d.commitUpgrade(guard, guard.ownedFiles, { package: item.package, oldVersion: item.version, newVersion: candidate.version, strategy: 'update-within-declared-range', description: `bump ${item.package} from ${item.version} to ${candidate.version}` }, options)
     const result = { schemaVersion: 2, id: item.id, package: item.package, oldVersion: item.version, newVersion: candidate.version, targetLocation: item.targetLocation, strategy: 'update-within-declared-range', releasedAt: candidate.releasedAt, changedFiles: committed.changedFiles, supportingChanges: diff.supportingChanges, commit: { hash: committed.hash, subject: committed.subject } }
     io.stdout.write(options.format === 'json' ? renderJson(result) : renderMarkdown(result))
     return 0

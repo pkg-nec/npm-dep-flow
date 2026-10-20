@@ -135,3 +135,19 @@ test('debug redacts URL credentials containing quotes or whitespace', async () =
   assert.doesNotMatch(io.output, /PASSWORD_SECRET|USERNAME_SECRET|QUERY_SECRET|SHELL_VALUE/)
   assert.match(io.output, /REDACTED/)
 })
+
+test('explicit debug disable prevents inherited debug from reaching sibling processes', async (t) => {
+  const previous = process.env.NPM_DEP_FLOW_DEBUG
+  process.env.NPM_DEP_FLOW_DEBUG = '1'
+  t.after(() => {
+    if (previous === undefined) delete process.env.NPM_DEP_FLOW_DEBUG
+    else process.env.NPM_DEP_FLOW_DEBUG = previous
+  })
+  const io = capture()
+  await runDebug(false, io, async () => {
+    const child = debugSpawn(completed, 'npm-dep-paths', ['--version'], { env: { ...process.env } })
+    assert.notEqual(child.actual.options.env.NPM_DEP_FLOW_DEBUG, '1')
+    await new Promise(resolve => child.on('close', resolve))
+  })
+  assert.equal(io.output, '')
+})
