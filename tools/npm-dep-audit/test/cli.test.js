@@ -67,6 +67,7 @@ function harness() {
     stderr += value
   } } }
   const deps = {
+    readPathsIdentity: async () => 'npm-dep-paths v0.4.1',
     loadProject: async (path) => {
       loadedPath = path
       return { root: '/project', manifestBytes: Buffer.from('{}'), lockBytes: Buffer.from('{}'), lock }
@@ -165,10 +166,10 @@ test('queries each distinct kept package name once and attaches only matching ve
   ])
 })
 
-test('severity filtering and empty findings skip dependency path queries', async () => {
+test('severity filtering follows enrichment and empty findings skip dependency path queries', async () => {
   const h = harness()
   assert.equal(await main(['--min-severity', 'critical'], h.io, h.deps), 0)
-  assert.deepEqual(h.pathCalls, [])
+  assert.deepEqual(h.pathCalls, ['dep'])
   assert.match(h.stdout, /No matching direct advisories/)
 
   const empty = harness()
@@ -177,7 +178,7 @@ test('severity filtering and empty findings skip dependency path queries', async
   assert.deepEqual(empty.pathCalls, [])
 })
 
-test('gets fresh path data for each report even when the audit result is cached', async () => {
+test('expired audit timestamps do not make enriched reports reusable', async () => {
   const h = harness()
   assert.equal(await main([], h.io, h.deps), 0, h.stderr)
   assert.equal(await main([], h.io, h.deps), 0, h.stderr)
@@ -230,7 +231,7 @@ test('audit failure leaves stdout empty and does not invoke npm-dep-paths', asyn
 })
 
 async function fakeCommand(binDir, name, source) {
-  await writeFile(join(binDir, `${name}.js`), `${source}\n`)
+  await writeFile(join(binDir, `${name}.js`), `if ('${name}' !== 'npm' && process.argv.includes('--version')) { process.stdout.write('${name} v1.0.0\\nLocation: fixture\\n'); process.exit(0); }\n${source}\n`)
   if (process.platform === 'win32') {
     return writeFile(join(binDir, `${name}.cmd`), `@echo off\r\nnode "%~dp0${name}.js" %*\r\n`)
   }
@@ -254,10 +255,10 @@ test('bin renders dependency requirements in Markdown and JSON', async (t) => {
     ['1.1.1', 'node_modules/dep', '1.1.1'],
     ['1.1.2', 'node_modules/nested/node_modules/dep', '^1.1.0'],
   ])
-  const fakePathsSource = `console.log(${JSON.stringify(JSON.stringify(summaries))});`
+  const fakePathsSource = `require('node:fs').appendFileSync(process.env.AUDIT_PATHS_CALLS, 'query\\n'); console.log(${JSON.stringify(JSON.stringify(summaries))});`
   await Promise.all([fakeCommand(binDir, 'npm', fakeNpmSource), fakeCommand(binDir, 'npm-dep-paths', fakePathsSource)])
 
-  const env = { ...process.env, PATH: `${binDir}${delimiter}${process.env.PATH}`, XDG_CACHE_HOME: join(dir, 'cache') }
+  const env = { ...process.env, PATH: `${binDir}${delimiter}${process.env.PATH}`, XDG_CACHE_HOME: join(dir, 'cache'), AUDIT_PATHS_CALLS: join(dir, 'paths-calls.log') }
   const executable = join(process.cwd(), 'bin/npm-dep-audit.js')
   const markdown = spawnSync(process.execPath, [executable, projectDir], { env, encoding: 'utf8' })
   assert.equal(markdown.status, 0, markdown.stderr || markdown.error?.message)
@@ -267,6 +268,8 @@ test('bin renders dependency requirements in Markdown and JSON', async (t) => {
   const json = spawnSync(process.execPath, [executable, projectDir, '--format', 'json'], { env, encoding: 'utf8' })
   assert.equal(json.status, 0, json.stderr || json.error?.message)
   const report = JSON.parse(json.stdout)
+  const { readFile } = await import('node:fs/promises')
+  assert.equal(await readFile(env.AUDIT_PATHS_CALLS, 'utf8'), 'query\n')
   assert.equal(report.schemaVersion, 2)
   assert.deepEqual(report.rows.map(row => row.version), ['1.1.1', '1.1.2'])
   assert.ok(report.rows.every(row => Array.isArray(row.requirements) && !Object.hasOwn(row, 'paths')))
@@ -276,4 +279,26 @@ test('bin renders dependency requirements in Markdown and JSON', async (t) => {
     assert.equal(current.stderr, '')
     assert.deepEqual(JSON.parse(current.stdout).rows, report.rows)
   }
+  assert.equal((await readFile(env.AUDIT_PATHS_CALLS, 'utf8')).trim().split('\n').length, 5)
+})
+
+test('enriched reports reuse paths across severity filters and bypass without overwriting cache', async (t) => {
+  const dir = await mkdtemp(join(tmpdir(), 'audit-result-cache-'))
+  t.after(() => rm(dir, { recursive: true, force: true }))
+  const h = harness()
+  const auditedAt = new Date().toISOString()
+  h.deps.loadProject = async () => ({ root: dir, manifestBytes: Buffer.from('{}'), lockBytes: Buffer.from('{}'), lock })
+  h.deps.getAudit = async () => ({ audit, auditedAt })
+  h.deps.readPathsIdentity = async () => 'paths v1'
+  for (const args of [['--min-severity', 'critical'], ['--format', 'json'], []]) {
+    assert.equal(await main(args, h.io, h.deps), 0, h.stderr)
+  }
+  assert.deepEqual(h.pathCalls, ['dep'])
+  assert.equal(await main(['--no-cache'], h.io, h.deps), 0, h.stderr)
+  assert.deepEqual(h.pathCalls, ['dep', 'dep'])
+  assert.equal(await main([], h.io, h.deps), 0, h.stderr)
+  assert.deepEqual(h.pathCalls, ['dep', 'dep'])
+  h.deps.readPathsIdentity = async () => 'paths v2'
+  assert.equal(await main([], h.io, h.deps), 0, h.stderr)
+  assert.deepEqual(h.pathCalls, ['dep', 'dep', 'dep'])
 })

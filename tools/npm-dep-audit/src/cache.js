@@ -44,7 +44,6 @@ export async function getAudit(project, context, {
     return { audit, auditedAt: new Date(now()).toISOString() }
   }
 
-  await mkdir(cacheRoot, { recursive: true, mode: 0o700 })
   const file = join(cacheRoot, `${digest(project.root)}.json`)
   const key = fingerprint(project, context)
   try {
@@ -64,22 +63,20 @@ export async function getAudit(project, context, {
       }
     }
   }
-  catch (error) {
-    if (error.code !== 'ENOENT' && !(error instanceof SyntaxError)) throw error
-  }
+  catch { /* Missing, unreadable or malformed cache entries are misses. */ }
 
   const audit = validateAudit(await fetchAudit())
   const timestamp = now()
   const auditedAt = new Date(timestamp).toISOString()
   const temporary = `${file}.${process.pid}.${randomUUID()}.tmp`
   try {
+    await mkdir(cacheRoot, { recursive: true, mode: 0o700 })
     await writeFile(temporary, JSON.stringify({ key, timestamp, auditedAt, audit }), { mode: 0o600, flag: 'wx' })
     await rename(temporary, file)
   }
+  catch { /* Cache availability must not prevent a valid audit. */ }
   finally {
-    await unlink(temporary).catch((error) => {
-      if (error.code !== 'ENOENT') throw error
-    })
+    await unlink(temporary).catch(() => {})
   }
   return { audit, auditedAt }
 }

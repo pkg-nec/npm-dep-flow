@@ -112,3 +112,13 @@ for (const response of [
     assert.equal(calls.length, 1)
   })
 }
+
+test('cache bypass reaches the paths CLI on Unix and Windows', async () => {
+  for (const platform of ['linux', 'win32']) {
+    const calls = []
+    const result = await runNpmDepPaths('/project', 'brace-expansion', fakeSpawn([{ stdout: JSON.stringify(summary()) }], calls), platform, { noCache: true })
+    assert.equal(result.results[0].version, '5.0.9')
+    const argv = platform === 'win32' ? calls[0].command.split(' ').slice(1) : calls[0].args
+    assert.deepEqual(argv, ['.', 'brace-expansion', '--format', 'json', '--no-cache'])
+  }
+})
