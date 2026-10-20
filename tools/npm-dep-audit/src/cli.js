@@ -1,3 +1,4 @@
+import { runDebug } from './debug.js'
 import { readFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -31,6 +32,7 @@ Options:
                                    Minimum row severity (default: info)
   --cache-ttl <duration>           Cache lifetime, e.g. 30m or 1h (default: 1h)
   --no-cache                       Run a fresh audit without cache access
+  --debug                         Log external actions and cache decisions to stderr
   --version                        Show version and tool directory
   --help                           Show this help
 `
@@ -40,6 +42,7 @@ function parse(argv) {
   let hasPath = false
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i]
+    if (arg === '--debug') continue
     if (arg === '--no-cache') {
       options.noCache = true
       continue
@@ -73,6 +76,10 @@ function parse(argv) {
 }
 
 export async function main(argv, io = process, deps = defaults) {
+  return runDebug(argv.includes('--debug'), io, () => mainWithDebug(argv, io, deps))
+}
+
+async function mainWithDebug(argv, io = process, deps = defaults) {
   if (argv.includes('--help')) {
     io.stdout.write(help)
     return 0

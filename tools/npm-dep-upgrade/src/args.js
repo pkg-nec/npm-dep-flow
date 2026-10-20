@@ -8,6 +8,7 @@ export function parseArgs(argv, cwd = process.cwd()) {
   const positional = []
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i]
+    if (arg === '--debug') continue
     if (arg === '--package' || arg === '--format') {
       const value = argv[++i]
       if (!value || value.startsWith('-') || seen.has(arg)) fail('INVALID_ARGUMENT', 'arguments', `Missing or repeated ${arg}`)

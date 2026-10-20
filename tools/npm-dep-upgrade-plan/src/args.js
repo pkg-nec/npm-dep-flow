@@ -13,6 +13,7 @@ export function parseArgs(argv, cwd = process.cwd()) {
 
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index]
+    if (argument === '--debug') continue
     if (argument === '--no-cache') {
       noCache = true
       continue

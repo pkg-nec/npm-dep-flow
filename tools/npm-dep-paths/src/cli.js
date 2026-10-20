@@ -1,3 +1,4 @@
+import { runDebug } from './debug.js'
 import { readFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -30,6 +31,7 @@ Options:
   --upstream-of package@version    Explain a direct dependent of an exact target version
   --from package@version           Focus upstream detail on one top-level package
   --no-cache                       Bypass result cache reads and writes
+  --debug                         Log external actions and cache decisions to stderr
   --version                        Show version and tool directory
   --help                           Show this help
 `
@@ -42,6 +44,7 @@ function parseArgs(argv) {
   let from
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i]
+    if (arg === '--debug') continue
     if (arg === '--no-cache') {
       noCache = true
     }
@@ -78,6 +81,10 @@ function fencedText(text) {
 }
 
 export async function main(argv, io = process, deps = defaults) {
+  return runDebug(argv.includes('--debug'), io, () => mainWithDebug(argv, io, deps))
+}
+
+async function mainWithDebug(argv, io = process, deps = defaults) {
   if (argv.includes('--help')) {
     io.stdout.write(help)
     return 0

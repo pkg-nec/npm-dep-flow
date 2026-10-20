@@ -1,3 +1,4 @@
+import { runDebug } from './debug.js'
 import { readFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -26,11 +27,16 @@ Options:
   --format markdown|json  Output format (default: markdown)
   --cache-ttl <duration>  Cache lifetime, e.g. 30m or 1h (default: 1h)
   --no-cache             Bypass caches, including nested audit and paths calls
+  --debug                         Log external actions and cache decisions to stderr
   --version               Show version and tool directory
   --help                  Show this help
 `
 
 export async function main(argv, io = process, deps = defaults) {
+  return runDebug(argv.includes('--debug'), io, () => mainWithDebug(argv, io, deps))
+}
+
+async function mainWithDebug(argv, io = process, deps = defaults) {
   if (argv.includes('--help')) {
     io.stdout.write(help)
     return 0

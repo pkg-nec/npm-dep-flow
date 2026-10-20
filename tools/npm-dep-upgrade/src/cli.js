@@ -1,3 +1,4 @@
+import { runDebug } from './debug.js'
 import { readFile, writeFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
@@ -19,13 +20,17 @@ import { renderJson, renderMarkdown } from './report.js'
 const toolRoot = fileURLToPath(new URL('../', import.meta.url))
 const defaults = { preflightGit, assertGitState, loadProject, loadGraph, readPlanner, readEvidence, loadNpmContext, readCatalog, readCandidateAdvisories, selectCandidate, buildMutation, writeMutation, installProject, createStagingProject, verifyGraph, verifyFinalSecurity, commitUpgrade }
 export async function main(argv, io = process, overrides = {}) {
+  return runDebug(argv.includes('--debug'), io, () => mainWithDebug(argv, io, overrides))
+}
+
+async function mainWithDebug(argv, io = process, overrides = {}) {
   const d = { ...defaults, ...overrides }
   let guard, staging, mutated = false, committing = false, stage = 'arguments'
   try {
     const options = parseArgs(argv)
     if (options.action !== 'upgrade') {
       const pkg = JSON.parse(await readFile(path.join(toolRoot, 'package.json'), 'utf8'))
-      io.stdout.write(options.action === 'version' ? `${pkg.name} v${pkg.version}\nLocation: ${toolRoot}\n` : `${pkg.name} v${pkg.version}\n\nUsage: npm-dep-upgrade [project] <id-or-prefix> [--package <name>] [--format markdown|json]\n\nArguments:\n  project         Project directory (default: ., the caller's current directory)\n  id-or-prefix    Required planner item ID or unique prefix\n\nUpgrade one eligible planner installation in the selected project and commit the verified dependency files.\n`)
+      io.stdout.write(options.action === 'version' ? `${pkg.name} v${pkg.version}\nLocation: ${toolRoot}\n` : `${pkg.name} v${pkg.version}\n\nUsage: npm-dep-upgrade [project] <id-or-prefix> [--package <name>] [--format markdown|json]\n\nArguments:\n  project         Project directory (default: ., the caller's current directory)\n  id-or-prefix    Required planner item ID or unique prefix\n\nOptions:\n  --debug         Log external actions to stderr\n\nUpgrade one eligible planner installation in the selected project and commit the verified dependency files.\n`)
       return 0
     }
     stage = 'preflight'
