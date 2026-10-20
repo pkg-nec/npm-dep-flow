@@ -21,15 +21,15 @@ const help = `${packageJson.name} v${packageJson.version}
 Usage: npm-dep-upgrade-plan [project] [options]
 
 Arguments:
-  project                 Project directory (default: ., the caller's current directory)
+  project                         Project directory (default: ., the caller's current directory)
 
 Options:
-  --format markdown|json  Output format (default: markdown)
-  --cache-ttl <duration>  Cache lifetime, e.g. 30m or 1h (default: 1h)
-  --no-cache             Bypass caches, including nested audit and paths calls
+  --format markdown|json          Output format (default: markdown)
+  --cache-ttl <duration>          Cache lifetime, e.g. 30m or 1h (default: 1h)
+  --no-cache                      Bypass caches, including nested audit and paths calls
   --debug                         Log external actions and cache decisions to stderr
-  --version               Show version and tool directory
-  --help                  Show this help
+  --version                       Show version and tool directory
+  --help                          Show this help
 `
 
 export async function main(argv, io = process, deps = defaults) {
