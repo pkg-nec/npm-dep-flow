@@ -8,7 +8,7 @@ export async function git(root, args) {
   return r.stdout
 }
 export async function gitProject(t, { nested = false } = {}) {
-  const base = process.env.NPM_DEP_FLOW_TEST_TMPDIR || path.join(tmpdir(),'npm-dep-upgrade-unit')
+  const base = process.env.NPM_DEP_FLOW_TEST_TMPDIR || path.join(tmpdir(), 'npm-dep-upgrade-unit')
   await mkdir(base, { recursive: true })
   const repo = await mkdtemp(path.join(base, 'git-project-'))
   t.after(() => rm(repo, { recursive: true, force: true }))

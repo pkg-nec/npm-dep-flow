@@ -15,19 +15,19 @@ test('CLI rejects ambiguous, malformed, and excluded input forms', () => {
   }
 })
 
-test('CLI resolves an optional project before the item ID against the caller directory',()=>{
-  const cwd=path.resolve('/workspace/caller')
-  for(const [project,expected] of [['.',cwd],['../target space & dollar $',path.resolve(cwd,'../target space & dollar $')],[path.resolve('/another/project'),path.resolve('/another/project')],['abcdef0',path.resolve(cwd,'abcdef0')]]) {
-    const result=parseArgs(['--format','json',project,'abcdef0','--package','@e2e/target'],cwd)
-    assert.equal(result.projectPath,expected)
-    assert.equal(result.selector,'abcdef0')
-    assert.equal(result.packageName,'@e2e/target')
-    assert.equal(result.format,'json')
+test('CLI resolves an optional project before the item ID against the caller directory', () => {
+  const cwd = path.resolve('/workspace/caller')
+  for (const [project, expected] of [['.', cwd], ['../target space & dollar $', path.resolve(cwd, '../target space & dollar $')], [path.resolve('/another/project'), path.resolve('/another/project')], ['abcdef0', path.resolve(cwd, 'abcdef0')]]) {
+    const result = parseArgs(['--format', 'json', project, 'abcdef0', '--package', '@e2e/target'], cwd)
+    assert.equal(result.projectPath, expected)
+    assert.equal(result.selector, 'abcdef0')
+    assert.equal(result.packageName, '@e2e/target')
+    assert.equal(result.format, 'json')
   }
-  assert.equal(parseArgs(['abcdef0'],cwd).projectPath,cwd)
+  assert.equal(parseArgs(['abcdef0'], cwd).projectPath, cwd)
 })
-test('CLI validates the ID after an explicit project and short-circuits help/version',()=>{
-  for(const args of [['../target'],['../target','bad-id'],['../target','ABCDEF0'],['../target','abcdef0','1234567']]) assert.throws(()=>parseArgs(args),undefined,JSON.stringify(args))
-  assert.equal(parseArgs(['missing-project','--unknown','--help']).action,'help')
-  assert.equal(parseArgs(['missing-project','--version']).action,'version')
+test('CLI validates the ID after an explicit project and short-circuits help/version', () => {
+  for (const args of [['../target'], ['../target', 'bad-id'], ['../target', 'ABCDEF0'], ['../target', 'abcdef0', '1234567']]) assert.throws(() => parseArgs(args), undefined, JSON.stringify(args))
+  assert.equal(parseArgs(['missing-project', '--unknown', '--help']).action, 'help')
+  assert.equal(parseArgs(['missing-project', '--version']).action, 'version')
 })
