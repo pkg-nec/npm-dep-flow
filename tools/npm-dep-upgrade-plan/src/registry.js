@@ -95,7 +95,9 @@ export async function fetchStableVersions(projectRoot, packageName, spawnImpl = 
 }
 
 export async function fetchReleaseTimes(projectRoot, packageName, spawnImpl = spawn, platform = process.platform) {
-  const response = await npmViewJson(projectRoot, packageName, 'time', spawnImpl, platform)
+  const raw = await npmViewJson(projectRoot, packageName, 'time', spawnImpl, platform)
+  // npm 12 wraps a single object field in an array; npm 11 returns the object.
+  const response = Array.isArray(raw) && raw.length === 1 ? raw[0] : raw
   if (response === null) return new Map()
   if (typeof response !== 'object' || Array.isArray(response)) {
     throw new Error('Invalid npm registry response: expected a version release-time object')

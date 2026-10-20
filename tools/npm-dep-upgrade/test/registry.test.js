@@ -16,3 +16,9 @@ test('candidate security adapter includes candidate-only ranges and rejects bad 
  await assert.rejects(readCandidateAdvisories(versions,context,async()=>({body:Readable.from(['{"e2e-target":"bad"}'])})),/security|advisory/i)
  assert.equal(normalizeTimestamp('2026-02-31T00:00:00Z'),null)
 })
+
+test('catalog accepts npm 12 singleton-array time output',async()=>{
+ const {readCatalog}=await import('../src/registry.js')
+ const result=await readCatalog('/project','e2e-target',{minAgeDays:7},async(cmd,args)=>({code:0,stdout:JSON.stringify(args[2]==='versions'?['6.0.12']:[{'6.0.12':'2026-01-01T00:00:00Z'}])}))
+ assert.equal(result.releaseTimes.get('6.0.12'),'2026-01-01T00:00:00.000Z')
+})

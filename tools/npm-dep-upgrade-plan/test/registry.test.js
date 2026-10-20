@@ -154,3 +154,8 @@ test('registry adapter gives installation guidance when npm is missing', async (
     /npm is not available on PATH/,
   )
 })
+
+test('registry adapter accepts npm 12 singleton-array time output', async () => {
+  const times = await fetchReleaseTimes('/project', 'brace-expansion', fakeSpawn({ stdout: JSON.stringify([{ '6.0.12': '2026-01-01T00:00:00Z' }]) }, []))
+  assert.equal(times.get('6.0.12'), '2026-01-01T00:00:00.000Z')
+})

@@ -15,7 +15,8 @@ export async function readCatalog(root,name,context,run=runProcess) {
     if(r.code) fail('REGISTRY_FAILED','registry',`npm view ${field} failed for ${name}`)
     try {return JSON.parse(r.stdout)} catch { fail('INVALID_REGISTRY','registry',`Invalid registry ${field} response`) }
   }
-  const versions=await view('versions'), times=await view('time')
+  const versions=await view('versions'), rawTimes=await view('time')
+  const times=Array.isArray(rawTimes) && rawTimes.length===1 ? rawTimes[0] : rawTimes
   const list=typeof versions==='string' ? [versions] : versions
   if(!Array.isArray(list) || list.some(v=>typeof v!=='string') || (times!==null && (typeof times!=='object' || Array.isArray(times)))) fail('INVALID_REGISTRY','registry','Invalid versions or release-time metadata')
   const releaseTimes=new Map(Object.entries(times || {}).flatMap(([v,t])=>{const normalized=normalizeTimestamp(t);return normalized ? [[v,normalized]] : []}))
