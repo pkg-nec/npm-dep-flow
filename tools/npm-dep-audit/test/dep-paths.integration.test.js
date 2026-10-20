@@ -9,7 +9,7 @@ import { main } from '../src/cli.js'
 
 const enabled = process.env.NPM_DEP_PATHS_INTEGRATION === '1'
 
-test('audit consumes the separately installed npm-dep-paths CLI', { skip: !enabled }, async t => {
+test('audit consumes the separately installed npm-dep-paths CLI', { skip: !enabled }, async (t) => {
   const temporaryRoot = process.env.NPM_DEP_FLOW_TEST_TMPDIR || fileURLToPath(new URL('../../../tmp/', import.meta.url))
   await mkdir(temporaryRoot, { recursive: true })
   const root = await mkdtemp(join(temporaryRoot, 'npm-dep-audit-paths-integration-'))
@@ -50,11 +50,19 @@ test('audit consumes the separately installed npm-dep-paths CLI', { skip: !enabl
     let stderr = ''
     return {
       io: {
-        stdout: { write: value => { stdout += value } },
-        stderr: { write: value => { stderr += value } },
+        stdout: { write: (value) => {
+          stdout += value
+        } },
+        stderr: { write: (value) => {
+          stderr += value
+        } },
       },
-      get stdout() { return stdout },
-      get stderr() { return stderr },
+      get stdout() {
+        return stdout
+      },
+      get stderr() {
+        return stderr
+      },
     }
   }
 

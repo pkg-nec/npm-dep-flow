@@ -54,43 +54,43 @@ const vulnerableRow = {
   paths: ['node_modules/dep-a', 'node_modules/dep-b'],
 }
 
-  test('matches exact versions and keeps only links to audit-affected locations', () => {
-    const rows = attachRequirements([vulnerableRow], new Map([['dep', response()]]))
-    assert.equal(rows.length, 1)
-    assert.deepEqual(rows[0].requirements.map(group => group.declaredRequirement), ['^5.0.5', '^5.0.6'])
-    assert.deepEqual(rows[0].requirements[0].directDependents.map(item => item.location), [
-      'node_modules/minimatch',
-      'node_modules/nested/node_modules/minimatch',
-    ])
-    assert.equal(rows[0].requirements[1].directDependents[0].targetLocation, 'node_modules/dep-b')
-    assert.equal(rows[0].requirements[1].directDependents[0].requestedName, 'legacy-dep')
-    assert.deepEqual(rows[0].paths, vulnerableRow.paths)
-  })
+test('matches exact versions and keeps only links to audit-affected locations', () => {
+  const rows = attachRequirements([vulnerableRow], new Map([['dep', response()]]))
+  assert.equal(rows.length, 1)
+  assert.deepEqual(rows[0].requirements.map(group => group.declaredRequirement), ['^5.0.5', '^5.0.6'])
+  assert.deepEqual(rows[0].requirements[0].directDependents.map(item => item.location), [
+    'node_modules/minimatch',
+    'node_modules/nested/node_modules/minimatch',
+  ])
+  assert.equal(rows[0].requirements[1].directDependents[0].targetLocation, 'node_modules/dep-b')
+  assert.equal(rows[0].requirements[1].directDependents[0].requestedName, 'legacy-dep')
+  assert.deepEqual(rows[0].paths, vulnerableRow.paths)
+})
 
-  test('rejects an audited version absent from the name-only response', () => {
-    const summary = response()
-    summary.results = summary.results.filter(result => result.version !== '5.0.9')
-    assert.throws(
-      () => attachRequirements([vulnerableRow], new Map([['dep', summary]])),
-      /did not return dep@5\.0\.9/i,
-    )
-  })
+test('rejects an audited version absent from the name-only response', () => {
+  const summary = response()
+  summary.results = summary.results.filter(result => result.version !== '5.0.9')
+  assert.throws(
+    () => attachRequirements([vulnerableRow], new Map([['dep', summary]])),
+    /did not return dep@5\.0\.9/i,
+  )
+})
 
-  test('rejects when an affected installation has no matching direct dependent link', () => {
-    const summary = response()
-    const result = summary.results.find(item => item.version === '5.0.9')
-    for (const group of result.requirements) {
-      group.directDependents = group.directDependents.filter(item => item.targetLocation !== 'node_modules/dep-b')
-    }
-    assert.throws(
-      () => attachRequirements([vulnerableRow], new Map([['dep', summary]])),
-      /node_modules\/dep-b.*affected location/i,
-    )
-  })
+test('rejects when an affected installation has no matching direct dependent link', () => {
+  const summary = response()
+  const result = summary.results.find(item => item.version === '5.0.9')
+  for (const group of result.requirements) {
+    group.directDependents = group.directDependents.filter(item => item.targetLocation !== 'node_modules/dep-b')
+  }
+  assert.throws(
+    () => attachRequirements([vulnerableRow], new Map([['dep', summary]])),
+    /node_modules\/dep-b.*affected location/i,
+  )
+})
 
-  test('rejects when the package name has no npm-dep-paths summary', () => {
-    assert.throws(
-      () => attachRequirements([vulnerableRow], new Map()),
-      /npm-dep-paths summary.*dep/i,
-    )
-  })
+test('rejects when the package name has no npm-dep-paths summary', () => {
+  assert.throws(
+    () => attachRequirements([vulnerableRow], new Map()),
+    /npm-dep-paths summary.*dep/i,
+  )
+})

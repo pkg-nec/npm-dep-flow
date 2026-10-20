@@ -56,7 +56,8 @@ export async function main(argv, io = process, deps = defaults) {
       : deps.renderMarkdown(findings)
     io.stdout.write(output)
     return 0
-  } catch (error) {
+  }
+  catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error'
     io.stderr.write(`npm-dep-upgrade-plan: ${message}\n`)
     return 1

@@ -12,7 +12,8 @@ function parseJson(bytes, name) {
     const value = JSON.parse(bytes.toString('utf8'))
     if (!isObject(value)) throw new Error('expected an object')
     return value
-  } catch (error) {
+  }
+  catch (error) {
     throw new Error(`Invalid ${name}: ${error.message}`, { cause: error })
   }
 }
@@ -34,20 +35,29 @@ export async function loadProject(path) {
   try {
     await stat(join(root, 'npm-shrinkwrap.json'))
     throw new Error('Unsupported npm-shrinkwrap.json; npm would audit it instead of package-lock.json')
-  } catch (error) {
+  }
+  catch (error) {
     if (error.code !== 'ENOENT') throw error
   }
   let manifestBytes
   let lockBytes
-  try { manifestBytes = await readFile(join(root, 'package.json')) }
-  catch (error) { throw new Error(`Cannot read package.json: ${error.message}`, { cause: error }) }
-  try { lockBytes = await readFile(join(root, 'package-lock.json')) }
-  catch (error) { throw new Error(`Cannot read package-lock.json: ${error.message}`, { cause: error }) }
+  try {
+    manifestBytes = await readFile(join(root, 'package.json'))
+  }
+  catch (error) {
+    throw new Error(`Cannot read package.json: ${error.message}`, { cause: error })
+  }
+  try {
+    lockBytes = await readFile(join(root, 'package-lock.json'))
+  }
+  catch (error) {
+    throw new Error(`Cannot read package-lock.json: ${error.message}`, { cause: error })
+  }
 
   const manifest = parseJson(manifestBytes, 'package.json')
   const lock = parseJson(lockBytes, 'package-lock.json')
-  if (manifest.packageManager !== undefined &&
-      (typeof manifest.packageManager !== 'string' || !/^npm@\S+$/.test(manifest.packageManager))) {
+  if (manifest.packageManager !== undefined
+    && (typeof manifest.packageManager !== 'string' || !/^npm@\S+$/.test(manifest.packageManager))) {
     throw new Error(`Unsupported packageManager: ${manifest.packageManager}`)
   }
   if (![2, 3].includes(lock.lockfileVersion) || !isObject(lock.packages) || !isObject(lock.packages[''])) {

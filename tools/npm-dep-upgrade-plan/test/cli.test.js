@@ -59,19 +59,33 @@ function createIo() {
   let stderr = ''
   return {
     io: {
-      stdout: { write(value) { stdout += value } },
-      stderr: { write(value) { stderr += value } },
+      stdout: { write(value) {
+        stdout += value
+      } },
+      stderr: { write(value) {
+        stderr += value
+      } },
     },
-    get stdout() { return stdout },
-    get stderr() { return stderr },
+    get stdout() {
+      return stdout
+    },
+    get stderr() {
+      return stderr
+    },
   }
 }
 
 function injectedDeps(report, versions = new Map(), renderers = {}) {
   return {
-    async runNpmDepAudit() { return report },
-    async fetchStableVersions(projectRoot, packageName) { return versions.get(packageName) ?? [] },
-    async fetchReleaseTimes() { return new Map() },
+    async runNpmDepAudit() {
+      return report
+    },
+    async fetchStableVersions(projectRoot, packageName) {
+      return versions.get(packageName) ?? []
+    },
+    async fetchReleaseTimes() {
+      return new Map()
+    },
     renderMarkdown: renderers.renderMarkdown ?? (() => 'markdown report\n'),
     renderJson: renderers.renderJson ?? (() => '{"schemaVersion":1}\n'),
   }
@@ -81,10 +95,22 @@ test('help short-circuits invalid arguments and does not run subprocess adapters
   let calls = 0
   const io = createIo()
   const deps = {
-    async runNpmDepAudit() { calls += 1; throw new Error('must not run') },
-    async fetchStableVersions() { calls += 1; throw new Error('must not run') },
-    renderMarkdown() { calls += 1; return '' },
-    renderJson() { calls += 1; return '' },
+    async runNpmDepAudit() {
+      calls += 1
+      throw new Error('must not run')
+    },
+    async fetchStableVersions() {
+      calls += 1
+      throw new Error('must not run')
+    },
+    renderMarkdown() {
+      calls += 1
+      return ''
+    },
+    renderJson() {
+      calls += 1
+      return ''
+    },
   }
 
   assert.equal(await main(['--unknown', 'one', 'two', '--help'], io.io, deps), 0)
@@ -97,10 +123,16 @@ test('main defaults to the current directory and Markdown', async () => {
   const report = { schemaVersion: 2, auditedAt: '2026-10-13T06:00:00.000Z', rows: [] }
   const calls = []
   const deps = injectedDeps(report, new Map(), {
-    renderMarkdown(rows) { calls.push(['markdown', rows]); return 'markdown report\n' },
+    renderMarkdown(rows) {
+      calls.push(['markdown', rows])
+      return 'markdown report\n'
+    },
   })
   const originalAudit = deps.runNpmDepAudit
-  deps.runNpmDepAudit = async root => { calls.push(['audit', root]); return originalAudit(root) }
+  deps.runNpmDepAudit = async (root) => {
+    calls.push(['audit', root])
+    return originalAudit(root)
+  }
 
   assert.equal(await main([], io.io, deps), 0)
   assert.deepEqual(calls, [['audit', process.cwd()], ['markdown', []]])
@@ -113,9 +145,15 @@ test('main accepts an explicit project path and JSON format', async () => {
   const report = { schemaVersion: 2, auditedAt: '2026-10-13T06:00:00.000Z', rows: [] }
   const calls = []
   const deps = injectedDeps(report, new Map(), {
-    renderJson(rows, auditedAt) { calls.push(['json', rows, auditedAt]); return renderJson(rows, auditedAt) },
+    renderJson(rows, auditedAt) {
+      calls.push(['json', rows, auditedAt])
+      return renderJson(rows, auditedAt)
+    },
   })
-  deps.runNpmDepAudit = async root => { calls.push(['audit', root]); return report }
+  deps.runNpmDepAudit = async (root) => {
+    calls.push(['audit', root])
+    return report
+  }
 
   assert.equal(await main(['./fixture', '--format', 'json'], io.io, deps), 0)
   assert.deepEqual(calls, [
@@ -144,8 +182,14 @@ test('main requests audit once and queries each distinct package name once', asy
   const deps = injectedDeps(report, new Map(), {
     renderMarkdown: rows => `rows:${rows.length}\n`,
   })
-  deps.runNpmDepAudit = async () => { calls.audit += 1; return report }
-  deps.fetchStableVersions = async (root, packageName) => { calls.registry.push(packageName); return [] }
+  deps.runNpmDepAudit = async () => {
+    calls.audit += 1
+    return report
+  }
+  deps.fetchStableVersions = async (root, packageName) => {
+    calls.registry.push(packageName)
+    return []
+  }
 
   assert.equal(await main([], io.io, deps), 0)
   assert.equal(calls.audit, 1)
@@ -158,7 +202,10 @@ test('main skips registry lookups for an empty audit report', async () => {
   let registryCalls = 0
   const report = { schemaVersion: 2, auditedAt: '2026-10-13T06:00:00.000Z', rows: [] }
   const deps = injectedDeps(report)
-  deps.fetchStableVersions = async () => { registryCalls += 1; return [] }
+  deps.fetchStableVersions = async () => {
+    registryCalls += 1
+    return []
+  }
 
   assert.equal(await main([], io.io, deps), 0)
   assert.equal(registryCalls, 0)
@@ -199,7 +246,9 @@ test('main returns success when all links are ineligible', async () => {
 test('main leaves stdout empty when the audit command fails', async () => {
   const io = createIo()
   const deps = injectedDeps({ rows: [] })
-  deps.runNpmDepAudit = async () => { throw new Error('npm-dep-audit is not available on PATH') }
+  deps.runNpmDepAudit = async () => {
+    throw new Error('npm-dep-audit is not available on PATH')
+  }
   assert.equal(await main([], io.io, deps), 1)
   assert.equal(io.stdout, '')
   assert.match(io.stderr, /^npm-dep-upgrade-plan: npm-dep-audit is not available on PATH/)
@@ -235,7 +284,8 @@ process.stdout.write(JSON.stringify(byPackage[packageName] ?? (args[2] === 'vers
   if (process.platform === 'win32') {
     writeFileSync(path.join(commandDirectory, 'npm-dep-audit.cmd'), `@echo off\r\n"${process.execPath}" "%~dp0fake-audit.js" %*\r\n`)
     writeFileSync(path.join(commandDirectory, 'npm.cmd'), `@echo off\r\n"${process.execPath}" "%~dp0fake-npm.js" %*\r\n`)
-  } else {
+  }
+  else {
     writeFileSync(path.join(commandDirectory, 'npm-dep-audit'), '#!/bin/sh\nexec node "$(dirname "$0")/fake-audit.js" "$@"\n')
     writeFileSync(path.join(commandDirectory, 'npm'), '#!/bin/sh\nexec node "$(dirname "$0")/fake-npm.js" "$@"\n')
     chmodSync(path.join(commandDirectory, 'npm-dep-audit'), 0o755)
@@ -262,7 +312,7 @@ process.stdout.write(JSON.stringify(byPackage[packageName] ?? (args[2] === 'vers
   return { project, callLog, run }
 }
 
-test('executable emits Markdown and JSON, distinguishes both brace-expansion links, and leaves project files unchanged', t => {
+test('executable emits Markdown and JSON, distinguishes both brace-expansion links, and leaves project files unchanged', (t) => {
   const fixture = createExecutableFixture(t, braceReport(), {
     'brace-expansion': ['5.0.9', '5.0.12'],
   })
@@ -299,7 +349,7 @@ test('executable emits Markdown and JSON, distinguishes both brace-expansion lin
   assert.deepEqual(readFileSync(path.join(fixture.project, 'package-lock.json')), lockBefore)
 })
 
-test('executable emits no partial stdout when the second registry query fails', t => {
+test('executable emits no partial stdout when the second registry query fails', (t) => {
   const report = braceReport()
   report.rows.push(vulnerableRow('left-pad', '1.0.1', 'low', [{
     declaredRequirement: '^1.0.0',
@@ -320,7 +370,9 @@ test('executable emits no partial stdout when the second registry query fails', 
 test('failed audit diagnostics reach stderr without a partial report', async () => {
   const io = createIo()
   const deps = injectedDeps(braceReport())
-  deps.runNpmDepAudit = async () => { throw new Error('npm-dep-audit failed with exit code 1: Unsupported npm workspaces') }
+  deps.runNpmDepAudit = async () => {
+    throw new Error('npm-dep-audit failed with exit code 1: Unsupported npm workspaces')
+  }
   assert.equal(await main([], io.io, deps), 1)
   assert.equal(io.stdout, '')
   assert.match(io.stderr, /npm-dep-upgrade-plan: npm-dep-audit failed with exit code 1: Unsupported npm workspaces/)

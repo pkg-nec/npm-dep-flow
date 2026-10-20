@@ -61,11 +61,21 @@ function harness() {
       ['1.1.2', 'node_modules/nested/node_modules/dep', '^1.1.0'],
     ]),
   }
-  const io = { stdout: { write: value => { stdout += value } }, stderr: { write: value => { stderr += value } } }
+  const io = { stdout: { write: (value) => {
+    stdout += value
+  } }, stderr: { write: (value) => {
+    stderr += value
+  } } }
   const deps = {
-    loadProject: async path => { loadedPath = path; return { root: '/project', manifestBytes: Buffer.from('{}'), lockBytes: Buffer.from('{}'), lock } },
+    loadProject: async (path) => {
+      loadedPath = path
+      return { root: '/project', manifestBytes: Buffer.from('{}'), lockBytes: Buffer.from('{}'), lock }
+    },
     readNpmContext: async () => ({ version: '12.1.0', registry: 'https://registry.example/' }),
-    getAudit: async (_project, _context, selected) => { options = selected; return { audit, auditedAt: '2026-10-09T00:00:00.000Z' } },
+    getAudit: async (_project, _context, selected) => {
+      options = selected
+      return { audit, auditedAt: '2026-10-09T00:00:00.000Z' }
+    },
     runNpmDepPaths: async (_root, packageName) => {
       pathCalls.push(packageName)
       if (!summaries[packageName]) throw new Error(`missing fixture summary for ${packageName}`)
@@ -74,10 +84,18 @@ function harness() {
   }
   return {
     io, deps, summaries, pathCalls,
-    get stdout() { return stdout },
-    get stderr() { return stderr },
-    get loadedPath() { return loadedPath },
-    get options() { return options },
+    get stdout() {
+      return stdout
+    },
+    get stderr() {
+      return stderr
+    },
+    get loadedPath() {
+      return loadedPath
+    },
+    get options() {
+      return options
+    },
   }
 }
 
@@ -168,7 +186,9 @@ test('gets fresh path data for each report even when the audit result is cached'
 
 test('path CLI and join failures leave stdout empty', async () => {
   for (const [runPaths, message] of [
-    [async () => { throw new Error('paths executable failed') }, /paths executable failed/],
+    [async () => {
+      throw new Error('paths executable failed')
+    }, /paths executable failed/],
     [async () => summary('dep', []), /did not return dep@1\.1\.1/],
   ]) {
     const h = harness()
@@ -181,7 +201,9 @@ test('path CLI and join failures leave stdout empty', async () => {
 
 test('help returns without auditing or querying npm-dep-paths', async () => {
   const h = harness()
-  assert.equal(await main(['--help'], h.io, { loadProject: () => { throw new Error('must not audit') } }), 0)
+  assert.equal(await main(['--help'], h.io, { loadProject: () => {
+    throw new Error('must not audit')
+  } }), 0)
   assert.match(h.stdout, /--min-severity/)
   assert.deepEqual(h.pathCalls, [])
 })
@@ -198,7 +220,9 @@ for (const args of [['--wat'], ['--format', 'xml'], ['--min-severity', 'urgent']
 
 test('audit failure leaves stdout empty and does not invoke npm-dep-paths', async () => {
   const h = harness()
-  h.deps.getAudit = async () => { throw new Error('registry unavailable') }
+  h.deps.getAudit = async () => {
+    throw new Error('registry unavailable')
+  }
   assert.notEqual(await main([], h.io, h.deps), 0)
   assert.equal(h.stdout, '')
   assert.match(h.stderr, /registry unavailable/)
@@ -215,7 +239,7 @@ async function fakeCommand(binDir, name, source) {
   return chmod(executable, 0o755)
 }
 
-test('bin renders dependency requirements in Markdown and JSON', async t => {
+test('bin renders dependency requirements in Markdown and JSON', async (t) => {
   const dir = await mkdtemp(join(tmpdir(), 'npm-dep-audit-cli-'))
   t.after(() => rm(dir, { recursive: true, force: true }))
   const projectDir = join(dir, 'project')

@@ -6,9 +6,9 @@ export function attachRequirements(rows, summariesByPackage) {
   if (!Array.isArray(rows)) throw new Error('Audit rows must be an array')
   if (!(summariesByPackage instanceof Map)) throw new Error('npm-dep-paths summaries must be a Map')
 
-  return rows.map(row => {
-    if (!isRecord(row) || typeof row.package !== 'string' || typeof row.version !== 'string' ||
-        !Array.isArray(row.paths) || row.paths.some(location => typeof location !== 'string')) {
+  return rows.map((row) => {
+    if (!isRecord(row) || typeof row.package !== 'string' || typeof row.version !== 'string'
+      || !Array.isArray(row.paths) || row.paths.some(location => typeof location !== 'string')) {
       throw new Error('Cannot attach requirements to a malformed audit row')
     }
     const summary = summariesByPackage.get(row.package)

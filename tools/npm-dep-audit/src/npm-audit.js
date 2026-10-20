@@ -9,21 +9,21 @@ function isRecord(value) {
 }
 
 export function validateAudit(report) {
-  if (!isRecord(report) || report.error || report.auditReportVersion !== 2 ||
-      !isRecord(report.vulnerabilities) || !isRecord(report.metadata)) {
+  if (!isRecord(report) || report.error || report.auditReportVersion !== 2
+    || !isRecord(report.vulnerabilities) || !isRecord(report.metadata)) {
     throw new Error(`Invalid npm audit response: ${report?.error?.message ?? 'missing expected audit fields'}`)
   }
   for (const [name, vuln] of Object.entries(report.vulnerabilities)) {
-    if (!isRecord(vuln) || !Array.isArray(vuln.via) || !Array.isArray(vuln.nodes) ||
-        vuln.nodes.some(path => typeof path !== 'string' || !path)) {
+    if (!isRecord(vuln) || !Array.isArray(vuln.via) || !Array.isArray(vuln.nodes)
+      || vuln.nodes.some(path => typeof path !== 'string' || !path)) {
       throw new Error(`Invalid npm audit vulnerability for ${name}`)
     }
     for (const via of vuln.via) {
       if (typeof via === 'string') continue
-      if (!isRecord(via) || !severities.has(via.severity) ||
-          typeof (via.range ?? via.vulnerable_versions) !== 'string' ||
-          semver.validRange(via.range ?? via.vulnerable_versions) === null ||
-          (via.source ?? via.id ?? via.url) === undefined) {
+      if (!isRecord(via) || !severities.has(via.severity)
+        || typeof (via.range ?? via.vulnerable_versions) !== 'string'
+        || semver.validRange(via.range ?? via.vulnerable_versions) === null
+        || (via.source ?? via.id ?? via.url) === undefined) {
         throw new Error(`Invalid npm audit advisory for ${name}`)
       }
     }
@@ -38,7 +38,8 @@ function command(root, args, spawnImpl, platform) {
       const windows = platform === 'win32'
       child = spawnImpl(windows ? `npm.cmd ${args.join(' ')}` : 'npm', windows ? [] : args,
         { cwd: root, shell: windows, stdio: ['ignore', 'pipe', 'pipe'] })
-    } catch (error) {
+    }
+    catch (error) {
       reject(error)
       return
     }
@@ -46,14 +47,14 @@ function command(root, args, spawnImpl, platform) {
     let stderr = ''
     let size = 0
     let done = false
-    const fail = error => {
+    const fail = (error) => {
       if (done) return
       done = true
       child.kill?.()
       reject(error)
     }
     for (const [stream, label] of [[child.stdout, 'stdout'], [child.stderr, 'stderr']]) {
-      stream.on('data', chunk => {
+      stream.on('data', (chunk) => {
         size += chunk.length
         if (size > maxOutputBytes) return fail(new Error('npm output exceeded 32 MiB'))
         if (label === 'stdout') stdout += chunk.toString()
@@ -61,7 +62,7 @@ function command(root, args, spawnImpl, platform) {
       })
     }
     child.on('error', fail)
-    child.on('close', code => {
+    child.on('close', (code) => {
       if (done) return
       done = true
       resolve({ code, stdout, stderr })
@@ -91,7 +92,11 @@ export async function runNpmAudit(root, spawnImpl = spawn, platform = process.pl
     throw new Error(`npm audit failed with exit ${result.code}: ${result.stderr.trim() || result.stdout.trim()}`)
   }
   let report
-  try { report = JSON.parse(result.stdout) }
-  catch (error) { throw new Error(`Invalid npm audit JSON: ${error.message}`, { cause: error }) }
+  try {
+    report = JSON.parse(result.stdout)
+  }
+  catch (error) {
+    throw new Error(`Invalid npm audit JSON: ${error.message}`, { cause: error })
+  }
   return validateAudit(report)
 }

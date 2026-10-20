@@ -32,11 +32,11 @@ function compareVersion(left, right) {
 }
 
 function compareRows(left, right) {
-  return (severityOrder.get(left.severity) ?? Number.MAX_SAFE_INTEGER) -
-    (severityOrder.get(right.severity) ?? Number.MAX_SAFE_INTEGER) ||
-    compareText(left.package, right.package) ||
-    compareVersion(left.version, right.version) ||
-    compareText(left.targetLocation, right.targetLocation)
+  return (severityOrder.get(left.severity) ?? Number.MAX_SAFE_INTEGER)
+    - (severityOrder.get(right.severity) ?? Number.MAX_SAFE_INTEGER)
+    || compareText(left.package, right.package)
+    || compareVersion(left.version, right.version)
+    || compareText(left.targetLocation, right.targetLocation)
 }
 
 export function sortFindings(rows) {
@@ -44,7 +44,7 @@ export function sortFindings(rows) {
 }
 
 function safe(value) {
-  return Array.from(String(value), char => {
+  return Array.from(String(value), (char) => {
     const code = char.charCodeAt(0)
     if (code >= 0x20 && code !== 0x7f) return char
     if (char === '\n') return '\\n'
@@ -121,12 +121,14 @@ export function renderJson(rows, auditedAt) {
     minimumSafeVersion: row.minimumSafeVersion,
     minimumSafeVersionReleasedAt: row.minimumSafeVersionReleasedAt,
     status: row.status,
-    strategy: row.strategy === null ? null : {
-      id: row.strategy.id,
-      targetPackage: row.strategy.targetPackage,
-      currentVersion: row.strategy.currentVersion,
-      targetVersion: row.strategy.targetVersion,
-    },
+    strategy: row.strategy === null
+      ? null
+      : {
+          id: row.strategy.id,
+          targetPackage: row.strategy.targetPackage,
+          currentVersion: row.strategy.currentVersion,
+          targetVersion: row.strategy.targetVersion,
+        },
   }))
   return `${JSON.stringify({ schemaVersion: 2, auditedAt, rows: orderedRows }, null, 2)}\n`
 }

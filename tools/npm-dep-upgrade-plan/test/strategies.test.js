@@ -174,8 +174,14 @@ test('an eligible future strategy can apply even without a safe version of the v
 test('evaluation chooses the first eligible strategy by configured order', () => {
   const calls = []
   const strategies = [
-    { id: 'second', order: 2, evaluate: () => { calls.push('second'); return { id: 'second' } } },
-    { id: 'first', order: 1, evaluate: () => { calls.push('first'); return { id: 'first' } } },
+    { id: 'second', order: 2, evaluate: () => {
+      calls.push('second')
+      return { id: 'second' }
+    } },
+    { id: 'first', order: 1, evaluate: () => {
+      calls.push('first')
+      return { id: 'first' }
+    } },
   ]
   const row = auditRow({ requirements: [{ declaredRequirement: '^5', directDependents: [dependent()] }] })
   const result = evaluateFindings([row], new Map(), strategies)

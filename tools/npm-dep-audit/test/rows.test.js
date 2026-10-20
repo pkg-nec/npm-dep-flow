@@ -36,7 +36,7 @@ test('ignores inherited-only findings and resolves alias and scoped names', () =
   const audit = { vulnerabilities: {
     'real-pkg': { name: 'real-pkg', via: [advisory(3, 'critical', '<3')], nodes: ['node_modules/alias'] },
     '@scope/actual': { name: '@scope/actual', via: [advisory(4, 'moderate', '<4')], nodes: ['node_modules/@scope/actual'] },
-    inherited: { name: 'inherited', via: ['real-pkg'], nodes: ['node_modules/inherited'] },
+    'inherited': { name: 'inherited', via: ['real-pkg'], nodes: ['node_modules/inherited'] },
   } }
   assert.deepEqual(buildRows(lock, audit).map(row => row.package), ['@scope/actual', 'real-pkg'])
 })

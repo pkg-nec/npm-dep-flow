@@ -44,8 +44,8 @@ export function buildGraph(project) {
     const node = graph.get(location)
     const entry = location ? packages[location] : project.manifest
     for (const { name, type, spec } of declarations(entry, location === '')) {
-      const optional = type === 'optionalDependencies' ||
-        (type === 'peerDependencies' && entry.peerDependenciesMeta?.[name]?.optional === true)
+      const optional = type === 'optionalDependencies'
+        || (type === 'peerDependencies' && entry.peerDependenciesMeta?.[name]?.optional === true)
       const toLocation = lookup(packages, location, name, type === 'peerDependencies')
       if (toLocation === null) {
         if (optional) continue

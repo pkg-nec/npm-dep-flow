@@ -40,7 +40,7 @@ export function collectUpstream(graph, result, dependent, from) {
   const ancestors = ancestorsOf(reverseEdges(graph), selectedLocations)
   const root = graph.get('')
   if (!root) throw new Error('Dependency graph has no project root')
-  const topLevelEdges = root.edges.filter(edge => {
+  const topLevelEdges = root.edges.filter((edge) => {
     if (!ancestors.has(edge.toLocation)) return false
     if (!from) return true
     const node = graph.get(edge.toLocation)
@@ -78,7 +78,7 @@ export function collectUpstream(graph, result, dependent, from) {
     targetLocations.add(link.targetLocation)
   }
   for (const location of targetLocations) reached.add(location)
-  const nodes = [...reached].sort(compare).map(location => {
+  const nodes = [...reached].sort(compare).map((location) => {
     const node = graph.get(location)
     if (!node) throw new Error(`Dependency graph lacks ${location}`)
     return { location, name: node.name, version: node.version }

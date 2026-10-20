@@ -1,5 +1,5 @@
 function safe(value) {
-  return Array.from(String(value), char => {
+  return Array.from(String(value), (char) => {
     const code = char.charCodeAt(0)
     if (code >= 0x20 && code !== 0x7f) return char
     if (char === '\n') return '\\n'
@@ -37,7 +37,7 @@ function visibleDependents(group, targetName) {
 
 export function renderSummaryText(project, results) {
   if (!results.length) return '# npm-dep-paths\n\nNo matching installed packages.\n'
-  const sections = results.map(result => {
+  const sections = results.map((result) => {
     const requirements = result.requirements
     const lines = [
       `## ${markdownCell(result.package)}@${markdownCell(result.version)}`,

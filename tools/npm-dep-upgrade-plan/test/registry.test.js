@@ -81,8 +81,8 @@ test('registry adapter returns normalized stable release times', async () => {
   const calls = []
   const releaseTimes = await fetchReleaseTimes('/project', 'brace-expansion', fakeSpawn({
     stdout: JSON.stringify({
-      created: '2017-01-01T00:00:00.000Z',
-      modified: '2026-10-02T00:00:00.000Z',
+      'created': '2017-01-01T00:00:00.000Z',
+      'modified': '2026-10-02T00:00:00.000Z',
       '5.0.12': '2026-10-01T12:00:00Z',
       '5.0.13': '2026-02-30T12:00:00.000Z',
       '5.0.14-beta.1': '2026-10-02T12:00:00.000Z',
@@ -99,7 +99,7 @@ test('registry adapter returns normalized stable release times', async () => {
 
 test('registry adapter returns an empty release-time map when version dates are absent or invalid', async () => {
   const releaseTimes = await fetchReleaseTimes('/project', 'brace-expansion', fakeSpawn({
-    stdout: JSON.stringify({ created: 'invalid', modified: 'invalid', '5.0.12': null }),
+    stdout: JSON.stringify({ 'created': 'invalid', 'modified': 'invalid', '5.0.12': null }),
   }, []), 'linux')
 
   assert.deepEqual([...releaseTimes], [])
@@ -140,10 +140,10 @@ for (const stdout of ['{}', '1', 'null', '["1.0.0", 2]']) {
 test('registry adapter rejects nonzero npm exits without echoing stderr', async () => {
   await assert.rejects(
     fetchStableVersions('/project', 'brace-expansion', fakeSpawn({ code: 1, stderr: 'secret-token' }, []), 'linux'),
-    error => /npm view failed for brace-expansion with exit code 1/.test(error.message) &&
-      /package name/.test(error.message) &&
-      /registry access/.test(error.message) &&
-      !error.message.includes('secret-token'),
+    error => /npm view failed for brace-expansion with exit code 1/.test(error.message)
+      && /package name/.test(error.message)
+      && /registry access/.test(error.message)
+      && !error.message.includes('secret-token'),
   )
 })
 

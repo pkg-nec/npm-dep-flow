@@ -106,7 +106,8 @@ else { fs.appendFileSync(process.env.PLAN_PATHS_CALLS, args.join(' ') + '\\n'); 
   if (process.platform === 'win32') {
     writeFileSync(path.join(commandDirectory, 'npm.cmd'), npmShim)
     writeFileSync(path.join(commandDirectory, 'npm-dep-paths.cmd'), pathsShim)
-  } else {
+  }
+  else {
     writeFileSync(path.join(commandDirectory, 'npm'), npmShim)
     writeFileSync(path.join(commandDirectory, 'npm-dep-paths'), pathsShim)
     chmodSync(path.join(commandDirectory, 'npm'), 0o755)
@@ -140,7 +141,7 @@ else { fs.appendFileSync(process.env.PLAN_PATHS_CALLS, args.join(' ') + '\\n'); 
   return { run, npmCalls, pathsCalls }
 }
 
-test('planner consumes JSON emitted by the real npm-dep-audit CLI', { skip: !enabled }, t => {
+test('planner consumes JSON emitted by the real npm-dep-audit CLI', { skip: !enabled }, (t) => {
   const fixture = createFixture(t)
   const result = fixture.run()
 

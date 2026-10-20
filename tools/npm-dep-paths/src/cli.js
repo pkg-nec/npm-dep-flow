@@ -43,15 +43,19 @@ function parseArgs(argv) {
       const value = argv[++i]
       if (!['markdown', 'text', 'json'].includes(value)) throw new Error(`Invalid format: ${value ?? '(missing)'}`)
       format = value
-    } else if (arg === '--upstream-of') {
+    }
+    else if (arg === '--upstream-of') {
       upstreamOf = argv[++i]
       if (!upstreamOf || upstreamOf.startsWith('-')) throw new Error('Missing --upstream-of package selector')
-    } else if (arg === '--from') {
+    }
+    else if (arg === '--from') {
       from = argv[++i]
       if (!from || from.startsWith('-')) throw new Error('Missing --from package selector')
-    } else if (arg.startsWith('-')) {
+    }
+    else if (arg.startsWith('-')) {
       throw new Error(`Unknown option: ${arg}`)
-    } else {
+    }
+    else {
       positional.push(arg)
     }
   }
@@ -94,7 +98,8 @@ export async function main(argv, io = process, deps = defaults) {
       : `${deps.renderSummaryText(project, results).trimEnd()}${upstream ? `\n\n${fencedText(deps.renderUpstreamText(project, results[0], upstream, from))}` : ''}\n`
     io.stdout.write(report)
     return 0
-  } catch (error) {
+  }
+  catch (error) {
     io.stderr.write(`npm-dep-paths: ${error.message}\n`)
     return 1
   }

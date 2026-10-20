@@ -21,7 +21,7 @@ async function fixture(t, manifest = { name: 'app', version: '1.0.0', dependenci
   return dir
 }
 
-test('loads ordinary v2 and v3 projects', async t => {
+test('loads ordinary v2 and v3 projects', async (t) => {
   for (const version of [2, 3]) {
     const dir = await fixture(t)
     const lock = JSON.parse(await (await import('node:fs/promises')).readFile(join(dir, 'package-lock.json'), 'utf8'))
@@ -34,7 +34,7 @@ test('loads ordinary v2 and v3 projects', async t => {
   }
 })
 
-test('reports missing and malformed input files', async t => {
+test('reports missing and malformed input files', async (t) => {
   const missing = await mkdtemp(join(tempRoot, 'npm-dep-paths-empty-'))
   t.after(() => rm(missing, { recursive: true, force: true }))
   await assert.rejects(loadProject(missing), /package\.json/)
@@ -44,7 +44,7 @@ test('reports missing and malformed input files', async t => {
   await assert.rejects(loadProject(missing), /package-lock\.json/)
 })
 
-test('rejects unsupported lock and project structures', async t => {
+test('rejects unsupported lock and project structures', async (t) => {
   const dir = await fixture(t)
   const base = JSON.parse(await (await import('node:fs/promises')).readFile(join(dir, 'package-lock.json'), 'utf8'))
   await writeFile(join(dir, 'package-lock.json'), JSON.stringify({ ...base, lockfileVersion: 1 }))
@@ -59,7 +59,7 @@ test('rejects unsupported lock and project structures', async t => {
   await assert.rejects(loadProject(dir), /shrinkwrap/)
 })
 
-test('rejects incomplete root identity and stale root declarations', async t => {
+test('rejects incomplete root identity and stale root declarations', async (t) => {
   const dir = await fixture(t)
   await writeFile(join(dir, 'package.json'), JSON.stringify({ version: '1.0.0', dependencies: { dep: '^2.0.0' } }))
   await assert.rejects(loadProject(dir), /name/)
@@ -69,7 +69,7 @@ test('rejects incomplete root identity and stale root declarations', async t => 
   await assert.rejects(loadProject(dir), /stale|mismatch|dependencies/)
 })
 
-test('rejects linked and local lockfile entries', async t => {
+test('rejects linked and local lockfile entries', async (t) => {
   const dir = await fixture(t)
   const lock = JSON.parse(await (await import('node:fs/promises')).readFile(join(dir, 'package-lock.json'), 'utf8'))
   lock.packages['node_modules/dep'].link = true
@@ -81,7 +81,7 @@ test('rejects linked and local lockfile entries', async t => {
   await assert.rejects(loadProject(dir), /local/)
 })
 
-test('accepts npm root metadata that removes optional duplicates from dependencies', async t => {
+test('accepts npm root metadata that removes optional duplicates from dependencies', async (t) => {
   const manifest = { name: 'app', version: '1.0.0', dependencies: { maybe: '^1' }, optionalDependencies: { maybe: '^1' } }
   const lock = { lockfileVersion: 3, packages: {
     '': { name: 'app', version: '1.0.0', optionalDependencies: { maybe: '^1' } },

@@ -1,5 +1,5 @@
 function safe(value) {
-  return Array.from(String(value), char => {
+  return Array.from(String(value), (char) => {
     const code = char.charCodeAt(0)
     if (code >= 0x20 && code !== 0x7f) return char
     if (char === '\n') return '\\n'
