@@ -38,12 +38,12 @@ function registryDataFor(versionsByPackage, packageName) {
 export function evaluateFindings(rows, versionsByPackage, strategies = orderedStrategies) {
   const ordered = [...strategies].sort((left, right) => left.order - right.order)
 
-  return rows.flatMap(row => {
+  return rows.flatMap((row) => {
     const registry = registryDataFor(versionsByPackage, row.package)
     const minimumSafeVersion = findMinimumSafeVersion(row, registry.versions)
     const minimumSafeVersionReleasedAt = releaseTimeFor(registry.releaseTimes, minimumSafeVersion)
 
-    return groupTargetLocations(row).map(group => {
+    return groupTargetLocations(row).map((group) => {
       let strategy = null
       for (const item of ordered) {
         strategy = item.evaluate(row, group.declaredRequirements, registry.versions)

@@ -15,11 +15,14 @@ async function cacheDir(t) {
   return dir
 }
 
-test('cache reuses a fresh audit and refetches after expiry', async t => {
+test('cache reuses a fresh audit and refetches after expiry', async (t) => {
   const cacheRoot = await cacheDir(t)
   let calls = 0
   let current = 1000000
-  const options = { ttlMs: 3600000, cacheRoot, now: () => current, fetchAudit: async () => { calls++; return audit } }
+  const options = { ttlMs: 3600000, cacheRoot, now: () => current, fetchAudit: async () => {
+    calls++
+    return audit
+  } }
   const first = await getAudit(project, context, options)
   current += 3599999
   const second = await getAudit(project, context, options)
@@ -31,10 +34,13 @@ test('cache reuses a fresh audit and refetches after expiry', async t => {
   assert.equal(third.auditedAt, new Date(current).toISOString())
 })
 
-test('manifest, lockfile, npm version, and registry changes each invalidate cache', async t => {
+test('manifest, lockfile, npm version, and registry changes each invalidate cache', async (t) => {
   const cacheRoot = await cacheDir(t)
   let calls = 0
-  const options = { ttlMs: 3600000, cacheRoot, now: () => 1000000, fetchAudit: async () => { calls++; return audit } }
+  const options = { ttlMs: 3600000, cacheRoot, now: () => 1000000, fetchAudit: async () => {
+    calls++
+    return audit
+  } }
   await getAudit(project, context, options)
   await getAudit({ ...project, manifestBytes: Buffer.from('{"name":"two"}') }, context, options)
   await getAudit({ ...project, lockBytes: Buffer.from('{"lockfileVersion":2}') }, context, options)
@@ -43,20 +49,26 @@ test('manifest, lockfile, npm version, and registry changes each invalidate cach
   assert.equal(calls, 5)
 })
 
-test('no-cache bypasses reads and writes', async t => {
+test('no-cache bypasses reads and writes', async (t) => {
   const cacheRoot = await cacheDir(t)
   let calls = 0
-  const options = { ttlMs: 3600000, cacheRoot, noCache: true, now: () => 1000000, fetchAudit: async () => { calls++; return audit } }
+  const options = { ttlMs: 3600000, cacheRoot, noCache: true, now: () => 1000000, fetchAudit: async () => {
+    calls++
+    return audit
+  } }
   await getAudit(project, context, options)
   await getAudit(project, context, options)
   assert.equal(calls, 2)
   assert.deepEqual(await readdir(cacheRoot), [])
 })
 
-test('truncated cache is a miss and replacement is complete JSON', async t => {
+test('truncated cache is a miss and replacement is complete JSON', async (t) => {
   const cacheRoot = await cacheDir(t)
   let calls = 0
-  const options = { ttlMs: 3600000, cacheRoot, now: () => 1000000, fetchAudit: async () => { calls++; return audit } }
+  const options = { ttlMs: 3600000, cacheRoot, now: () => 1000000, fetchAudit: async () => {
+    calls++
+    return audit
+  } }
   await getAudit(project, context, options)
   const [name] = await readdir(cacheRoot)
   await writeFile(join(cacheRoot, name), '{')
@@ -66,25 +78,32 @@ test('truncated cache is a miss and replacement is complete JSON', async t => {
   assert.deepEqual(await readdir(cacheRoot), [name])
 })
 
-test('failed refresh does not serve stale data or write an entry', async t => {
+test('failed refresh does not serve stale data or write an entry', async (t) => {
   const cacheRoot = await cacheDir(t)
-  await assert.rejects(getAudit(project, context, { ttlMs: 3600000, cacheRoot, now: () => 1000000, fetchAudit: async () => { throw new Error('audit failed') } }), /audit failed/)
+  await assert.rejects(getAudit(project, context, { ttlMs: 3600000, cacheRoot, now: () => 1000000, fetchAudit: async () => {
+    throw new Error('audit failed')
+  } }), /audit failed/)
   assert.deepEqual(await readdir(cacheRoot), [])
   await getAudit(project, context, { ttlMs: 3600000, cacheRoot, now: () => 1000000, fetchAudit: async () => audit })
-  await assert.rejects(getAudit(project, context, { ttlMs: 3600000, cacheRoot, now: () => 4600000, fetchAudit: async () => { throw new Error('audit failed') } }), /audit failed/)
+  await assert.rejects(getAudit(project, context, { ttlMs: 3600000, cacheRoot, now: () => 4600000, fetchAudit: async () => {
+    throw new Error('audit failed')
+  } }), /audit failed/)
 })
 
-test('does not cache malformed nested advisories', async t => {
+test('does not cache malformed nested advisories', async (t) => {
   const cacheRoot = await cacheDir(t)
   const malformed = { ...audit, vulnerabilities: { dep: { via: [{ source: 1, severity: 'high', range: 'not a range' }], nodes: ['node_modules/dep'] } } }
   await assert.rejects(getAudit(project, context, { ttlMs: 3600000, cacheRoot, now: () => 1000000, fetchAudit: async () => malformed }), /audit|range/i)
   assert.deepEqual(await readdir(cacheRoot), [])
 })
 
-test('null cache envelope triggers a fresh audit', async t => {
+test('null cache envelope triggers a fresh audit', async (t) => {
   const cacheRoot = await cacheDir(t)
   let calls = 0
-  const options = { ttlMs: 3600000, cacheRoot, now: () => 1000000, fetchAudit: async () => { calls++; return audit } }
+  const options = { ttlMs: 3600000, cacheRoot, now: () => 1000000, fetchAudit: async () => {
+    calls++
+    return audit
+  } }
   await getAudit(project, context, options)
   const [name] = await readdir(cacheRoot)
   await writeFile(join(cacheRoot, name), 'null')

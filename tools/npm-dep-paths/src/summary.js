@@ -28,15 +28,15 @@ function incomingEdges(graph) {
 }
 
 function compareDependent(a, b) {
-  return compare(a.name, b.name) || compare(a.version, b.version) ||
-    compare(a.location, b.location) || compare(a.targetLocation, b.targetLocation) ||
-    compare(a.type, b.type) || compare(a.requestedName, b.requestedName)
+  return compare(a.name, b.name) || compare(a.version, b.version)
+    || compare(a.location, b.location) || compare(a.targetLocation, b.targetLocation)
+    || compare(a.type, b.type) || compare(a.requestedName, b.requestedName)
 }
 
 export function collectSummaryResults(graph, selector) {
   if (!graph.has('')) throw new Error('Dependency graph has no project root')
-  const matches = [...graph.values()].filter(node => node.location && node.name === selector.name &&
-    (selector.kind === 'name' || node.version === selector.version))
+  const matches = [...graph.values()].filter(node => node.location && node.name === selector.name
+    && (selector.kind === 'name' || node.version === selector.version))
   if (!matches.length) {
     if (selector.kind === 'exact') throw new Error(`Package version not found: ${selector.name}@${selector.version}`)
     return []

@@ -39,8 +39,8 @@ function safeStableVersions(row, stableVersions) {
   })
 
   return candidates.filter(candidate =>
-    semver.gt(candidate, installedVersion) &&
-    vulnerableRanges.every(range => !semver.satisfies(candidate, range)),
+    semver.gt(candidate, installedVersion)
+    && vulnerableRanges.every(range => !semver.satisfies(candidate, range)),
   )
 }
 

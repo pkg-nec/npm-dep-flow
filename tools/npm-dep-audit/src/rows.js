@@ -24,7 +24,7 @@ export function buildRows(lock, audit) {
   const grouped = new Map()
   for (const vuln of Object.values(audit.vulnerabilities)) {
     if (!Array.isArray(vuln.via) || !Array.isArray(vuln.nodes)) throw new Error('Invalid vulnerability via or nodes')
-    const direct = vuln.via.filter(via => typeof via !== 'string').map(via => {
+    const direct = vuln.via.filter(via => typeof via !== 'string').map((via) => {
       if (!via || typeof via !== 'object' || Array.isArray(via)) throw new Error('Invalid advisory via entry')
       return normalizeAdvisory(via)
     })
@@ -60,6 +60,6 @@ export function selectRows(rows, minSeverity) {
   const threshold = levels.indexOf(minSeverity)
   if (threshold < 0) throw new Error(`Unsupported minimum severity ${minSeverity}`)
   return rows.filter(row => levels.indexOf(row.severity) >= threshold)
-    .sort((a, b) => levels.indexOf(b.severity) - levels.indexOf(a.severity) ||
-      a.package.localeCompare(b.package, 'en') || semver.compare(a.version, b.version))
+    .sort((a, b) => levels.indexOf(b.severity) - levels.indexOf(a.severity)
+      || a.package.localeCompare(b.package, 'en') || semver.compare(a.version, b.version))
 }

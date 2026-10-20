@@ -9,13 +9,18 @@ function object(value) {
 
 async function json(path, label) {
   let bytes
-  try { bytes = await readFile(path) }
-  catch (error) { throw new Error(`Cannot read ${label}: ${error.message}`, { cause: error }) }
+  try {
+    bytes = await readFile(path)
+  }
+  catch (error) {
+    throw new Error(`Cannot read ${label}: ${error.message}`, { cause: error })
+  }
   try {
     const value = JSON.parse(bytes.toString('utf8'))
     if (!object(value)) throw new Error('expected an object')
     return value
-  } catch (error) {
+  }
+  catch (error) {
     throw new Error(`Invalid ${label}: ${error.message}`, { cause: error })
   }
 }
@@ -39,7 +44,8 @@ export async function loadProject(path) {
   try {
     await stat(join(root, 'npm-shrinkwrap.json'))
     throw new Error('Unsupported npm-shrinkwrap.json')
-  } catch (error) {
+  }
+  catch (error) {
     if (error.code !== 'ENOENT') throw error
   }
   const manifest = await json(join(root, 'package.json'), 'package.json')

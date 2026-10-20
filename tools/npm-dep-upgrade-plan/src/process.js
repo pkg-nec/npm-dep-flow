@@ -13,7 +13,8 @@ export function runProcess(commandName, args, cwd, spawnImpl = spawn, platform =
         shell: windows,
         stdio: ['ignore', 'pipe', 'pipe'],
       })
-    } catch (error) {
+    }
+    catch (error) {
       reject(error)
       return
     }
@@ -25,17 +26,21 @@ export function runProcess(commandName, args, cwd, spawnImpl = spawn, platform =
     child.stdout.setEncoding('utf8')
     child.stderr.setEncoding('utf8')
 
-    const fail = error => {
+    const fail = (error) => {
       if (settled) return
       settled = true
       child.kill?.()
       reject(error)
     }
 
-    child.stdout.on('data', chunk => { stdout += chunk })
-    child.stderr.on('data', chunk => { stderr += chunk })
+    child.stdout.on('data', (chunk) => {
+      stdout += chunk
+    })
+    child.stderr.on('data', (chunk) => {
+      stderr += chunk
+    })
     child.on('error', fail)
-    child.on('close', code => {
+    child.on('close', (code) => {
       if (settled) return
       settled = true
       resolve({ code, stdout, stderr })

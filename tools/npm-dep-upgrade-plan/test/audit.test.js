@@ -82,13 +82,27 @@ test('audit adapter uses the Windows command shim', async () => {
 })
 
 const invalidReports = [
-  ['wrong schema version', report => { report.schemaVersion = 1 }, /schema version 2/],
-  ['invalid auditedAt', report => { report.auditedAt = 'yesterday' }, /auditedAt/],
-  ['malformed row', report => { delete report.rows[0].package }, /row 0/],
-  ['invalid advisory range', report => { report.rows[0].advisories[0].range = '<not-semver' }, /advisory range/],
-  ['empty requirements', report => { report.rows[0].requirements = [] }, /requirement groups/],
-  ['empty direct-dependent links', report => { report.rows[0].requirements[0].directDependents = [] }, /direct dependents/],
-  ['malformed direct-dependent link', report => { report.rows[0].requirements[0].directDependents[0].version = 1 }, /direct dependent/],
+  ['wrong schema version', (report) => {
+    report.schemaVersion = 1
+  }, /schema version 2/],
+  ['invalid auditedAt', (report) => {
+    report.auditedAt = 'yesterday'
+  }, /auditedAt/],
+  ['malformed row', (report) => {
+    delete report.rows[0].package
+  }, /row 0/],
+  ['invalid advisory range', (report) => {
+    report.rows[0].advisories[0].range = '<not-semver'
+  }, /advisory range/],
+  ['empty requirements', (report) => {
+    report.rows[0].requirements = []
+  }, /requirement groups/],
+  ['empty direct-dependent links', (report) => {
+    report.rows[0].requirements[0].directDependents = []
+  }, /direct dependents/],
+  ['malformed direct-dependent link', (report) => {
+    report.rows[0].requirements[0].directDependents[0].version = 1
+  }, /direct dependent/],
 ]
 
 for (const [name, mutate, expectedError] of invalidReports) {
@@ -117,17 +131,17 @@ test('audit adapter rejects invalid JSON without echoing its content', async () 
 test('audit adapter preserves trimmed failed-command diagnostics', async () => {
   await assert.rejects(
     runNpmDepAudit('/project', fakeSpawn({ code: 1, stderr: '  npm-dep-audit: Unsupported npm workspaces\n', stdout: 'do not echo' }, []), 'linux'),
-    error => /npm-dep-audit failed with exit code 1/.test(error.message) &&
-      error.message.endsWith('npm-dep-audit: Unsupported npm workspaces') &&
-      !error.message.includes('do not echo'),
+    error => /npm-dep-audit failed with exit code 1/.test(error.message)
+      && error.message.endsWith('npm-dep-audit: Unsupported npm workspaces')
+      && !error.message.includes('do not echo'),
   )
 })
 
 test('audit adapter retains guidance when a failed command has no diagnostic', async () => {
   await assert.rejects(
     runNpmDepAudit('/project', fakeSpawn({ code: 2, stderr: '  \n', stdout: 'do not echo' }, []), 'linux'),
-    error => /exit code 2/.test(error.message) && /supported npm project/.test(error.message) &&
-      /npm-dep-paths/.test(error.message) && !error.message.includes('do not echo'),
+    error => /exit code 2/.test(error.message) && /supported npm project/.test(error.message)
+      && /npm-dep-paths/.test(error.message) && !error.message.includes('do not echo'),
   )
 })
 

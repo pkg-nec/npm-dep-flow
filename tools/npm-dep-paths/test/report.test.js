@@ -137,7 +137,7 @@ test('renders headings and dependent values literally without changing JSON data
   assert.ok(output.includes(`## ${literalExpected}@5.0.9`), output)
   assert.ok(output.includes(`| ${literalExpected} | ${literalExpected}@1.0.0`))
   assert.equal(output.split('\n').filter(line => line.startsWith('|')).length, 4)
-  assert.doesNotMatch(output, /[\x00-\x09\x0b-\x1f\x7f]/)
+  assert.equal([...output].some(char => char !== '\n' && (char.charCodeAt(0) <= 0x1f || char.charCodeAt(0) === 0x7f)), false)
   const json = JSON.parse(renderSummaryJson(project, selector, [odd]))
   assert.equal(json.result.package, literalInput)
   assert.equal(json.result.requirements[0].directDependents[0].name, literalInput)

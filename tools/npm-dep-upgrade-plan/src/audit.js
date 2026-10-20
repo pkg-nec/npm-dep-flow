@@ -23,21 +23,21 @@ function validateAuditReport(report) {
   if (!Array.isArray(report.rows)) invalid('rows must be an array')
 
   const rows = report.rows.map((row, rowIndex) => {
-    if (!isRecord(row) || typeof row.package !== 'string' || !row.package ||
-        typeof row.version !== 'string' || !semver.valid(row.version) ||
-        !severities.has(row.severity) || !Array.isArray(row.advisories) || row.advisories.length === 0 ||
-        !Array.isArray(row.requirements)) {
+    if (!isRecord(row) || typeof row.package !== 'string' || !row.package
+      || typeof row.version !== 'string' || !semver.valid(row.version)
+      || !severities.has(row.severity) || !Array.isArray(row.advisories) || row.advisories.length === 0
+      || !Array.isArray(row.requirements)) {
       invalid(`row ${rowIndex} is malformed`)
     }
     if (row.requirements.length === 0) invalid(`row ${rowIndex} must contain requirement groups`)
 
     const advisories = row.advisories.map((advisory, advisoryIndex) => {
-      if (!isRecord(advisory) ||
-          !(typeof advisory.id === 'string' && advisory.id.length > 0) &&
-          !(typeof advisory.id === 'number' && Number.isFinite(advisory.id)) ||
-          typeof advisory.title !== 'string' || typeof advisory.url !== 'string' ||
-          !severities.has(advisory.severity) || typeof advisory.range !== 'string' ||
-          semver.validRange(advisory.range) === null) {
+      if (!isRecord(advisory)
+        || (!(typeof advisory.id === 'string' && advisory.id.length > 0)
+          && !(typeof advisory.id === 'number' && Number.isFinite(advisory.id)))
+        || typeof advisory.title !== 'string' || typeof advisory.url !== 'string'
+        || !severities.has(advisory.severity) || typeof advisory.range !== 'string'
+        || semver.validRange(advisory.range) === null) {
         invalid(`row ${rowIndex} advisory ${advisoryIndex} is malformed or has an invalid advisory range`)
       }
       return {
@@ -50,8 +50,8 @@ function validateAuditReport(report) {
     })
 
     const requirements = row.requirements.map((requirement, requirementIndex) => {
-      if (!isRecord(requirement) || typeof requirement.declaredRequirement !== 'string' ||
-          !Array.isArray(requirement.directDependents) || requirement.directDependents.length === 0) {
+      if (!isRecord(requirement) || typeof requirement.declaredRequirement !== 'string'
+        || !Array.isArray(requirement.directDependents) || requirement.directDependents.length === 0) {
         invalid(`row ${rowIndex} requirement ${requirementIndex} is malformed or has no direct dependents`)
       }
       const directDependents = requirement.directDependents.map((dependent, dependentIndex) => {
@@ -89,7 +89,8 @@ export async function runNpmDepAudit(projectRoot, spawnImpl = spawn, platform = 
       spawnImpl,
       platform,
     )
-  } catch (error) {
+  }
+  catch (error) {
     if (error?.code === 'ENOENT') {
       throw new Error('npm-dep-audit is not available on PATH; install it as a standalone CLI', { cause: error })
     }
@@ -107,7 +108,8 @@ export async function runNpmDepAudit(projectRoot, spawnImpl = spawn, platform = 
   let report
   try {
     report = JSON.parse(result.stdout)
-  } catch {
+  }
+  catch {
     throw new Error('npm-dep-audit returned invalid JSON')
   }
   return validateAuditReport(report)

@@ -49,17 +49,22 @@ export async function getAudit(project, context, {
   const key = fingerprint(project, context)
   try {
     const entry = JSON.parse(await readFile(file, 'utf8'))
-    if (entry && typeof entry === 'object' && !Array.isArray(entry) &&
-        Number.isFinite(entry.timestamp) && Math.abs(entry.timestamp) <= 8.64e15) {
+    if (entry && typeof entry === 'object' && !Array.isArray(entry)
+      && Number.isFinite(entry.timestamp) && Math.abs(entry.timestamp) <= 8.64e15) {
       const age = now() - entry.timestamp
       let auditValid = false
-      try { validateAudit(entry.audit); auditValid = true } catch { /* invalid cache is a miss */ }
-      if (entry.key === key && auditValid && Number.isFinite(age) && age >= 0 && age < ttlMs &&
-          entry.auditedAt === new Date(entry.timestamp).toISOString()) {
+      try {
+        validateAudit(entry.audit)
+        auditValid = true
+      }
+      catch { /* invalid cache is a miss */ }
+      if (entry.key === key && auditValid && Number.isFinite(age) && age >= 0 && age < ttlMs
+        && entry.auditedAt === new Date(entry.timestamp).toISOString()) {
         return { audit: entry.audit, auditedAt: entry.auditedAt }
       }
     }
-  } catch (error) {
+  }
+  catch (error) {
     if (error.code !== 'ENOENT' && !(error instanceof SyntaxError)) throw error
   }
 
@@ -70,8 +75,11 @@ export async function getAudit(project, context, {
   try {
     await writeFile(temporary, JSON.stringify({ key, timestamp, auditedAt, audit }), { mode: 0o600, flag: 'wx' })
     await rename(temporary, file)
-  } finally {
-    await unlink(temporary).catch(error => { if (error.code !== 'ENOENT') throw error })
+  }
+  finally {
+    await unlink(temporary).catch((error) => {
+      if (error.code !== 'ENOENT') throw error
+    })
   }
   return { audit, auditedAt }
 }

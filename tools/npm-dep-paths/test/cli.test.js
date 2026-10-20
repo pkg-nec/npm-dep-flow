@@ -33,10 +33,18 @@ async function fixture(t, parents = 2, twoVersions = true, packageName = 'dep') 
 function capture() {
   let stdout = ''
   let stderr = ''
-  return { io: { stdout: { write: value => { stdout += value } }, stderr: { write: value => { stderr += value } } }, get stdout() { return stdout }, get stderr() { return stderr } }
+  return { io: { stdout: { write: (value) => {
+    stdout += value
+  } }, stderr: { write: (value) => {
+    stderr += value
+  } } }, get stdout() {
+    return stdout
+  }, get stderr() {
+    return stderr
+  } }
 }
 
-test('name and exact queries return schema v2 requirement summaries', async t => {
+test('name and exact queries return schema v2 requirement summaries', async (t) => {
   const dir = await fixture(t)
   const all = capture()
   assert.equal(await main([dir, 'dep', '--format', 'json'], all.io), 0)
@@ -55,7 +63,7 @@ test('name and exact queries return schema v2 requirement summaries', async t =>
   assert.match(human.stdout, /^\| \^5\.0\.5 \| parent-0000@1\.0\.0/m)
 })
 
-test('upstream JSON keeps the summary and --from filters only its graph', async t => {
+test('upstream JSON keeps the summary and --from filters only its graph', async (t) => {
   const dir = await fixture(t)
   const normal = capture()
   const detailed = capture()
@@ -73,7 +81,7 @@ test('upstream JSON keeps the summary and --from filters only its graph', async 
   assert.equal(focusedData.upstream.edges.at(-1).spec, '^5.0.5')
 })
 
-test('text upstream overview and focused graph show requirements', async t => {
+test('text upstream overview and focused graph show requirements', async (t) => {
   const dir = await fixture(t)
   const overview = capture()
   const focused = capture()
@@ -85,7 +93,7 @@ test('text upstream overview and focused graph show requirements', async t => {
   assert.match(focused.stdout, /app@1\.0\.0[\s\S]*parent-0000@1\.0\.0[\s\S]*dep@5\.0\.9/)
 })
 
-test('help and invalid requests never emit a partial report', async t => {
+test('help and invalid requests never emit a partial report', async (t) => {
   const dir = await fixture(t)
   const help = capture()
   assert.equal(await main(['--help'], help.io), 0)
@@ -109,7 +117,7 @@ test('help and invalid requests never emit a partial report', async t => {
   assert.deepEqual(JSON.parse(none.stdout).results, [])
 })
 
-test('real executable emits a complete compact summary without node_modules', async t => {
+test('real executable emits a complete compact summary without node_modules', async (t) => {
   const dir = await fixture(t, 1025, false)
   const bin = fileURLToPath(new URL('../bin/npm-dep-paths.js', import.meta.url))
   const child = spawn(process.execPath, [bin, dir, 'dep@5.0.9', '--format', 'json'], { env: process.env })
@@ -117,8 +125,12 @@ test('real executable emits a complete compact summary without node_modules', as
   let stderr = ''
   child.stdout.setEncoding('utf8')
   child.stderr.setEncoding('utf8')
-  child.stdout.on('data', chunk => { stdout += chunk })
-  child.stderr.on('data', chunk => { stderr += chunk })
+  child.stdout.on('data', (chunk) => {
+    stdout += chunk
+  })
+  child.stderr.on('data', (chunk) => {
+    stderr += chunk
+  })
   const status = await new Promise((resolve, reject) => {
     child.on('error', reject)
     child.on('close', resolve)
@@ -131,7 +143,7 @@ test('real executable emits a complete compact summary without node_modules', as
   assert.ok(Buffer.byteLength(stdout) < 500000)
 })
 
-test('Markdown default and text alias preserve summaries with safely fenced upstream detail', async t => {
+test('Markdown default and text alias preserve summaries with safely fenced upstream detail', async (t) => {
   const dir = await fixture(t)
   for (const extra of [[], ['--upstream-of', 'parent-0000@1.0.0'], ['--upstream-of', 'parent-0000@1.0.0', '--from', 'parent-0000@1.0.0']]) {
     const outputs = []
@@ -158,8 +170,7 @@ test('Markdown default and text alias preserve summaries with safely fenced upst
   assert.match(output.stdout, /\n````text\napp```name@1.0.0[\s\S]+\n````\n$/)
 })
 
-
-test('executable defaults to the caller directory with flags first and preserves explicit paths', async t => {
+test('executable defaults to the caller directory with flags first and preserves explicit paths', async (t) => {
   const bin = fileURLToPath(new URL('../bin/npm-dep-paths.js', import.meta.url))
   for (const name of ['dep', '@scope/dep']) {
     const dir = await fixture(t, 2, true, name)
@@ -180,7 +191,8 @@ test('executable defaults to the caller directory with flags first and preserves
         assert.equal(report.selector, selector)
         if (selector === name) {
           assert.deepEqual(report.results.map(item => item.version), ['2.1.7', '5.0.9'])
-        } else {
+        }
+        else {
           assert.equal(report.result.version, '5.0.9')
           assert.deepEqual(report.result.requirements.map(item => item.declaredRequirement), ['5.0.9', '^5.0.5'])
         }

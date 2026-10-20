@@ -26,9 +26,9 @@ function normalizeTimestamp(value) {
   const second = Number(secondText)
   const leapYear = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0)
   const daysInMonth = [31, leapYear ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
-  if (month < 1 || month > 12 || day < 1 || day > daysInMonth[month - 1] ||
-      hour > 23 || minute > 59 || second > 59 ||
-      (offsetHourText !== undefined && (Number(offsetHourText) > 23 || Number(offsetMinuteText) > 59))) {
+  if (month < 1 || month > 12 || day < 1 || day > daysInMonth[month - 1]
+    || hour > 23 || minute > 59 || second > 59
+    || (offsetHourText !== undefined && (Number(offsetHourText) > 23 || Number(offsetMinuteText) > 59))) {
     return null
   }
 
@@ -54,7 +54,8 @@ async function npmViewJson(projectRoot, packageName, field, spawnImpl, platform)
       spawnImpl,
       platform,
     )
-  } catch (error) {
+  }
+  catch (error) {
     if (error?.code === 'ENOENT') {
       throw new Error('npm is not available on PATH', { cause: error })
     }
@@ -69,7 +70,8 @@ async function npmViewJson(projectRoot, packageName, field, spawnImpl, platform)
 
   try {
     return JSON.parse(result.stdout)
-  } catch {
+  }
+  catch {
     throw new Error('npm view returned invalid JSON')
   }
 }

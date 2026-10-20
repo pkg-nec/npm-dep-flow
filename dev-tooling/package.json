@@ -1,0 +1,19 @@
+{
+  "name": "npm-dep-flow-dev-tooling",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": "^20.19.0 || ^22.13.0 || >=24"
+  },
+  "scripts": {
+    "lint": "cd .. && eslint --config dev-tooling/eslint.config.mjs . --max-warnings 0",
+    "lint:fix": "npm run lint -- --fix"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@stylistic/eslint-plugin": "5.10.0",
+    "eslint": "10.12.0",
+    "globals": "17.13.0"
+  }
+}

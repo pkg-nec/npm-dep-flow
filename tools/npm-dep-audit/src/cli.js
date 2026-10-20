@@ -38,17 +38,22 @@ function parse(argv) {
   let hasPath = false
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i]
-    if (arg === '--no-cache') { options.noCache = true; continue }
+    if (arg === '--no-cache') {
+      options.noCache = true
+      continue
+    }
     if (arg === '--format' || arg === '--min-severity' || arg === '--cache-ttl') {
       const value = argv[++i]
       if (!value || value.startsWith('--')) throw new Error(`Missing value for ${arg}`)
       if (arg === '--format') {
         if (!['markdown', 'json'].includes(value)) throw new Error(`Invalid format: ${value}`)
         options.format = value
-      } else if (arg === '--min-severity') {
+      }
+      else if (arg === '--min-severity') {
         if (!severities.has(value)) throw new Error(`Invalid minimum severity: ${value}`)
         options.minSeverity = value
-      } else {
+      }
+      else {
         const match = /^(\d+)([smhd])$/.exec(value)
         if (!match || Number(match[1]) === 0 || !Number.isSafeInteger(Number(match[1]) * multipliers[match[2]])) {
           throw new Error(`Invalid cache TTL: ${value}; use a positive duration such as 30m or 1h`)
@@ -87,7 +92,8 @@ export async function main(argv, io = process, deps = defaults) {
     const enrichedRows = attachRequirements(rows, summariesByPackage)
     io.stdout.write(options.format === 'json' ? renderJson(enrichedRows, auditedAt) : renderMarkdown(enrichedRows))
     return 0
-  } catch (error) {
+  }
+  catch (error) {
     io.stderr.write(`npm-dep-audit: ${error.message}\n`)
     return 1
   }

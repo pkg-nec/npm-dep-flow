@@ -30,7 +30,7 @@ test('resolves nested and hoisted dependencies without losing shared edges', () 
 })
 
 test('resolves peers from an ancestor and retains alias identity and overridden spec', () => {
-  const graph = buildGraph(project({ plugin: '1', host: '^2', '@alias/p': 'npm:real@^2', dep: '^1' }, {
+  const graph = buildGraph(project({ 'plugin': '1', 'host': '^2', '@alias/p': 'npm:real@^2', 'dep': '^1' }, {
     'node_modules/plugin': { version: '1.0.0', peerDependencies: { host: '^2' } },
     'node_modules/host': { version: '2.1.0' },
     'node_modules/@alias/p': { name: 'real', version: '2.2.0' },

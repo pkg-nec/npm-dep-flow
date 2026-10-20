@@ -1,10 +1,12 @@
 function safe(value) {
-  return String(value).replace(/[\x00-\x1f\x7f]/g, char => {
+  return Array.from(String(value), (char) => {
+    const code = char.charCodeAt(0)
+    if (code >= 0x20 && code !== 0x7f) return char
     if (char === '\n') return '\\n'
     if (char === '\r') return '\\r'
     if (char === '\t') return '\\t'
-    return `\\x${char.charCodeAt(0).toString(16).padStart(2, '0')}`
-  })
+    return `\\x${code.toString(16).padStart(2, '0')}`
+  }).join('')
 }
 
 function markdownCell(value) {
@@ -12,7 +14,7 @@ function markdownCell(value) {
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
-    .replace(/([\\|\[\]*_`])/g, '\\$1')
+    .replace(/([\\|[\]*_`])/g, '\\$1')
 }
 
 function nodeLabel(node) {
@@ -35,7 +37,7 @@ function visibleDependents(group, targetName) {
 
 export function renderSummaryText(project, results) {
   if (!results.length) return '# npm-dep-paths\n\nNo matching installed packages.\n'
-  const sections = results.map(result => {
+  const sections = results.map((result) => {
     const requirements = result.requirements
     const lines = [
       `## ${markdownCell(result.package)}@${markdownCell(result.version)}`,
