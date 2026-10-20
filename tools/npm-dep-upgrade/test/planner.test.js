@@ -20,7 +20,8 @@ test('location validation excludes alternate spellings and escapes', () => {
 })
 test('H05 adapter controls reject missing IDs, unknown strategy, failed or malformed planner',async()=>{
  const {readPlanner}=await import('../src/planner.js')
- const {id:omitted,...missing}=row
+ const missing={...row}
+ delete missing.id
  assert.throws(()=>validatePlanner(report([missing])),/ID/i)
  assert.throws(()=>selectItem(report([{...row,strategy:{...row.strategy,id:'upgrade-parent'}}]),id),/unsupported/i)
  await assert.rejects(readPlanner('/project',async()=>({code:1,stderr:'fixture error',stdout:''})),/failed/i)

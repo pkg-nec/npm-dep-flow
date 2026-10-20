@@ -16,10 +16,14 @@ export async function resolveNpmPath(env = process.env) {
         const source = await readFile(actual,'utf8')
         for (const match of source.matchAll(/["']([^"'\r\n]*npm-cli\.js)["']/g)) candidates.push(path.dirname(path.dirname(match[1].replace(/%~dp0/gi,path.dirname(actual)+path.sep))))
         for (const root of candidates) {
-          try { const p=JSON.parse(await readFile(path.join(root,'package.json'),'utf8')); if(p.name==='npm') return root } catch {}
+          try { const p=JSON.parse(await readFile(path.join(root,'package.json'),'utf8')); if(p.name==='npm') return root } catch {
+            // A candidate may not contain npm metadata; try the next one.
+          }
         }
         break
-      } catch {}
+      } catch {
+        // Missing or unreadable launchers can be skipped while searching PATH.
+      }
     }
   }
   fail('NPM_CONTEXT','configuration','Cannot resolve the selected npm package and builtin configuration')

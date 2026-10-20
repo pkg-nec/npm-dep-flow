@@ -23,10 +23,10 @@ test('failed planner precondition never emits success or commits',async()=>{
 test('direct transaction verifies then commits before emitting a completed result',async t=>{
  const {gitProject}=await import('./helpers/git-project.js')
  const {preflightGit}=await import('../src/git.js')
- const {loadProject}=await import('../src/project.js'),{loadGraph}=await import('../src/graph.js')
+ const {loadGraph}=await import('../src/graph.js')
  const {itemId}=await import('../src/planner.js')
  const {readFile,writeFile,mkdir}=await import('node:fs/promises'),path=await import('node:path')
- const f=await gitProject(t),guard=await preflightGit(f.root),project=await loadProject(f.root),graph=await loadGraph(f.root),events=[]
+ const f=await gitProject(t),guard=await preflightGit(f.root),graph=await loadGraph(f.root),events=[]
  const item={id:itemId('e2e-target','node_modules/e2e-target'),package:'e2e-target',version:'6.0.9',targetLocation:'node_modules/e2e-target',minimumSafeVersion:'6.0.10',status:'eligible',strategy:{id:'update-within-declared-range'}}
  const evidence={item,graph,auditRows:[],incoming:graph.edges,directDeclarations:[{field:'dependencies',requestedName:'e2e-target',spec:'^6.0.8'}],upstream:[]}
  const c=capture()

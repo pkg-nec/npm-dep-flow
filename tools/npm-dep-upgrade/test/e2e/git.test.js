@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import path from 'node:path'
-import {readFile,writeFile,mkdir,rm} from 'node:fs/promises'
+import {readFile,writeFile,rm} from 'node:fs/promises'
 import {createProject} from './helpers/project.js'
 import {direct,transitive} from './fixtures/catalog.js'
 import {plan,runUpgrade,assertSuccess,assertUnchanged} from './helpers/runner.js'
@@ -24,7 +24,9 @@ for(const variant of ['manifest unstaged','lock unstaged','manifest staged','loc
  if(variant==='untracked lock') {await checked(f,'git',['rm','--cached','package-lock.json']);await checked(f,'git',['commit','-m','test: untrack lock'])}
  if(variant==='missing lock') await rm(path.join(f.root,'package-lock.json'))
  const head=await checked(f,'git',['rev-parse','HEAD']),index=await checked(f,'git',['diff','--cached','--binary'])
- const before={};for(const file of ['package.json','package-lock.json']) {try{before[file]=await readFile(path.join(f.root,file))}catch{}}
+ const before={};for(const file of ['package.json','package-lock.json']) {try{before[file]=await readFile(path.join(f.root,file))}catch{
+  // The missing-lockfile variant intentionally has no bytes to snapshot.
+ }}
  const result=await runUpgrade(f,[row.id]);assert.equal(result.code,1);assert.equal(result.stdout,'');assert.match(result.stderr,/git|tracked|staging|clean/i)
  assert.equal(await checked(f,'git',['rev-parse','HEAD']),head);assert.equal(await checked(f,'git',['diff','--cached','--binary']),index)
  for(const [file,bytes] of Object.entries(before)) assert.deepEqual(await readFile(path.join(f.root,file)),bytes)
