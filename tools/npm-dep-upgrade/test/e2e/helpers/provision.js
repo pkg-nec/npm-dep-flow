@@ -22,7 +22,7 @@ const entry = variables.NPM_DEP_UPGRADE_E2E_NPM_CLI
 await writeFile(path.join(bin, 'npm'), `#!/bin/sh\nexec '${process.execPath.replaceAll('\'', '\'\\\'\'')}' '${entry.replaceAll('\'', '\'\\\'\'')}' "$@"\n`, { mode: 0o755 })
 await writeFile(path.join(bin, 'npm.cmd'), `@echo off\r\n"${process.execPath}" "${entry}" %*\r\n`)
 const toolsRoot = fileURLToPath(new URL('../../../../', import.meta.url))
-for (const name of ['npm-dep-paths', 'npm-dep-audit', 'npm-dep-upgrade-plan', 'npm-dep-upgrade']) {
+for (const name of ['npm-dep-paths', 'npm-dep-audit', 'npm-dep-versions', 'npm-dep-upgrade-plan', 'npm-dep-upgrade']) {
   const cli = path.join(toolsRoot, name, 'bin', name + '.js')
   await writeFile(path.join(bin, name), `#!/bin/sh\nexec '${process.execPath.replaceAll('\'', '\'\\\'\'')}' '${cli.replaceAll('\'', '\'\\\'\'')}' "$@"\n`, { mode: 0o755 })
   await writeFile(path.join(bin, name + '.cmd'), `@echo off\r\n"${process.execPath}" "${cli}" %*\r\n`)

@@ -6,7 +6,7 @@
 - Each `tools/<name>/` directory is an independent Node.js project with its own manifest, lockfile, executable, source, tests, and README. Keep CLI dependencies and tool-specific npm commands within the relevant tool directory.
 - `dev-tooling/` is a separate private development package with the shared ESLint dependencies, lockfile, configuration, and commands. Keep the root a non-package and do not introduce npm workspaces.
 - Tools should exchange data through documented command-line output, including versioned JSON, rather than importing another tool's private source files.
-- Start with the [repository README](README.md) for all four tool guides and design documents.
+- Start with the [repository README](README.md) for all five tool guides and design documents.
 
 ## Versioning
 
@@ -39,7 +39,7 @@
 - Whenever CLI help text changes, run the affected tool with `--help` and inspect the rendered output. Keep argument and option descriptions aligned to one common column, with at least two spaces after the longest label; widen the padding for all rows when adding a longer flag or placeholder. Check alignment alongside flag coverage before committing.
 - Preserve each tool's documented CLI and schema version 2 JSON interface. Human-readable reports use Markdown with one tool-name H1; an empty report has a message without a table. Paths retains `--format text` as an alias for `markdown`.
 - Completed reports exit 0 even when findings exist or all strategies are ineligible. Errors exit 1 with stderr diagnostics and no partial report on stdout.
-- The three analysis tools must not install dependencies, run lifecycle scripts, or modify target project files. `npm-dep-upgrade` is an explicitly invoked mutator: it may install with scripts disabled, edit the selected project's dependency files, and commit its verified changes under its documented guards. Analysis caches live outside the target project by default.
+- The four analysis tools must not install dependencies, run lifecycle scripts, or modify target project files. `npm-dep-upgrade` is an explicitly invoked mutator: it may install with scripts disabled, edit the selected project's dependency files, and commit its verified changes under its documented guards. Analysis caches live outside the target project by default.
 - Keep npm and sibling-command subprocess launching portable: Windows uses `.cmd` through a shell; Unix-like systems spawn commands directly. Test both paths when changing subprocess behavior.
 
 ## Working on npm-dep-audit
@@ -57,7 +57,7 @@
 ## Working on npm-dep-upgrade-plan
 
 - Entry point: `bin/npm-dep-upgrade-plan.js`. `src/cli.js` coordinates the audit adapter, registry lookups, strategy evaluation, and rendering.
-- Uses the separately installed audit CLI (which uses paths) and npm registry queries. Preserve per-target-location eligibility and ordered strategy selection. Planner caches must include effective npm configuration and sibling versions/locations, retain upstream advisory expiry, and forward TTL/bypass controls to audit.
+- Uses the separately installed audit CLI (which uses paths) and versions CLI for cached stable registry catalogs. Preserve per-target-location eligibility and ordered strategy selection. Planner caches must include effective npm configuration and sibling versions/locations, retain upstream advisory expiry, and forward TTL/bypass controls to audit and versions, and preserve the earliest audit/catalog source freshness.
 - Set `NPM_DEP_AUDIT_INTEGRATION=1` to test the real audit CLI boundary with fixture npm/paths responses. See the [planner guide](tools/npm-dep-upgrade-plan/README.md).
 
 For test scratch directories, `NPM_DEP_FLOW_TEST_TMPDIR` overrides checkout-local audit/planner integration and planner executable scratch roots; `NPM_DEP_PATHS_TEST_TMPDIR` overrides paths fixture roots. Other temporary fixtures follow the operating system temporary directory (`TMPDIR` on Unix-like systems).
@@ -70,3 +70,11 @@ For test scratch directories, `NPM_DEP_FLOW_TEST_TMPDIR` overrides checkout-loca
 - All installs must ignore scripts and enforce at least seven days of release age. Fresh candidate-version and final advisory checks are mandatory.
 - Require clean tracked dependency files and an empty repository-wide index; preserve unrelated unstaged work. Stage only verified dependency files and use the documented default or explicitly configured dependency commit subject. Never reset HEAD or overwrite concurrent work during recovery.
 - Default E2E runtime is npm12.1.0 on Node24.21.0; compatibility runtime is npm11.10.0. Provision them outside isolated test cases and pass the test-only CLI entry variables documented in the tool README. Run `npm test` and `npm run test:e2e`; coverage and matrix details are in `test/e2e/COVERAGE.md`.
+
+## Working on npm-dep-versions
+
+- Entry point: `bin/npm-dep-versions.js`; independent package with public schema version 2 JSON and Markdown reports.
+- Fetch exactly `npm view <package> versions time --json` on a catalog miss/bypass; never derive membership from time keys or remove versions with unknown dates.
+- Stable-only default, `--all`, `--major`, and `--range` filter the complete cached catalog. `--project` selects npm configuration context and requires no manifest or lockfile.
+- Catalog identity includes canonical context, package, npm/tool versions, and a digest of effective configuration excluding moving `before`; never store configuration secrets. Preserve original fetchedAt and atomic, nonfatal cache behavior.
+- `npm test` includes executable tests. Set `NPM_DEP_UPGRADE_E2E_NPM_CLI` and `NPM_DEP_UPGRADE_E2E_COMPAT_NPM_CLI` to pinned npm 12.1.0 / 11.10.0 entries to exercise real npm metadata envelopes against a local registry. `NPM_DEP_VERSIONS_REQUIRE_RUNTIMES=1` makes absent required runtime entries an error in CI (npm12 on Windows, both on Unix).

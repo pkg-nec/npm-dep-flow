@@ -6,7 +6,7 @@ Upgrade one vulnerable npm installation selected by a fresh planner ID, verify i
 
 Use Git 2.36 or newer and Node.js 24.21.0 with npm 12.1.0 as the reference runtime. npm 11.10.0 is covered by the documented compatibility subset. The selected npm on `PATH` is used throughout; this tool never installs or changes npm itself. Other npm versions are not covered by this matrix.
 
-Each tool is independently installed. Install `npm-dep-paths`, `npm-dep-audit`, and `npm-dep-upgrade-plan` and keep their commands on `PATH`, then install this tool from its directory:
+Each tool is independently installed. Install `npm-dep-paths`, `npm-dep-audit`, `npm-dep-versions`, and `npm-dep-upgrade-plan` and keep their commands on `PATH`, then install this tool from its directory:
 
 ```sh
 npm ci --ignore-scripts

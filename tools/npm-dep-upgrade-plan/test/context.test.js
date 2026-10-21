@@ -37,3 +37,23 @@ test('npm release-age derived before timestamps do not invalidate analysis metad
   const registryChanged = await readPlanningContext('/project', runner({ ...config, registry: 'https://other.example/' }))
   assert.notEqual(first.configHash, registryChanged.configHash)
 })
+
+test('catalog CLI version and installed location participate in planner identity', async () => {
+  const first = await readPlanningContext('/project', runner({}))
+  const changed = await readPlanningContext('/project', runner({}, { 'npm-dep-versions': '0.2.0' }))
+  assert.notDeepEqual(first, changed)
+  const base = runner({})
+  const relocated = await readPlanningContext('/project', async (command, args) => {
+    const result = await base(command, args)
+    return command === 'npm-dep-versions' ? { ...result, stdout: result.stdout.replace('/tools/', '/other/') } : result
+  })
+  assert.notDeepEqual(first, relocated)
+})
+
+test('missing catalog CLI during cache context discovery gives installation guidance', async () => {
+  const base = runner({})
+  await assert.rejects(readPlanningContext('/project', async (command, args) => {
+    if (command === 'npm-dep-versions') throw Object.assign(new Error('private'), { code: 'ENOENT' })
+    return base(command, args)
+  }), /npm-dep-versions.*PATH.*install/i)
+})

@@ -151,3 +151,22 @@ test('explicit debug disable prevents inherited debug from reaching sibling proc
   })
   assert.equal(io.output, '')
 })
+
+test('upgrade relays version-catalog debug lines from nested planner', async () => {
+  const io = capture()
+  await runDebug(true, io, async () => {
+    const fake = () => {
+      const child = new EventEmitter()
+      child.stdout = new PassThrough()
+      child.stderr = new PassThrough()
+      queueMicrotask(() => {
+        child.stderr.end('[npm-dep-versions debug] cache hit catalog\n')
+        child.emit('close', 0)
+      })
+      return child
+    }
+    const child = debugSpawn(fake, 'npm-dep-upgrade-plan', ['.', '--format', 'json'], {})
+    await new Promise(resolve => child.on('close', resolve))
+  })
+  assert.match(io.output, /\[npm-dep-versions debug\] cache hit catalog/)
+})

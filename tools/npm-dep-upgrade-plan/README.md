@@ -8,7 +8,7 @@ The first strategy is `update-within-declared-range`. It checks whether the vuln
 
 - Node.js 20 or newer.
 - A supported npm project with `package-lock.json` lockfile version 2 or 3.
-- The standalone `npm-dep-paths`, `npm-dep-audit`, and `npm-dep-upgrade-plan` commands on `PATH`.
+- The standalone `npm-dep-paths`, `npm-dep-audit`, `npm-dep-versions`, and `npm-dep-upgrade-plan` commands on `PATH`.
 - npm registry access through the npm registry configuration used by the target project.
 
 `npm-dep-audit` uses `npm-dep-paths` to identify affected dependent links. Install the commands from their independent tool directories:
@@ -19,6 +19,10 @@ npm ci --ignore-scripts
 npm install --global . --ignore-scripts
 
 cd ../npm-dep-audit
+npm ci --ignore-scripts
+npm install --global . --ignore-scripts
+
+cd ../npm-dep-versions
 npm ci --ignore-scripts
 npm install --global . --ignore-scripts
 
@@ -48,21 +52,21 @@ For local execution, from `tools/npm-dep-upgrade-plan/`, use `node bin/npm-dep-u
 
 ## How eligibility is reported
 
-For each vulnerable `(package, installed version)`, the planner asks the configured registry for published versions and release times. It considers only strict stable semantic versions: prereleases, non-semver values, and noncanonical version strings are excluded.
+For each distinct vulnerable package, the planner invokes the separately installed `npm-dep-versions` CLI for stable versions and nullable release dates. That tool merges `versions` and `time` from one `npm view <package> versions time --json` command and caches the complete catalog before filtering. It considers only strict stable semantic versions: prereleases, non-semver values, and noncanonical version strings are excluded.
 
 `minimumSafeVersion` is the lowest stable registry version that is newer than the installed version and outside every advisory range for that package/version. It is the same across target locations. Its registry release time is returned as `minimumSafeVersionReleasedAt`; that value is `null` if there is no newer safe version or the registry has no valid timestamp for it.
 
 `status` is evaluated per target location. The current strategy is eligible only when one newer safe version satisfies every declared requirement associated with that location. If no strategy can resolve the finding at that location, `status` is `ineligible` and `strategy` is `null`. When eligible, `strategy` identifies the package and version change that can remediate that location. The planner chooses the first eligible strategy in its configured order.
 
-The planner invokes `npm-dep-audit` and `npm view` as standalone commands. It does not install dependencies, run lifecycle scripts, select an update, write a lockfile, or modify the target project.
+The planner invokes `npm-dep-audit` and `npm-dep-versions` as standalone commands. It does not install dependencies, run lifecycle scripts, select an update, write a lockfile, or modify the target project.
 
 ## Cache behavior
 
 Structured planner findings are cached for one hour by default under `XDG_CACHE_HOME/npm-dep-upgrade-plan` or `~/.cache/npm-dep-upgrade-plan`, outside the target project by default. A hit skips the audit analysis command and registry version/release-time queries. Markdown and JSON share the same cached findings.
 
-Each invocation first validates the project and checks its canonical directory, exact manifest/lockfile contents, planner/cache version, npm version, effective npm analysis configuration (including scoped registries), and audit/paths tool versions and installed locations. npm configuration is represented only by a digest; configuration values and credentials are not saved in the planner cache. Context discovery uses local npm configuration and sibling `--version` calls even on a hit. The installation-only `before` cutoff is excluded: npm 11 can derive a new timestamp from `min-release-age` on every invocation, while the planner reads complete version/release-time metadata. Upgrade independently enforces the current release-age and `before` policies before applying a change.
+Each invocation first validates the project and checks its canonical directory, exact manifest/lockfile contents, planner/cache version, npm version, effective npm analysis configuration (including scoped registries), and audit/paths/versions tool versions and installed locations. npm configuration is represented only by a digest; configuration values and credentials are not saved in the planner cache. Catalog reuse retains its original `fetchedAt`; refreshing a planner report never extends old registry evidence. Context discovery uses local npm configuration and sibling `--version` calls even on a hit. The installation-only `before` cutoff is excluded: npm 11 can derive a new timestamp from `min-release-age` on every invocation, while the planner reads complete version/release-time metadata. Upgrade independently enforces the current release-age and `before` policies before applying a change.
 
-`--cache-ttl <duration>` accepts a positive integer followed by `s`, `m`, `h`, or `d`, and forwards that lifetime to audit. A cached plan retains its original `auditedAt` and expires no later than that audit timestamp plus the requested lifetime. Repeated hits do not extend freshness. `--no-cache` bypasses planner reads/writes, forces fresh audit data and forwards bypass through audit to paths. A bypass does not replace existing cached entries.
+`--cache-ttl <duration>` accepts a positive integer followed by `s`, `m`, `h`, or `d`, and forwards that lifetime to audit and versions. A cached plan retains its original `auditedAt` and expires no later than that oldest source timestamp (audit or catalog fetch) plus the requested lifetime. Repeated hits do not extend freshness. `--no-cache` bypasses planner reads/writes, forces fresh audit data and forwards bypass through audit to paths and directly to versions. A bypass does not replace existing cached entries.
 
 Malformed or inaccessible cache entries are misses, and writes replace entries atomically. Cache-storage failure does not prevent a valid report. A failed refresh exits with an error and never serves expired findings.
 
@@ -130,13 +134,13 @@ Supports ordinary single-package npm projects with lockfile versions 2 and 3, ma
 
 ## Errors and exit codes
 
-Invalid arguments, a missing or failed `npm-dep-audit` command, invalid audit JSON, or a failed or malformed registry response exits 1 and writes an error to stderr. The planner emits no partial report on stdout if any step fails.
+Invalid arguments, a missing or failed `npm-dep-audit` or `npm-dep-versions` command, invalid audit JSON, or a failed or malformed registry response exits 1 and writes an error to stderr. The planner emits no partial report on stdout if any step fails.
 
 A failed audit command's error includes the command name, exit code, and trimmed stderr when available; otherwise it includes supported-project and PATH guidance. Child stdout is not echoed as an error diagnostic.
 
 ## Development
 
-From `tools/npm-dep-upgrade-plan/`, run `npm ci --ignore-scripts` and `npm test`. Set `NPM_DEP_AUDIT_INTEGRATION=1` to include the test against the separately installed audit CLI on `PATH`. That integration uses fixture responses for paths and npm, so it needs no live registry and is not a full three-tool end-to-end test.
+From `tools/npm-dep-upgrade-plan/`, run `npm ci --ignore-scripts` and `npm test`. Set `NPM_DEP_AUDIT_INTEGRATION=1` to include the test against the separately installed audit and versions CLIs on `PATH`. That integration uses fixture responses for paths and npm, so it needs no live registry; it exercises the real audit and versions CLI boundaries.
 
 The [planner design](../../docs/superpowers/specs/2026-10-13-npm-dep-upgrade-plan-design.md) describes eligibility and report contracts.
 
@@ -155,3 +159,5 @@ npm-dep-upgrade-plan /path/to/project --debug --format json > report.json 2> deb
 Logs show commands, arguments, working directories, durations and exit outcomes. Debug mode propagates through sibling tools, and their debug records stream to the caller. Cache hits, misses and bypasses explain when analysis is reused; debug mode preserves normal caching.
 
 Credentials in logged arguments and URLs are redacted. Debug records omit environment values, request bodies and subprocess output. Existing error diagnostics and installation progress retain their usual behavior. See the [shared debug guide](../../README.md#debug-logging) for propagation and scope.
+
+Cache identity also hashes active npm configuration source files and referenced environment values, so protected token changes invalidate cached data even though npm redacts those values from configuration output. Only digests are stored. Registry inspection from a workspace member retains npm’s workspace-root configuration; context discovery may query the resolved npm prefix when npm rejects an implicit workspace.
