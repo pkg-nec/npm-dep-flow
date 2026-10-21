@@ -4,6 +4,8 @@ import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import { runProcess } from './process.js'
 import { fail } from './errors.js'
+import { formatCommitMessage } from './commit-message.js'
+import { validateCommitArgs } from './config.js'
 const line = s => s.replace(/\r?\n$/, '')
 const operations = ['MERGE_HEAD', 'CHERRY_PICK_HEAD', 'REVERT_HEAD', 'rebase-merge', 'rebase-apply']
 export async function runGit(root, args) {
@@ -98,19 +100,21 @@ async function createCommitHooks(guard, paths, blobs, subject) {
     throw error
   }
 }
-export async function commitUpgrade(guard, expectedFiles, identity) {
+export async function commitUpgrade(guard, expectedFiles, identity, options = {}) {
+  const subject = formatCommitMessage(identity, options)
+  const args = options.gitCommitArgs ?? []
+  validateCommitArgs(args)
   await assertGitState(guard, 'before-commit', expectedFiles)
   const names = ['package.json', 'package-lock.json'].filter(name => !guard.originalFiles[name].equals(expectedFiles[name]))
   if (!names.length) fail('NO_CHANGES', 'commit', 'No dependency changes to commit')
   const paths = names.map(name => guard.projectPrefix ? `${guard.projectPrefix}/${name}` : name)
   const blobs = Object.fromEntries(await Promise.all(paths.map(async file => [file, await filteredBlob(guard.repoRoot, file)])))
-  const subject = `deps: bump ${identity.package} from ${identity.oldVersion} to ${identity.newVersion}`
   let hooks
   try {
     await runGit(guard.repoRoot, ['add', '--', ...paths])
     await assertCommitState(guard, paths, blobs)
     hooks = await createCommitHooks(guard, paths, blobs, subject)
-    await runGit(guard.repoRoot, ['-c', `core.hooksPath=${hooks.directory}`, 'commit', '-m', subject])
+    await runGit(guard.repoRoot, ['-c', `core.hooksPath=${hooks.directory}`, 'commit', ...args, '-m', subject])
     const hash = line(await runGit(guard.repoRoot, ['rev-parse', 'HEAD']))
     const parent = line(await runGit(guard.repoRoot, ['rev-parse', `${hash}^`]))
     const actualSubject = line(await runGit(guard.repoRoot, ['log', '-1', '--format=%s']))

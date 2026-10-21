@@ -45,3 +45,5 @@ Independent-review regressions are in `review.test.js`: concurrent top-level loc
 `project-location.test.js` covers absolute and relative project arguments for direct and transitive upgrades from a separate caller repository. It verifies nested target paths with spaces/shell symbols, preserves caller dependency edits/staged work/HEAD, and checks target commit contents plus clean reproduction. These cases also run in the Windows smoke workflow.
 
 `test/scopes.test.js` exercises the real paths CLI and Arborist scope probe. It covers the compact ancestry regression, same-version location filtering, repeated parent versions requiring ancestor scopes, multiple physical heads sharing one selector, cyclic ancestry refusal, and incomplete/conflicting direct-dependent evidence.
+
+Explicit JSON configuration: `config.test.js` exercises nested-project selection from another caller directory through the real sibling CLI chain, config-driven debug propagation, custom commit subjects, and `--no-verify` with rejecting user hooks. Unit Git tests cover prepare-commit-msg guards under `--no-verify`.

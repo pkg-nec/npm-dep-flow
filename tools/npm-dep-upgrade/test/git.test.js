@@ -112,3 +112,34 @@ for (const name of ['prepare-commit-msg', 'commit-msg']) test(`review ${name} ho
   await assert.rejects(commitUpgrade(guard, guard.ownedFiles, { package: 'e2e-target', oldVersion: '6.0.9', newVersion: '6.0.12' }), /commit|subject|staged/i)
   assert.equal((await git(f.repo, ['rev-parse', 'HEAD'])).trim(), guard.head)
 })
+
+for (const bypass of [false, true]) test(`custom subject preserves hook guards with no-verify=${bypass}`, async (t) => {
+  const { commitUpgrade } = await import('../src/git.js'), { recordOwnedFiles } = await import('../src/recovery.js')
+  const f = await gitProject(t), guard = await preflightGit(f.root)
+  const manifest = Buffer.from(JSON.stringify({ ...f.manifest, dependencies: { 'e2e-target': '^6.0.12' } }))
+  await writeFile(path.join(f.root, 'package.json'), manifest)
+  await recordOwnedFiles(guard, { 'package.json': manifest })
+  for (const hook of ['pre-commit', 'commit-msg']) await writeFile(path.join(f.repo, 'empty-hooks', hook), '#!/bin/sh\nexit 42\n', { mode: 0o755 })
+  await writeFile(path.join(f.repo, 'empty-hooks', 'prepare-commit-msg'), '#!/bin/sh\nprintf prepared > prepared.txt\n', { mode: 0o755 })
+  const operation = commitUpgrade(guard, guard.ownedFiles, { package: 'e2e-target', oldVersion: '6.0.9', newVersion: '6.0.12' }, { module: 'webapp', gitCommitArgs: bypass ? ['--no-verify', '--signoff'] : [] })
+  if (!bypass) await assert.rejects(operation, /commit failed/i)
+  else {
+    const result = await operation
+    assert.equal(result.subject, 'deps(webapp): bump e2e-target from 6.0.9 to 6.0.12')
+    assert.equal(await readFile(path.join(f.repo, 'prepared.txt'), 'utf8'), 'prepared')
+    assert.match(await git(f.repo, ['log', '-1', '--format=%B']), /Signed-off-by: Fixture <fixture@example.test>/)
+  }
+})
+
+for (const mutation of ['subject', 'index', 'dependency']) test(`no-verify retains internal guard against prepare-commit-msg changing ${mutation}`, async (t) => {
+  const { commitUpgrade } = await import('../src/git.js'), { recordOwnedFiles } = await import('../src/recovery.js')
+  const f = await gitProject(t), guard = await preflightGit(f.root)
+  const manifest = Buffer.from(JSON.stringify({ ...f.manifest, dependencies: { 'e2e-target': '^6.0.12' } }))
+  await writeFile(path.join(f.root, 'package.json'), manifest)
+  await recordOwnedFiles(guard, { 'package.json': manifest })
+  const body = mutation === 'subject' ? 'printf "other subject\\n" > "$1"' : mutation === 'index' ? 'git add -- unrelated.txt' : 'printf "changed\\n" >> package.json'
+  if (mutation === 'index') await writeFile(path.join(f.repo, 'unrelated.txt'), 'user work\n')
+  await writeFile(path.join(f.repo, 'empty-hooks', 'prepare-commit-msg'), `#!/bin/sh\n${body}\n`, { mode: 0o755 })
+  await assert.rejects(commitUpgrade(guard, guard.ownedFiles, { package: 'e2e-target', oldVersion: '6.0.9', newVersion: '6.0.12' }, { module: 'api', gitCommitArgs: ['--no-verify'] }), /commit|subject|staged/i)
+  assert.equal((await git(f.repo, ['rev-parse', 'HEAD'])).trim(), guard.head)
+})
