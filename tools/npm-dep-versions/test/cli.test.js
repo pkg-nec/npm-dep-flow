@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { readdir, writeFile } from 'node:fs/promises'
+import { readdir, realpath, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { main } from '../src/cli.js'
@@ -16,14 +16,15 @@ function capture() {
 }
 test('empty contexts need no dependency files and filtering never mutates inputs', async (t) => {
   const root = await scratch(t)
+  const canonicalRoot = await realpath(root)
   const before = await readdir(root)
   const io = capture()
   const code = await main(['pkg', '--project', root, '--format', 'json', '--no-cache'], io, { fetchCatalog: async (cwd, name) => {
-    assert.equal(cwd, root)
+    assert.equal(cwd, canonicalRoot)
     assert.equal(name, 'pkg')
     return { schemaVersion: 2, package: name, fetchedAt: '2026-01-01T00:00:00.000Z', rows: [{ version: '1.0.0', releasedAt: null }, { version: '2.0.0-beta.1', releasedAt: null }] }
   } })
-  assert.equal(code, 0)
+  assert.equal(code, 0, io.output().stderr)
   assert.deepEqual(JSON.parse(io.output().stdout).rows, [{ version: '1.0.0', releasedAt: null }])
   assert.deepEqual(await readdir(root), before)
 })
