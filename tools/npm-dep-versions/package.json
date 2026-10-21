@@ -1,0 +1,18 @@
+{
+  "name": "npm-dep-versions",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "npm-dep-versions": "bin/npm-dep-versions.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "node --test"
+  },
+  "dependencies": {
+    "semver": "^7.8.5"
+  }
+}
