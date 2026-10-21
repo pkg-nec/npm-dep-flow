@@ -9,7 +9,7 @@ The first strategy is `update-within-declared-range`. It checks whether the vuln
 - Node.js 20 or newer.
 - A supported npm project with `package-lock.json` lockfile version 2 or 3.
 - The standalone `npm-dep-paths`, `npm-dep-audit`, `npm-dep-versions`, and `npm-dep-upgrade-plan` commands on `PATH`.
-- `npm-dep-versions` installed as a standalone CLI on `PATH`, plus npm registry access through the npm registry configuration used by the target project.
+- npm registry access through the npm registry configuration used by the target project.
 
 `npm-dep-audit` uses `npm-dep-paths` to identify affected dependent links. Install the commands from their independent tool directories:
 
