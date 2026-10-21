@@ -49,3 +49,11 @@ test('catalog CLI version and installed location participate in planner identity
   })
   assert.notDeepEqual(first, relocated)
 })
+
+test('missing catalog CLI during cache context discovery gives installation guidance', async () => {
+  const base = runner({})
+  await assert.rejects(readPlanningContext('/project', async (command, args) => {
+    if (command === 'npm-dep-versions') throw Object.assign(new Error('private'), { code: 'ENOENT' })
+    return base(command, args)
+  }), /npm-dep-versions.*PATH.*install/i)
+})

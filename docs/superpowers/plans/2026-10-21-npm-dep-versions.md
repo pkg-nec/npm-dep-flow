@@ -175,9 +175,9 @@ Define rows containing 18.x, 19.0.0-beta.1, 19.0.0, 19.1.0-beta.1, 19.1.0, and 2
 
 **Files:** New-tool and planner package manifests and lockfile root metadata only, plus any documented version references that must match.
 
-**Interfaces:** New tool reports npm-dep-versions v0.1.0; planner reports npm-dep-upgrade-plan v0.6.0. Existing planner schema version 2 remains unchanged.
+**Interfaces:** New tool reports npm-dep-versions v0.1.0; planner reports npm-dep-upgrade-plan v0.6.0; upgrade debug correction reports v0.3.1. Existing planner schema version 2 remains unchanged.
 
-- [ ] Change new package development version to `0.1.0` and planner `0.5.0` to `0.6.0`, synchronizing each lockfile's top-level and root-package version. Do not bump upgrade for test/documentation-only changes.
+- [ ] Change new package development version to `0.1.0` and planner `0.5.0` to `0.6.0`, synchronizing each lockfile's top-level and root-package version. Execution refinement: bump upgrade from 0.3.0 to 0.3.1, with matching lockfile metadata, for the required nested catalog debug-prefix relay; no mutation logic changes.
 - [ ] Run both --version commands and assert exact versions plus installed directories. Run both --help commands and inspect alignment with final version headers. Run affected tool tests and shared lint following metadata changes; repeat only the integration checks whose outputs include changed tool versions or remain unresolved.
 - [ ] Run `git diff --check`, inspect staged release changes, and commit the intended final release message. Confirm git status is clean before requesting review.
 - [ ] Apply requesting-code-review after execution using the user's selected method, address substantive findings, and rerun affected verification. If the user has not authorized a PR/merge, report branch, commits and evidence without publishing or merging. Use finishing-a-development-branch for integration choices within existing authorization.

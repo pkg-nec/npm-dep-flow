@@ -6,7 +6,7 @@ const scope = new AsyncLocalStorage()
 const tool = 'npm-dep-upgrade'
 const sensitive = /auth|token|password|passwd|secret|credential|cookie|extraheader|api[-_]?key/i
 let inheritedContext
-const debugLine = /^\[npm-dep-(?:audit|paths|upgrade|upgrade-plan) debug\] /
+const debugLine = /^\[npm-dep-(?:audit|paths|upgrade|upgrade-plan|versions) debug\] /
 
 function redactUrl(text) {
   try {

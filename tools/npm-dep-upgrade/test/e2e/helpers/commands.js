@@ -7,7 +7,7 @@ export async function createCommandPath(runtime, toolRoots = toolsRoot) {
   const bin = path.join(runtime.scratch, 'bin')
   await mkdir(bin, { recursive: true })
   const npmCli = runtime.npmCli || process.env.NPM_DEP_UPGRADE_E2E_NPM_CLI || path.resolve(path.dirname(process.execPath), '../lib/node_modules/npm/bin/npm-cli.js')
-  const entries = { npm: npmCli, ...Object.fromEntries(['npm-dep-paths', 'npm-dep-audit', 'npm-dep-upgrade-plan', 'npm-dep-upgrade'].map(name => [name, path.join(toolRoots, name, 'bin', name + '.js')])) }
+  const entries = { npm: npmCli, ...Object.fromEntries(['npm-dep-paths', 'npm-dep-audit', 'npm-dep-versions', 'npm-dep-upgrade-plan', 'npm-dep-upgrade'].map(name => [name, path.join(toolRoots, name, 'bin', name + '.js')])) }
   for (const [name, file] of Object.entries(entries)) {
     if (process.platform === 'win32') await writeFile(path.join(bin, name + '.cmd'), `@echo off\r\n"${process.execPath}" "${file}" %*\r\n`)
     else await symlink(file, path.join(bin, name))

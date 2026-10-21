@@ -4,7 +4,7 @@
 
 The repository root is not an npm package or workspace. Each CLI under `tools/` remains an independent package. Shared lint dependencies and their lockfile live in the private `dev-tooling/` package; do not add them to the CLI packages or introduce npm workspaces.
 
-Use Node.js 24 for development, matching CI. The lint tooling supports Node.js `^20.19.0 || ^22.13.0 || >=24`. The three analysis CLIs support Node.js 20 or newer; `npm-dep-upgrade` supports Node.js `^22.22.2 || ^24.15.0 || >=26.0.0`.
+Use Node.js 24 for development, matching CI. The lint tooling supports Node.js `^20.19.0 || ^22.13.0 || >=24`. The four analysis CLIs support Node.js 20 or newer; `npm-dep-upgrade` supports Node.js `^22.22.2 || ^24.15.0 || >=26.0.0`.
 
 From the repository root:
 
@@ -16,7 +16,7 @@ npm --prefix dev-tooling run lint:fix
 
 Alternatively, run `npm ci --ignore-scripts`, `npm run lint`, or `npm run lint:fix` inside `dev-tooling/`. After automatic fixes, resolve remaining findings and rerun lint and the affected tools' tests.
 
-The shared flat configuration is `dev-tooling/eslint.config.mjs`. The commands supply it explicitly and lint source, executables, tests, and test helpers across `npm-dep-paths`, `npm-dep-audit`, `npm-dep-upgrade-plan`, and `npm-dep-upgrade`, plus development-tooling JavaScript. It configures Node.js globals, ESM for `.js`/`.mjs`, and CommonJS for `.cjs`. Generated `node_modules`, `tmp`, `coverage`, `dist`, and `.cache` directories are excluded.
+The shared flat configuration is `dev-tooling/eslint.config.mjs`. The commands supply it explicitly and lint source, executables, tests, and test helpers across `npm-dep-paths`, `npm-dep-audit`, `npm-dep-upgrade-plan`, `npm-dep-versions`, and `npm-dep-upgrade`, plus development-tooling JavaScript. It configures Node.js globals, ESM for `.js`/`.mjs`, and CommonJS for `.cjs`. Generated `node_modules`, `tmp`, `coverage`, `dist`, and `.cache` directories are excluded.
 
 Use the unchanged `@eslint/js` recommended and `@stylistic/eslint-plugin` recommended configurations. Keep their upstream style defaults; do not add personal rule overrides, rule-disable comments to bypass findings, or Prettier. Keep the pinned versions and lockfile in sync when updating lint dependencies.
 
@@ -28,7 +28,8 @@ From each affected `tools/<name>/` directory, run `npm ci --ignore-scripts` and 
 
 - Paths includes real executable checks in `npm test` without an integration switch.
 - Audit: install this checkout's paths CLI separately on `PATH`, then run `NPM_DEP_PATHS_INTEGRATION=1 npm test` in `tools/npm-dep-audit/`.
-- Upgrade planner: install this checkout's audit CLI separately on `PATH`, then run `NPM_DEP_AUDIT_INTEGRATION=1 npm test` in `tools/npm-dep-upgrade-plan/`. This integration uses fixture npm/paths responses and needs no live registry.
+- Versions: run `npm test`; configure the pinned npm runtime entry variables described in its README to include registry compatibility checks.
+- Upgrade planner: install this checkout's audit and versions CLIs separately on `PATH`, then run `NPM_DEP_AUDIT_INTEGRATION=1 npm test` in `tools/npm-dep-upgrade-plan/`. This integration uses fixture npm/paths responses and needs no live registry.
 - Upgrade mutator: run `npm test` and `npm run test:e2e` in `tools/npm-dep-upgrade/`. Follow its README to provision the pinned npm 12.1.0 and npm 11.10.0 test runtimes outside the isolated fixtures; the E2E suite runs the real tool CLIs against a fake registry.
 
 The environment assignment examples use POSIX shell syntax. In PowerShell, set the corresponding `$env:NPM_DEP_PATHS_INTEGRATION` or `$env:NPM_DEP_AUDIT_INTEGRATION` to `'1'` before running `npm test`. See each tool's README for installation and integration details.

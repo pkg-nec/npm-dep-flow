@@ -28,9 +28,9 @@ jobs:
         with:
           node-version: '24.21.0'
           package-manager-cache: false
-      - name: Install four independent tool packages
+      - name: Install five independent tool packages
         run: |
-          for tool in npm-dep-paths npm-dep-audit npm-dep-upgrade-plan npm-dep-upgrade; do
+          for tool in npm-dep-paths npm-dep-audit npm-dep-versions npm-dep-upgrade-plan npm-dep-upgrade; do
             (cd "tools/$tool" && npm ci --ignore-scripts)
           done
       - name: Provision isolated pinned npm runtimes
@@ -40,7 +40,7 @@ jobs:
           NPM_DEP_PATHS_INTEGRATION: '1'
           NPM_DEP_AUDIT_INTEGRATION: '1'
         run: |
-          for tool in npm-dep-paths npm-dep-audit npm-dep-upgrade-plan npm-dep-upgrade; do
+          for tool in npm-dep-paths npm-dep-audit npm-dep-versions npm-dep-upgrade-plan npm-dep-upgrade; do
             (cd "tools/$tool" && npm test)
           done
       - name: Run full Linux registry and compatibility matrix

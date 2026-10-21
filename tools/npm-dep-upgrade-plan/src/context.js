@@ -2,7 +2,13 @@ import { createHash } from 'node:crypto'
 import { runProcess } from './process.js'
 
 async function output(root, command, args, run) {
-  const result = await run(command, args, root)
+  let result
+  try {
+    result = await run(command, args, root)
+  }
+  catch (error) {
+    throw new Error(error.code === 'ENOENT' ? `${command} is not available on PATH; install it as a standalone CLI` : `Cannot determine cache context: ${command} failed`, { cause: error })
+  }
   if (result.code !== 0) throw new Error(`Cannot determine cache context: ${command} ${args.join(' ')} failed`)
   return result.stdout.trim()
 }

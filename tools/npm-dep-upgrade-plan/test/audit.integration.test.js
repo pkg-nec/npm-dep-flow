@@ -85,8 +85,7 @@ else if (args[0] === 'config' && args[1] === 'list') process.stdout.write('{}')
 else if (args[0] === 'config' && args[2] === 'audit-registry') process.stdout.write('undefined\\n')
 else if (args[0] === 'config' && args[2] === 'registry') process.stdout.write('https://registry.example/\\n')
 else if (args[0] === 'audit') { process.stdout.write(process.env.PLAN_AUDIT_JSON); process.exitCode = 1 }
-else if (args[0] === 'view' && args[1] === 'brace-expansion' && args[2] === 'versions' && args[3] === '--json') process.stdout.write(process.env.PLAN_VERSIONS_JSON)
-else if (args[0] === 'view' && args[1] === 'brace-expansion' && args[2] === 'time' && args[3] === '--json') process.stdout.write(process.env.PLAN_TIMES_JSON)
+else if (args[0] === 'view' && args[1] === 'brace-expansion' && args[2] === 'versions' && args[3] === 'time' && args[4] === '--json') process.stdout.write(JSON.stringify({ versions: JSON.parse(process.env.PLAN_VERSIONS_JSON), time: JSON.parse(process.env.PLAN_TIMES_JSON) }))
 else { process.stderr.write('unexpected npm arguments: ' + args.join(' ')); process.exitCode = 2 }
 `
   const pathsScript = `if (process.argv.includes('--version')) { console.log('npm-dep-paths v1.0.0'); process.exit(0); }
@@ -168,17 +167,18 @@ test('planner consumes JSON emitted by the real npm-dep-audit CLI', { skip: !ena
 
   const npmCalls = readFileSync(fixture.npmCalls, 'utf8').trim().split('\n')
   assert.ok(npmCalls.some(call => call.startsWith('audit ')))
-  assert.ok(npmCalls.includes('view brace-expansion versions --json'))
-  assert.ok(npmCalls.includes('view brace-expansion time --json'))
+  assert.equal(npmCalls.filter(call => call.startsWith('view ')).length, 1)
+  assert.ok(npmCalls.includes('view brace-expansion versions time --json'))
   assert.equal(readFileSync(fixture.pathsCalls, 'utf8').trim(), '. brace-expansion --format json')
   const warm = fixture.run()
   assert.equal(warm.status, 0, warm.stderr)
   assert.deepEqual(JSON.parse(warm.stdout), report)
   const warmCalls = readFileSync(fixture.npmCalls, 'utf8').trim().split('\n')
   assert.equal(warmCalls.filter(call => call.startsWith('audit ')).length, 1)
-  assert.equal(warmCalls.filter(call => call.startsWith('view ')).length, 2)
+  assert.equal(warmCalls.filter(call => call.startsWith('view ')).length, 1)
   const fresh = fixture.run(['--no-cache'])
   assert.equal(fresh.status, 0, fresh.stderr)
   assert.equal(readFileSync(fixture.npmCalls, 'utf8').trim().split('\n').filter(call => call.startsWith('audit ')).length, 2)
   assert.match(readFileSync(fixture.pathsCalls, 'utf8'), /--no-cache/)
+  assert.equal(readFileSync(fixture.npmCalls, 'utf8').trim().split('\n').filter(call => call.startsWith('view ')).length, 2)
 })

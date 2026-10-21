@@ -25,7 +25,7 @@ Options:
   --range <range>               Restrict to a semantic version range
   --project <directory>         npm configuration context (default: caller's cwd)
   --format markdown|json        Output format (default: markdown)
-  --cache-ttl <duration>         Cache lifetime, e.g. 30m or 1h (default: 1h)
+  --cache-ttl <duration>        Cache lifetime, e.g. 30m or 1h (default: 1h)
   --no-cache                    Bypass cache reads and writes
   --debug                       Log external actions and cache decisions to stderr
   --version                     Show version and tool directory

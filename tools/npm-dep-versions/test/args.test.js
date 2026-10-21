@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
+import path from 'node:path'
 import { parseArgs } from '../src/args.js'
 
 test('arguments default to stable Markdown in caller context and parse independent filters', () => {
@@ -13,7 +14,7 @@ test('arguments default to stable Markdown in caller context and parse independe
   assert.equal(options.major, 0)
   assert.equal(options.range, '>=0 <1')
   assert.equal(options.ttlMs, 1800000)
-  assert.equal(options.projectPath, '/caller/other')
+  assert.equal(options.projectPath, path.resolve('/caller', 'other'))
   assert.equal(options.all && options.noCache && options.debug, true)
 })
 test('rejects invalid and repeated value arguments before subprocess work', () => {

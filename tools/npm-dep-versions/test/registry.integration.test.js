@@ -6,6 +6,7 @@ import { execute, scratch, registryEnv } from './helpers/commands.js'
 
 for (const variable of ['NPM_DEP_UPGRADE_E2E_NPM_CLI', 'NPM_DEP_UPGRADE_E2E_COMPAT_NPM_CLI']) {
   const runtime = process.env[variable]
+  if (process.env.NPM_DEP_VERSIONS_REQUIRE_RUNTIMES === '1' && (variable === 'NPM_DEP_UPGRADE_E2E_NPM_CLI' || process.platform !== 'win32')) assert.ok(runtime, `Missing required runtime: ${variable}`)
   test(`combined metadata with real ${variable}`, { skip: !runtime }, async (t) => {
     const root = await scratch(t)
     for (const time of [true, false]) {
