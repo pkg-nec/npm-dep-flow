@@ -50,3 +50,21 @@ test('executable help and version work without npm or a package', async () => {
   assert.match(help.stdout, /--all/)
   assert.match((await execute(process.execPath, [bin, '--version'], { env })).stdout, /npm-dep-versions v.*\nLocation:/)
 })
+
+test('catalog is reused across filters and formats; bypass skips cache context and preserves entry', async (t) => {
+  const root = await scratch(t)
+  let fetches = 0, contexts = 0
+  const deps = { cacheRoot: join(root, 'outside-cache'), readContext: async () => {
+    contexts++
+    return { npmVersion: '12', configHash: 'context' }
+  }, fetchCatalog: async () => {
+    fetches++
+    return { schemaVersion: 2, package: 'pkg', fetchedAt: new Date().toISOString(), rows: [{ version: '1.0.0', releasedAt: null }, { version: '2.0.0-beta.1', releasedAt: null }] }
+  } }
+  for (const filters of [[], ['--all'], ['--major', '1'], ['--range', '>=1'], ['--format', 'json']]) assert.equal(await main(['pkg', '--project', root, ...filters], capture(), deps), 0)
+  assert.equal(fetches, 1)
+  assert.equal(contexts, 5)
+  assert.equal(await main(['pkg', '--project', root, '--no-cache'], capture(), deps), 0)
+  assert.equal(fetches, 2)
+  assert.equal(contexts, 5)
+})

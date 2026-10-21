@@ -5,6 +5,8 @@ import { parseArgs } from './args.js'
 import { fetchCatalog } from './registry.js'
 import { filterRows } from './filter.js'
 import { renderJson, renderMarkdown } from './report.js'
+import { cachedCatalog } from './cache.js'
+import { readContext } from './context.js'
 import { runDebug } from './debug.js'
 
 const packageDir = fileURLToPath(new URL('../', import.meta.url)).replace(/[\\/]$/, '')
@@ -44,7 +46,8 @@ export async function main(argv, io = process, deps = {}) {
         if (!(await stat(root)).isDirectory()) throw new Error('Not a directory')
       }
       catch { throw new Error('The npm context must be an existing directory') }
-      const catalog = await (deps.fetchCatalog || fetchCatalog)(root, options.packageName)
+      const identity = options.noCache ? null : await (deps.readContext || readContext)(root)
+      const catalog = await cachedCatalog({ version: metadata.version, root, packageName: options.packageName, identity, ttlMs: options.ttlMs, noCache: options.noCache, cacheRoot: deps.cacheRoot }, () => (deps.fetchCatalog || fetchCatalog)(root, options.packageName))
       const report = { ...catalog, rows: filterRows(catalog.rows, options) }
       io.stdout.write(options.format === 'json' ? renderJson(report) : renderMarkdown(report))
       return 0
