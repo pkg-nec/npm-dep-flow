@@ -83,11 +83,8 @@ function injectedDeps(report, versions = new Map(), renderers = {}) {
     async runNpmDepAudit() {
       return report
     },
-    async fetchStableVersions(projectRoot, packageName) {
-      return versions.get(packageName) ?? []
-    },
-    async fetchReleaseTimes() {
-      return new Map()
+    async runNpmDepVersions(projectRoot, packageName) {
+      return { versions: versions.get(packageName) ?? [], releaseTimes: new Map(), fetchedAt: new Date().toISOString() }
     },
     renderMarkdown: renderers.renderMarkdown ?? (() => 'markdown report\n'),
     renderJson: renderers.renderJson ?? (() => '{"schemaVersion":1}\n'),
@@ -102,7 +99,7 @@ test('help short-circuits invalid arguments and does not run subprocess adapters
       calls += 1
       throw new Error('must not run')
     },
-    async fetchStableVersions() {
+    async runNpmDepVersions() {
       calls += 1
       throw new Error('must not run')
     },
@@ -189,9 +186,9 @@ test('main requests audit once and queries each distinct package name once', asy
     calls.audit += 1
     return report
   }
-  deps.fetchStableVersions = async (root, packageName) => {
+  deps.runNpmDepVersions = async (root, packageName) => {
     calls.registry.push(packageName)
-    return []
+    return { versions: [], releaseTimes: new Map(), fetchedAt: new Date().toISOString() }
   }
 
   assert.equal(await main([], io.io, deps), 0)
@@ -205,9 +202,9 @@ test('main skips registry lookups for an empty audit report', async () => {
   let registryCalls = 0
   const report = { schemaVersion: 2, auditedAt: '2026-10-13T06:00:00.000Z', rows: [] }
   const deps = injectedDeps(report)
-  deps.fetchStableVersions = async () => {
+  deps.runNpmDepVersions = async () => {
     registryCalls += 1
-    return []
+    return { versions: [], releaseTimes: new Map(), fetchedAt: new Date().toISOString() }
   }
 
   assert.equal(await main([], io.io, deps), 0)
@@ -287,16 +284,30 @@ if (packageName === process.env.PLAN_FAIL_PACKAGE) { process.stderr.write('regis
 const byPackage = JSON.parse(args[2] === 'versions' ? process.env.PLAN_VERSIONS_JSON : process.env.PLAN_RELEASE_TIMES_JSON);
 process.stdout.write(JSON.stringify(byPackage[packageName] ?? (args[2] === 'versions' ? [] : {})));
 `
+  const versionsScript = `const fs = require('node:fs');
+const args = process.argv.slice(2);
+if (args.includes('--version')) { console.log('npm-dep-versions v' + (process.env.PLAN_VERSIONS_VERSION || '0.1.0') + '\\nLocation: fixture'); process.exit(0); }
+const name = args[0];
+fs.appendFileSync(process.env.PLAN_CALL_LOG, name + '\\n');
+if (name === process.env.PLAN_FAIL_PACKAGE) process.exit(1);
+const versions = JSON.parse(process.env.PLAN_VERSIONS_JSON)[name] || [];
+const times = JSON.parse(process.env.PLAN_RELEASE_TIMES_JSON)[name] || {};
+console.log(JSON.stringify({ schemaVersion: 2, package: name, fetchedAt: new Date().toISOString(), rows: versions.map(version => ({ version, releasedAt: times[version] || null })) }));
+`
+  writeFileSync(path.join(commandDirectory, 'fake-versions.js'), versionsScript)
   writeFileSync(path.join(commandDirectory, 'fake-paths.js'), `console.log('npm-dep-paths v' + (process.env.PLAN_PATHS_VERSION || '1.0.0') + '\\nLocation: fixture');`)
   writeFileSync(path.join(commandDirectory, 'fake-audit.js'), `#!/usr/bin/env node\n${auditScript}`)
   writeFileSync(path.join(commandDirectory, 'fake-npm.js'), `#!/usr/bin/env node\n${npmScript}`)
 
   if (process.platform === 'win32') {
+    writeFileSync(path.join(commandDirectory, 'npm-dep-versions.cmd'), `@echo off\r\n"${process.execPath}" "%~dp0fake-versions.js" %*\r\n`)
     writeFileSync(path.join(commandDirectory, 'npm-dep-audit.cmd'), `@echo off\r\n"${process.execPath}" "%~dp0fake-audit.js" %*\r\n`)
     writeFileSync(path.join(commandDirectory, 'npm-dep-paths.cmd'), `@echo off\r\n"${process.execPath}" "%~dp0fake-paths.js" %*\r\n`)
     writeFileSync(path.join(commandDirectory, 'npm.cmd'), `@echo off\r\n"${process.execPath}" "%~dp0fake-npm.js" %*\r\n`)
   }
   else {
+    writeFileSync(path.join(commandDirectory, 'npm-dep-versions'), '#!/bin/sh\nexec node "$(dirname "$0")/fake-versions.js" "$@"\n')
+    chmodSync(path.join(commandDirectory, 'npm-dep-versions'), 0o755)
     writeFileSync(path.join(commandDirectory, 'npm-dep-audit'), '#!/bin/sh\nexec node "$(dirname "$0")/fake-audit.js" "$@"\n')
     writeFileSync(path.join(commandDirectory, 'npm-dep-paths'), '#!/bin/sh\nexec node "$(dirname "$0")/fake-paths.js" "$@"\n')
     chmodSync(path.join(commandDirectory, 'npm-dep-paths'), 0o755)
@@ -380,7 +391,7 @@ test('executable emits no partial stdout when the second registry query fails', 
 
   assert.equal(result.status, 1, JSON.stringify(result, null, 2))
   assert.equal(result.stdout, '')
-  assert.match(result.stderr, /npm-dep-upgrade-plan: npm view failed for left-pad with exit code 1/)
+  assert.match(result.stderr, /npm-dep-upgrade-plan: npm-dep-versions failed for left-pad with exit code 1/)
   assert.deepEqual(readFileSync(fixture.callLog, 'utf8').trim().split('\n'), ['brace-expansion', 'left-pad'])
 })
 
@@ -482,4 +493,47 @@ test('moving npm before cutoffs reuse cached plans while registry changes invali
   const changed = fixture.run(['--format', 'json'])
   assert.equal(changed.status, 0, changed.stderr)
   assert.equal(readFileSync(fixture.callLog, 'utf8').trim().split('\n').length, 2)
+})
+
+test('catalog fetch time bounds planner freshness and retains audit timestamp', async (t) => {
+  const root = mkdtempSync(path.join(tmpdir(), 'planner-catalog-freshness-'))
+  t.after(() => rmSync(root, { recursive: true, force: true }))
+  const auditedAt = new Date().toISOString()
+  const deps = injectedDeps({ ...braceReport(), auditedAt }, new Map(), { renderJson })
+  deps.loadProject = async () => ({ root, manifestBytes: Buffer.from('{}'), lockBytes: Buffer.from('{}') })
+  let catalogs = 0
+  deps.runNpmDepVersions = async (_root, _name, _spawn, _platform, controls) => {
+    catalogs++
+    assert.equal(controls.noCache, false)
+    return { versions: ['5.0.12'], releaseTimes: new Map(), fetchedAt: new Date(Date.now() - 50 * 60000).toISOString() }
+  }
+  const first = createIo()
+  assert.equal(await main(['--format', 'json'], first.io, deps), 0, first.stderr)
+  assert.equal(JSON.parse(first.stdout).auditedAt, auditedAt)
+  const shorter = createIo()
+  assert.equal(await main(['--format', 'json', '--cache-ttl', '30m'], shorter.io, deps), 0, shorter.stderr)
+  assert.equal(catalogs, 2)
+})
+
+test('planner result expires at the oldest catalog boundary rather than its creation time', async (t) => {
+  const root = mkdtempSync(path.join(tmpdir(), 'planner-expiry-boundary-'))
+  t.after(() => rmSync(root, { recursive: true, force: true }))
+  let clock = Date.now()
+  const auditTime = new Date(clock).toISOString()
+  const catalogTime = new Date(clock - 30 * 60000).toISOString()
+  t.mock.method(Date, 'now', () => clock)
+  const deps = injectedDeps({ ...braceReport(), auditedAt: auditTime })
+  deps.loadProject = async () => ({ root, manifestBytes: Buffer.from('{}'), lockBytes: Buffer.from('{}') })
+  let calls = 0
+  deps.runNpmDepVersions = async () => {
+    calls++
+    return { versions: [], releaseTimes: new Map(), fetchedAt: catalogTime }
+  }
+  assert.equal(await main([], createIo().io, deps), 0)
+  clock += 30 * 60000 - 1
+  assert.equal(await main([], createIo().io, deps), 0)
+  assert.equal(calls, 1)
+  clock++
+  assert.equal(await main([], createIo().io, deps), 0)
+  assert.equal(calls, 2)
 })

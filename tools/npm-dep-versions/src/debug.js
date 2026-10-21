@@ -6,7 +6,7 @@ const scope = new AsyncLocalStorage()
 const tool = 'npm-dep-versions'
 const sensitive = /auth|token|password|passwd|secret|credential|cookie|extraheader|api[-_]?key/i
 let inheritedContext
-const debugLine = /^\[npm-dep-(?:audit|paths|upgrade|upgrade-plan) debug\] /
+const debugLine = /^\[npm-dep-(?:audit|paths|upgrade|upgrade-plan|versions) debug\] /
 
 function redactUrl(text) {
   try {
@@ -80,7 +80,7 @@ export function debugAction(kind, details) {
 export function debugSpawn(spawnImpl, command, args, options) {
   const ctx = context()
   if (!ctx?.enabled) return spawnImpl(command, args, options)
-  const sibling = /^npm-dep-(?:audit|paths|upgrade-plan|upgrade)(?:\.cmd)?(?: |$)/.test(command)
+  const sibling = /^npm-dep-(?:audit|paths|upgrade-plan|upgrade|versions)(?:\.cmd)?(?: |$)/.test(command)
   if (sibling) {
     if (options.shell) command += ' --debug'
     else args = [...args, '--debug']

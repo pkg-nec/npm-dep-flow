@@ -8,10 +8,10 @@ import { readPlanningContext } from './context.js'
 import { parseArgs } from './args.js'
 import { runNpmDepAudit } from './audit.js'
 import { evaluateFindings } from './evaluate.js'
-import { fetchReleaseTimes, fetchStableVersions } from './registry.js'
+import { runNpmDepVersions } from './versions.js'
 import { renderJson, renderMarkdown } from './report.js'
 
-const defaults = { loadProject, readPlanningContext, runNpmDepAudit, fetchStableVersions, fetchReleaseTimes, renderJson, renderMarkdown }
+const defaults = { loadProject, readPlanningContext, runNpmDepAudit, runNpmDepVersions, renderJson, renderMarkdown }
 const packageDir = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const packageJson = JSON.parse(readFileSync(resolve(packageDir, 'package.json'), 'utf8'))
 const versionOutput = `${packageJson.name} v${packageJson.version}\nLocation: ${packageDir}\n`
@@ -57,20 +57,16 @@ async function mainWithDebug(argv, io = process, deps = defaults) {
       const auditReport = await deps.runNpmDepAudit(project.root, undefined, undefined, { noCache: options.noCache, ttlMs: options.ttlMs })
       const versionsByPackage = new Map()
       const packageNames = [...new Set(auditReport.rows.map(row => row.package))]
+      let freshAt = Date.parse(auditReport.auditedAt)
       for (const packageName of packageNames) {
-        const [versions, releaseTimes] = await Promise.all([
-          deps.fetchStableVersions(project.root, packageName),
-          deps.fetchReleaseTimes
-            ? deps.fetchReleaseTimes(project.root, packageName)
-            : Promise.resolve(new Map()),
-        ])
-        // Maps are evaluated before the result crosses the JSON cache boundary.
-        versionsByPackage.set(packageName, { versions, releaseTimes })
+        const catalog = await deps.runNpmDepVersions(project.root, packageName, undefined, undefined, { noCache: options.noCache, ttlMs: options.ttlMs })
+        versionsByPackage.set(packageName, { versions: catalog.versions, releaseTimes: catalog.releaseTimes })
+        freshAt = Math.min(freshAt, Date.parse(catalog.fetchedAt))
       }
       return {
         value: { findings: evaluateFindings(auditReport.rows, versionsByPackage), auditedAt: auditReport.auditedAt },
-        freshAt: Date.parse(auditReport.auditedAt),
-        expiresAt: Date.parse(auditReport.auditedAt) + options.ttlMs,
+        freshAt,
+        expiresAt: freshAt + options.ttlMs,
       }
     })
     const output = options.format === 'json'
