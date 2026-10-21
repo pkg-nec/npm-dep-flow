@@ -24,7 +24,7 @@ Each tool is an independent Node.js project under `tools/`, with its own package
 
 All four analysis tools cache structured results outside the target project by default. Paths invalidates by project content and query; versions enforces catalog TTLs, while audit and upgrade planning enforce source/advisory TTLs (one hour by default). Output formats share results. Use `--no-cache` on any analysis tool to bypass its cache; planner and audit propagate bypass to their nested analysis calls. Versions, audit, and planner also accept `--cache-ttl`, such as `30m`.
 
-`npm-dep-versions react --major 19` lists stable releases with dates; add `--all` for prereleases or use `--range ">=19.0.0 <20"` for semantic version bounds. Its `--project` selects npm configuration context without requiring dependency files. Catalog filters and formats share cached data, and planner results expire no later than their oldest audit or catalog source.
+`npm-dep-versions react --major 19` lists stable releases with dates; add `--all` for prereleases or use `--range '>=19.0.0 <20'` for semantic version bounds. Its `--project` selects npm configuration context without requiring dependency files. Catalog filters and formats share cached data, and planner results expire no later than their oldest audit or catalog source.
 
 Upgrade continues to rerun the planner for ID selection and independently performs fresh security checks before and after mutation. See each tool guide for cache keys, expiry and invalidation details.
 
