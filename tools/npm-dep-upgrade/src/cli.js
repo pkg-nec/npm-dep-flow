@@ -42,21 +42,21 @@ async function mainWithDebug(options, io = process, overrides = {}) {
 Usage: npm-dep-upgrade [project] <id-or-prefix> [options]
 
 Arguments:
-  project                         Project directory (default: ., the caller's current directory)
-  id-or-prefix                    Required planner item ID or unique prefix
+  project                           Project directory (default: ., the caller's current directory)
+  id-or-prefix                      Required planner item ID or unique prefix
 
 Options:
-  --package <name>                Filter the item ID by exact package name
-  --format markdown|json          Output format (default: markdown)
-  --config <path>                 Load an explicit JSON configuration file
-  --module <name>                 Module scope used in the commit subject
-  --commit-message-template <text> Customize the commit subject using placeholders
-  --git-commit-arg=<arg>           Add a supported Git commit argument (repeatable)
-  --clear-git-commit-args          Replace configured Git arguments with an empty list
-  --debug                         Log external actions and cache decisions to stderr
-  --no-debug                      Disable debug logging, overriding configuration
-  --version                       Show version and tool directory
-  --help                          Show this help
+  --package <name>                  Filter the item ID by exact package name
+  --format markdown|json            Output format (default: markdown)
+  --config <path>                   Load an explicit JSON configuration file
+  --module <name>                   Module scope used in the commit subject
+  --commit-message-template <text>  Customize the commit subject using placeholders
+  --git-commit-arg=<arg>            Add a supported Git commit argument (repeatable)
+  --clear-git-commit-args           Replace configured Git arguments with an empty list
+  --debug                           Log external actions and cache decisions to stderr
+  --no-debug                        Disable debug logging, overriding configuration
+  --version                         Show version and tool directory
+  --help                            Show this help
 
 Upgrade one eligible planner installation in the selected project and commit the verified dependency files.
 `
