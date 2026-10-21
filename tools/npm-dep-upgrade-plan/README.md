@@ -159,3 +159,5 @@ npm-dep-upgrade-plan /path/to/project --debug --format json > report.json 2> deb
 Logs show commands, arguments, working directories, durations and exit outcomes. Debug mode propagates through sibling tools, and their debug records stream to the caller. Cache hits, misses and bypasses explain when analysis is reused; debug mode preserves normal caching.
 
 Credentials in logged arguments and URLs are redacted. Debug records omit environment values, request bodies and subprocess output. Existing error diagnostics and installation progress retain their usual behavior. See the [shared debug guide](../../README.md#debug-logging) for propagation and scope.
+
+Cache identity also hashes active npm configuration source files and referenced environment values, so protected token changes invalidate cached data even though npm redacts those values from configuration output. Only digests are stored. Registry inspection from a workspace member retains npm’s workspace-root configuration; context discovery may query the resolved npm prefix when npm rejects an implicit workspace.

@@ -30,3 +30,27 @@ test('real executable shares one combined fetch across stable, prerelease, major
   assert.equal(registry.calls.length, 2)
   assert.deepEqual(await readdir(project), [])
 })
+
+for (const variable of ['NPM_DEP_UPGRADE_E2E_NPM_CLI', 'NPM_DEP_UPGRADE_E2E_COMPAT_NPM_CLI']) {
+  const npmRuntime = process.env[variable]
+  test(`workspace-member context uses the same root registry with caching and bypass (${variable})`, { skip: !npmRuntime }, async (t) => {
+    const { writeFile } = await import('node:fs/promises')
+    const root = await scratch(t)
+    const member = join(root, 'packages', 'member')
+    await mkdir(member, { recursive: true })
+    await writeFile(join(root, 'package.json'), JSON.stringify({ name: 'root', private: true, workspaces: ['packages/*'] }))
+    await writeFile(join(member, 'package.json'), JSON.stringify({ name: 'member', version: '1.0.0' }))
+    const registry = await fixtureRegistry(t)
+    await writeFile(join(root, '.npmrc'), `registry=${registry.url}\n`)
+    await writeFile(join(member, '.npmrc'), 'registry=http://127.0.0.1:1/\n')
+    await writeFile(join(root, 'userconfig'), '')
+    const commands = await npmCommandDirectory(root, npmRuntime)
+    const env = { ...registryEnv(root, registry.url), PATH: commands + delimiter + process.env.PATH, npm_config_userconfig: join(root, 'userconfig'), XDG_CACHE_HOME: join(root, 'catalog-cache') }
+    delete env.npm_config_registry
+    const bin = fileURLToPath(new URL('../bin/npm-dep-versions.js', import.meta.url))
+    for (const extra of [[], ['--no-cache']]) {
+      const result = await execute(process.execPath, [bin, 'fixture-package', '--project', member, '--format', 'json', ...extra], { env })
+      assert.equal(JSON.parse(result.stdout).rows[0].version, '1.0.0')
+    }
+  })
+}

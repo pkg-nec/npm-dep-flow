@@ -1,6 +1,6 @@
 # npm-dep-versions Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Provide a cached, filterable package release catalog from one combined npm command and consume it through the planner's public CLI boundary.
 
@@ -75,10 +75,10 @@ Commit this plan before execution. If a purely mechanical formatting change is n
 
 ## Execution preparation
 
-- [ ] Read the approved spec, AGENTS.md, and CONTRIBUTING.md. Use using-git-worktrees to establish an execution worktree under the required parent, based on the branch containing this spec and plan; preserve this documentation checkout.
-- [ ] Create a task-specific scratch directory beneath the required tmp root. Set `TMPDIR`, `TMP`, `TEMP`, `NPM_DEP_FLOW_TEST_TMPDIR`, `NPM_DEP_PATHS_TEST_TMPDIR`, `XDG_CACHE_HOME`, and `npm_config_cache` to appropriate subdirectories there. Do not put credentials in logs or committed fixtures.
-- [ ] Confirm Node 24 and inspect existing pinned npm runtimes before downloading anything. Record absolute entries for npm 12.1.0 and npm 11.10.0 using the E2E variables documented in the upgrade README. Provision only missing runtimes outside test cases.
-- [ ] Run affected baseline suites (`npm test` in planner and upgrade) and shared lint after their `npm ci --ignore-scripts` installs. Record existing failures before coding; use the normal debugging workflow for unexpected failures.
+- [x] Read the approved spec, AGENTS.md, and CONTRIBUTING.md. Use using-git-worktrees to establish an execution worktree under the required parent, based on the branch containing this spec and plan; preserve this documentation checkout.
+- [x] Create a task-specific scratch directory beneath the required tmp root. Set `TMPDIR`, `TMP`, `TEMP`, `NPM_DEP_FLOW_TEST_TMPDIR`, `NPM_DEP_PATHS_TEST_TMPDIR`, `XDG_CACHE_HOME`, and `npm_config_cache` to appropriate subdirectories there. Do not put credentials in logs or committed fixtures.
+- [x] Confirm Node 24 and inspect existing pinned npm runtimes before downloading anything. Record absolute entries for npm 12.1.0 and npm 11.10.0 using the E2E variables documented in the upgrade README. Provision only missing runtimes outside test cases.
+- [x] Run affected baseline suites (`npm test` in planner and upgrade) and shared lint after their `npm ci --ignore-scripts` installs. Record existing failures before coding; use the normal debugging workflow for unexpected failures.
 
 ### Task 1: Normalize one combined registry query
 
@@ -86,7 +86,7 @@ Commit this plan before execution. If a purely mechanical formatting change is n
 
 **Interfaces:** Produce `isCanonicalVersion(value) -> boolean`, `normalizeTimestamp(value) -> string|null`, `normalizeCatalogResponse(raw) -> Row[]` in model.js; `fetchCatalog(root, packageName, { run = runProcess, now = Date.now } = {}) -> Promise<Catalog>` in registry.js. Process exposes the `Run` signature above. Debug exposes tool-owned `runDebug`, `debugSpawn`, `debugLog` using existing conventions with the new tool label.
 
-- [ ] Write failing model/registry tests with these representative assertions:
+- [x] Write failing model/registry tests with these representative assertions:
 
 ```js
 assert.deepEqual(normalizeCatalogResponse({
@@ -102,11 +102,11 @@ assert.deepEqual(calls[0], ['npm', ['view', '@scope/pkg', 'versions', 'time', '-
 ```
 
 Also assert singleton combined envelopes, scalar/list versions-only output, absent/null time, empty versions, equal-precedence build ordering, invalid fields, no JSON output, missing npm and nonzero exits without secret output. No second command may appear on parse failure.
-- [ ] Run `node --test test/model.test.js test/registry.test.js` in the new package; expect failing imports or assertions before implementation.
-- [ ] Create the independent package with semver using the repository's existing compatible dependency version and lockfile. Implement the exact signatures above. Copy/adapt process and debug code into this tool's ownership, without runtime sibling imports; validate package names before either platform launches a shell command.
-- [ ] Write process/debug tests for Unix arguments, Windows `.cmd` execution, safe scoped names, rejected metacharacters, command timings, redacted URLs/tokens, and stderr-only debug relay. Run their failing cycle before implementing any adaptations.
-- [ ] Build a minimal local HTTP fixture packument with stable and prerelease manifests, dist-tags, versions and optional time. Launch actual pinned npm 11.10.0 and 12.1.0 through test shims, run the exact combined command, and assert identical normalized results, including omitted time and no usable latest response. These helpers belong to the new tool; do not import upgrade private helpers. Supply runtime entry paths with the existing `NPM_DEP_UPGRADE_E2E_NPM_CLI` and compatibility variable so CI can reuse provisioned runtimes.
-- [ ] Extend shared lint's explicit tool glob with npm-dep-versions, without changing recommended rules. Run new package `npm test`; both configured runtime compatibility cases must pass. Run `npm --prefix dev-tooling run lint` from the checkout root and inspect staged diff, then commit Task 1 without changing planner versions. Run shared lint again before each subsequent JavaScript commit.
+- [x] Run `node --test test/model.test.js test/registry.test.js` in the new package; expect failing imports or assertions before implementation.
+- [x] Create the independent package with semver using the repository's existing compatible dependency version and lockfile. Implement the exact signatures above. Copy/adapt process and debug code into this tool's ownership, without runtime sibling imports; validate package names before either platform launches a shell command.
+- [x] Write process/debug tests for Unix arguments, Windows `.cmd` execution, safe scoped names, rejected metacharacters, command timings, redacted URLs/tokens, and stderr-only debug relay. Run their failing cycle before implementing any adaptations.
+- [x] Build a minimal local HTTP fixture packument with stable and prerelease manifests, dist-tags, versions and optional time. Launch actual pinned npm 11.10.0 and 12.1.0 through test shims, run the exact combined command, and assert identical normalized results, including omitted time and no usable latest response. These helpers belong to the new tool; do not import upgrade private helpers. Supply runtime entry paths with the existing `NPM_DEP_UPGRADE_E2E_NPM_CLI` and compatibility variable so CI can reuse provisioned runtimes.
+- [x] Extend shared lint's explicit tool glob with npm-dep-versions, without changing recommended rules. Run new package `npm test`; both configured runtime compatibility cases must pass. Run `npm --prefix dev-tooling run lint` from the checkout root and inspect staged diff, then commit Task 1 without changing planner versions. Run shared lint again before each subsequent JavaScript commit.
 
 ### Task 2: Deliver filtered reports through the executable
 
@@ -114,8 +114,8 @@ Also assert singleton combined envelopes, scalar/list versions-only output, abse
 
 **Interfaces:** Consume Catalog and fetchCatalog. Produce `parseArgs(argv, cwd = process.cwd()) -> Options`, `filterRows(rows, { all, major, range }) -> Row[]`, `renderJson(report) -> string`, `renderMarkdown(report) -> string`, `main(argv, io = process, deps = defaults) -> Promise<number>`. CLI resolves real project directory and stats it before fetching; cache/context integration follows Task 3. Help/version return before package or directory validation.
 
-- [ ] Write failing argument tests covering every specified flag, default cwd, canonical package names, duplicate value options, absent/unknown values, extra packages, idempotent switches, safe integer major zero, rejected `01`/negative/unsafe major, whitespace-only/invalid ranges, valid TTL units and overflow, invalid format, and help/version without package.
-- [ ] Write filtering/report assertions:
+- [x] Write failing argument tests covering every specified flag, default cwd, canonical package names, duplicate value options, absent/unknown values, extra packages, idempotent switches, safe integer major zero, rejected `01`/negative/unsafe major, whitespace-only/invalid ranges, valid TTL units and overflow, invalid format, and help/version without package.
+- [x] Write filtering/report assertions:
 
 ```js
 assert.deepEqual(filterRows(rows, { all: false, major: 19, range: null }).map(r => r.version), ['19.0.0', '19.1.0'])
@@ -126,10 +126,10 @@ assert.doesNotMatch(renderMarkdown({ ...report, rows: [] }), /\| Version/)
 ```
 
 Define rows containing 18.x, 19.0.0-beta.1, 19.0.0, 19.1.0-beta.1, 19.1.0, and 20.0.0; verify major/range intersection, build ties, unchanged original strings, nullable dates, UTC display, escaping and control characters.
-- [ ] Run the new focused tests; expect failures before implementing their modules.
-- [ ] Implement these functions and aligned help text. Use includePrerelease only with --all, preserving actual semver bounds. Main writes one completed report or a sanitized error and no stdout. The executable forwards the returned exit code.
-- [ ] Add failing executable cases for an empty context directory, explicit --project with spaces, a missing/file context, help/version without npm on PATH, unchanged directory contents, registry error with secret stderr, and debug on/off. Implement minimal orchestration to pass them.
-- [ ] Run `npm test` in the new package and `node bin/npm-dep-versions.js --help`; inspect alignment and full option coverage, then commit Task 2.
+- [x] Run the new focused tests; expect failures before implementing their modules.
+- [x] Implement these functions and aligned help text. Use includePrerelease only with --all, preserving actual semver bounds. Main writes one completed report or a sanitized error and no stdout. The executable forwards the returned exit code.
+- [x] Add failing executable cases for an empty context directory, explicit --project with spaces, a missing/file context, help/version without npm on PATH, unchanged directory contents, registry error with secret stderr, and debug on/off. Implement minimal orchestration to pass them.
+- [x] Run `npm test` in the new package and `node bin/npm-dep-versions.js --help`; inspect alignment and full option coverage, then commit Task 2.
 
 ### Task 3: Cache complete catalogs under effective npm context
 
@@ -137,12 +137,12 @@ Define rows containing 18.x, 19.0.0-beta.1, 19.0.0, 19.1.0-beta.1, 19.1.0, and 2
 
 **Interfaces:** Produce `readContext(root, run = runProcess) -> Promise<Context>` and `cachedCatalog({ version, root, packageName, identity, ttlMs = 3600000, noCache = false, cacheRoot, now = Date.now }, compute) -> Promise<Catalog>`. CLI canonicalizes root; with caching enabled, identity is readContext's npmVersion/configHash; bypass omits cache-only context discovery. `compute` invokes fetchCatalog and returns its full Catalog. Default cacheRoot uses XDG/home conventions in the spec.
 
-- [ ] Write failing context tests: sorted config digest, scoped registry/auth change invalidation without persisted secrets, npm version changes, ignored moving `before`, malformed or failed commands, canonical symlink identity. Skip only symlink creation when the OS explicitly denies that capability.
-- [ ] Write failing cache tests using injected clock and a local scratch root. Assert a fetch at `1000` is hit at `1099` with TTL `100`, missed at `1100`, and missed at `1050` with TTL `50`; hits preserve fetchedAt. Assert distinct package/context/npm/config/tool identities, corrupt/checksum-invalid/future timestamps, malformed rows, and unavailable storage are misses. Assert failed refresh never returns stale data and bypass preserves existing bytes.
-- [ ] Run `node --test test/context.test.js test/cache.test.js`; expect failures before implementation.
-- [ ] Implement digest identity, full catalog validation, private modes, unique temporary files and atomic rename/cleanup. Key the cache file by canonical root/package; validate the full identity inside the entry. Apply current TTL to original fetchedAt and do not extend it during writes or hits. Reuse validation from this tool's model only.
-- [ ] Add failing CLI tests that invoke stable/--all/major/range/JSON/Markdown against one cache and count exactly one combined view command. Concurrent invocations must leave a parseable valid entry and no temporary files. Context changes must miss; bypass must not call config solely for cache identity. Check an empty directory still requires no manifest/lockfile and remains untouched.
-- [ ] Wire caching before filtering, run new package `npm test`, inspect persisted fixtures for absence of config secrets, and commit Task 3.
+- [x] Write failing context tests: sorted config digest, scoped registry/auth change invalidation without persisted secrets, npm version changes, ignored moving `before`, malformed or failed commands, canonical symlink identity. Skip only symlink creation when the OS explicitly denies that capability.
+- [x] Write failing cache tests using injected clock and a local scratch root. Assert a fetch at `1000` is hit at `1099` with TTL `100`, missed at `1100`, and missed at `1050` with TTL `50`; hits preserve fetchedAt. Assert distinct package/context/npm/config/tool identities, corrupt/checksum-invalid/future timestamps, malformed rows, and unavailable storage are misses. Assert failed refresh never returns stale data and bypass preserves existing bytes.
+- [x] Run `node --test test/context.test.js test/cache.test.js`; expect failures before implementation.
+- [x] Implement digest identity, full catalog validation, private modes, unique temporary files and atomic rename/cleanup. Key the cache file by canonical root/package; validate the full identity inside the entry. Apply current TTL to original fetchedAt and do not extend it during writes or hits. Reuse validation from this tool's model only.
+- [x] Add failing CLI tests that invoke stable/--all/major/range/JSON/Markdown against one cache and count exactly one combined view command. Concurrent invocations must leave a parseable valid entry and no temporary files. Context changes must miss; bypass must not call config solely for cache identity. Check an empty directory still requires no manifest/lockfile and remains untouched.
+- [x] Wire caching before filtering, run new package `npm test`, inspect persisted fixtures for absence of config secrets, and commit Task 3.
 
 ### Task 4: Integrate planner command boundary and source freshness
 
@@ -150,13 +150,13 @@ Define rows containing 18.x, 19.0.0-beta.1, 19.0.0, 19.1.0-beta.1, 19.1.0, and 2
 
 **Interfaces:** Produce `runNpmDepVersions(projectRoot, packageName, spawnImpl = spawn, platform = process.platform, { noCache = false, ttlMs = 3600000, now = Date.now } = {}) -> Promise<{ versions: string[], releaseTimes: Map, fetchedAt: string }>`. Use existing planner runProcess/debug boundary. Planning context adds `versions` containing the new sibling's --version output with installed location.
 
-- [ ] Write failing adapter tests for default/explicit TTL, no-cache, debug propagation, scoped package/cwd, Windows shim, missing sibling guidance, nonzero exit and malformed JSON. Validate exact package/schema, rows and uniqueness, canonical stable versions, canonical nullable UTC timestamps, future dates and age equal to TTL. Sort valid rows before constructing versions/releaseTimes. Reject evidence that expired while a slow subprocess ran by consulting `now` after completion.
-- [ ] Run `node --test test/versions.test.js` in planner; expect failure before implementation.
-- [ ] Implement the adapter. Do not pass --all, --major, --range, or --project; cwd supplies context. Do not include child stdout or secret-bearing diagnostics in errors.
-- [ ] Write failing planner CLI/context tests: one catalog invocation per distinct audited package; no direct npm view; known and null dates produce existing findings/schema unchanged; new sibling version/location changes invalidate cached reports; unsupported sibling output fails closed. Update injection fixtures to the new adapter interface rather than retain legacy fallback paths.
-- [ ] Write a freshness regression using audit time T and catalog time T-30 minutes: a planner result at T must miss at T+30 minutes with TTL 1h. A shorter requested TTL is measured from the earliest source. No-package reports use audit time only. Keep auditedAt equal to T in output and nested bypass/TTL propagation unchanged.
-- [ ] Run focused CLI/context/result-cache tests and confirm regression failures. Replace orchestration with the new adapter, compute freshAt as the minimum source timestamp, and set expiresAt no later than freshAt + ttlMs and existing upstream expiry. Remove obsolete registry module/tests. Existing result-cache machinery already supports freshAt; modify it only if a new test demonstrates a gap.
-- [ ] Update affected executable/debug mock command dispatch to return versioned catalog JSON and correct sibling versions. Run planner `npm test` and new tool `npm test`; commit Task 4 with planner package version still 0.5.0.
+- [x] Write failing adapter tests for default/explicit TTL, no-cache, debug propagation, scoped package/cwd, Windows shim, missing sibling guidance, nonzero exit and malformed JSON. Validate exact package/schema, rows and uniqueness, canonical stable versions, canonical nullable UTC timestamps, future dates and age equal to TTL. Sort valid rows before constructing versions/releaseTimes. Reject evidence that expired while a slow subprocess ran by consulting `now` after completion.
+- [x] Run `node --test test/versions.test.js` in planner; expect failure before implementation.
+- [x] Implement the adapter. Do not pass --all, --major, --range, or --project; cwd supplies context. Do not include child stdout or secret-bearing diagnostics in errors.
+- [x] Write failing planner CLI/context tests: one catalog invocation per distinct audited package; no direct npm view; known and null dates produce existing findings/schema unchanged; new sibling version/location changes invalidate cached reports; unsupported sibling output fails closed. Update injection fixtures to the new adapter interface rather than retain legacy fallback paths.
+- [x] Write a freshness regression using audit time T and catalog time T-30 minutes: a planner result at T must miss at T+30 minutes with TTL 1h. A shorter requested TTL is measured from the earliest source. No-package reports use audit time only. Keep auditedAt equal to T in output and nested bypass/TTL propagation unchanged.
+- [x] Run focused CLI/context/result-cache tests and confirm regression failures. Replace orchestration with the new adapter, compute freshAt as the minimum source timestamp, and set expiresAt no later than freshAt + ttlMs and existing upstream expiry. Remove obsolete registry module/tests. Existing result-cache machinery already supports freshAt; modify it only if a new test demonstrates a gap.
+- [x] Update affected executable/debug mock command dispatch to return versioned catalog JSON and correct sibling versions. Run planner `npm test` and new tool `npm test`; commit Task 4 with planner package version still 0.5.0.
 
 ### Task 5: Exercise real command chains and document installation
 
@@ -164,12 +164,12 @@ Define rows containing 18.x, 19.0.0-beta.1, 19.0.0, 19.1.0-beta.1, 19.1.0, and 2
 
 **Interfaces:** Preserve integration switches `NPM_DEP_AUDIT_INTEGRATION=1`, `NPM_DEP_PATHS_INTEGRATION=1`, and pinned E2E runtime entry variables. Provision the new CLI on PATH with sibling tools. Never import its private source from another tool.
 
-- [ ] Change planner integration assertions to require exactly `view brace-expansion versions time --json` once on cold run, zero additional view calls on warm result hit, and one additional combined call after bypass. Use real audit and versions CLIs, existing fake paths/npm, and merged npm response fixtures. Run and observe failure before updating fixture command dispatch and PATH shims.
-- [ ] Add an E2E boundary assertion that planner metadata flows through the new CLI and upgrade retains its fresh direct checks. Update provision/commands helper tool lists and relevant hardcoded command expectations; preserve existing failure/security assertions.
-- [ ] Confirm shared lint includes the new tool. Add Ubuntu/Windows new-tool CI with Node 24 and both npm runtime compatibility cases on Linux, npm12 on Windows. Provision pinned runtimes outside cases; make compatibility CI require them rather than silently skip. Add versions installation to planner CI and the five-tool install/test/provision chain in upgrade CI. Retain pinned action refs and minimal permissions.
-- [ ] Update documentation with install order (paths, audit, versions, planner, upgrade), --project's npm context role, every flag, no grep examples, merged nullable timestamps, schema v2 example, catalog reuse/freshness, nested TTL/bypass/debug, and independent fresh mutator evidence. Update repository guidance and root inventory from three to four analysis tools where appropriate.
-- [ ] Run `npm test` in versions, planner, and upgrade; run audit/paths documented integration suites when exercising the complete chain. Run planner with `NPM_DEP_AUDIT_INTEGRATION=1 npm test` using the real new CLI on PATH, and upgrade `npm run test:e2e` with both pinned runtimes. Run `npm --prefix dev-tooling run lint` from the checkout root; expect exit 0 with zero warnings. Inspect new-tool/planner --help rendering and `git diff --check`. Resolve only failures related to this change; do not broaden production scope.
-- [ ] Commit Task 5 with passing evidence recorded in the execution report. All runtime behavior and integration are now implemented; release metadata follows.
+- [x] Change planner integration assertions to require exactly `view brace-expansion versions time --json` once on cold run, zero additional view calls on warm result hit, and one additional combined call after bypass. Use real audit and versions CLIs, existing fake paths/npm, and merged npm response fixtures. Run and observe failure before updating fixture command dispatch and PATH shims.
+- [x] Add an E2E boundary assertion that planner metadata flows through the new CLI and upgrade retains its fresh direct checks. Update provision/commands helper tool lists and relevant hardcoded command expectations; preserve existing failure/security assertions.
+- [x] Confirm shared lint includes the new tool. Add Ubuntu/Windows new-tool CI with Node 24 and both npm runtime compatibility cases on Linux, npm12 on Windows. Provision pinned runtimes outside cases; make compatibility CI require them rather than silently skip. Add versions installation to planner CI and the five-tool install/test/provision chain in upgrade CI. Retain pinned action refs and minimal permissions.
+- [x] Update documentation with install order (paths, audit, versions, planner, upgrade), --project's npm context role, every flag, no grep examples, merged nullable timestamps, schema v2 example, catalog reuse/freshness, nested TTL/bypass/debug, and independent fresh mutator evidence. Update repository guidance and root inventory from three to four analysis tools where appropriate.
+- [x] Run `npm test` in versions, planner, and upgrade; run audit/paths documented integration suites when exercising the complete chain. Run planner with `NPM_DEP_AUDIT_INTEGRATION=1 npm test` using the real new CLI on PATH, and upgrade `npm run test:e2e` with both pinned runtimes. Run `npm --prefix dev-tooling run lint` from the checkout root; expect exit 0 with zero warnings. Inspect new-tool/planner --help rendering and `git diff --check`. Resolve only failures related to this change; do not broaden production scope.
+- [x] Commit Task 5 with passing evidence recorded in the execution report. All runtime behavior and integration are now implemented; release metadata follows.
 
 ### Task 6: Finalize release metadata and review
 
@@ -177,11 +177,15 @@ Define rows containing 18.x, 19.0.0-beta.1, 19.0.0, 19.1.0-beta.1, 19.1.0, and 2
 
 **Interfaces:** New tool reports npm-dep-versions v0.1.0; planner reports npm-dep-upgrade-plan v0.6.0; upgrade debug correction reports v0.3.1. Existing planner schema version 2 remains unchanged.
 
-- [ ] Change new package development version to `0.1.0` and planner `0.5.0` to `0.6.0`, synchronizing each lockfile's top-level and root-package version. Execution refinement: bump upgrade from 0.3.0 to 0.3.1, with matching lockfile metadata, for the required nested catalog debug-prefix relay; no mutation logic changes.
-- [ ] Run both --version commands and assert exact versions plus installed directories. Run both --help commands and inspect alignment with final version headers. Run affected tool tests and shared lint following metadata changes; repeat only the integration checks whose outputs include changed tool versions or remain unresolved.
-- [ ] Run `git diff --check`, inspect staged release changes, and commit the intended final release message. Confirm git status is clean before requesting review.
-- [ ] Apply requesting-code-review after execution using the user's selected method, address substantive findings, and rerun affected verification. If the user has not authorized a PR/merge, report branch, commits and evidence without publishing or merging. Use finishing-a-development-branch for integration choices within existing authorization.
+- [x] Change new package development version to `0.1.0` and planner `0.5.0` to `0.6.0`, synchronizing each lockfile's top-level and root-package version. Execution refinement: bump upgrade from 0.3.0 to 0.3.1, with matching lockfile metadata, for the required nested catalog debug-prefix relay; no mutation logic changes.
+- [x] Run both --version commands and assert exact versions plus installed directories. Run both --help commands and inspect alignment with final version headers. Run affected tool tests and shared lint following metadata changes; repeat only the integration checks whose outputs include changed tool versions or remain unresolved.
+- [x] Run `git diff --check`, inspect staged release changes, and commit the intended final release message. Confirm git status is clean before requesting review.
+- [x] Apply requesting-code-review after execution using the user's selected method, address substantive findings, and rerun affected verification. If the user has not authorized a PR/merge, report branch, commits and evidence without publishing or merging. Use finishing-a-development-branch for integration choices within existing authorization.
 
 ## Plan self-review
 
 Coverage: Task 1 owns combined-query shapes/timestamp merge; Task 2 owns filters and public output; Task 3 owns effective context and catalog freshness; Task 4 owns planner compatibility/source lifetime; Task 5 owns real process boundaries, CI and documentation; Task 6 owns final versions. Each Review Focus condition has an explicit owning test. Interface names and Catalog fields are consistent across tasks; compute returns the full unfiltered catalog, and only CLI rendering receives filtered rows. No product implementation is authorized by this planning document until the user reviews it and selects execution method.
+
+## Execution result
+
+Completed on `feat/npm-dep-versions`. Releases: versions 0.1.0, planner 0.6.0, upgrade 0.3.1 (nested debug relay). Fresh independent review identified protected-auth identity and workspace-context discovery issues; both were reproduced with real npm, fixed, and verified. Rendered help descriptions were measured at column 32; the suggested alignment issue was not reproduced. Final checks: catalog 43, planner integration 91, audit integration 88, paths 59, upgrade 81, full npm11/npm12 E2E 125 passing; shared lint zero warnings. Review fixes do not change the planned release versions.
