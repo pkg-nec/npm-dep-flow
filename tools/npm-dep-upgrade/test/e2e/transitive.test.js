@@ -1,22 +1,8 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { readFile } from 'node:fs/promises'
-import path from 'node:path'
 import { createProject } from './helpers/project.js'
 import { transitive, shared, separate, ancestor, sharedAncestry, parentVersions, repeated, existingOverride } from './fixtures/catalog.js'
-import { plan, runUpgrade, assertSuccess, assertResolved, assertUnchanged } from './helpers/runner.js'
-export async function apply(t, s, runtime = {}) {
-  const f = await createProject(s, runtime, t), rows = await plan(f), row = rows.find(r => r.status === 'eligible')
-  assert.ok(row, JSON.stringify(rows))
-  const result = await runUpgrade(f, [row.id, '--format', 'json'])
-  await assertSuccess(f, result)
-  assert.deepEqual(await readFile(path.join(f.root, 'package.json')), f.initialFiles['package.json'])
-  return f
-}
-for (const field of ['dependencies', 'devDependencies', 'peerDependencies', 'optionalDependencies']) for (const op of ['^', '~']) test(`T01 ${field} child ${op}`, async (t) => {
-  const f = await apply(t, transitive(field, op))
-  await assertResolved(f, '', 'e2e-parent-a', '1.2.4')
-})
+import { plan, runUpgrade, assertSuccess, assertResolved, assertUnchanged, applyTransitive as apply } from './helpers/runner.js'
 test('T02 transitive parent', async (t) => {
   await apply(t, ancestor())
 })
