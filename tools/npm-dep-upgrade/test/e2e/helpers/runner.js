@@ -3,6 +3,7 @@ import { readFile, mkdir, writeFile, readdir } from 'node:fs/promises'
 import path from 'node:path'
 import { createRequire } from 'node:module'
 import { command, checked } from './commands.js'
+import { createProject } from './project.js'
 export async function plan(f, format = 'json') {
   const output = await checked(f, 'npm-dep-upgrade-plan', ['.', '--format', format])
   return format === 'json' ? JSON.parse(output).rows : output
@@ -56,7 +57,6 @@ export async function assertSuccess(f, result, version = '6.0.12', { reproduce =
   return output
 }
 export async function runCase(caseId, { npmCli, lockfileVersion = 3, installed = true, t } = {}) {
-  const { createProject } = await import('./project.js')
   const { direct, transitive, ancestor, shared, separate, existingOverride, supporting, ago } = await import('../fixtures/catalog.js')
   const { installCheckpoints } = await import('./commands.js')
   let s = caseId === 'D01 tilde' ? direct('dependencies', '~') : ['D01', 'R01', 'R02', 'R05', 'F05', 'F06', 'G03'].includes(caseId) ? direct() : caseId === 'T02' ? ancestor() : caseId === 'T05' ? shared() : caseId === 'T06' ? shared(true) : caseId === 'T07' ? separate() : caseId === 'O01' ? existingOverride() : caseId === 'S01' ? supporting() : transitive()
@@ -104,5 +104,14 @@ export async function runCase(caseId, { npmCli, lockfileVersion = 3, installed =
     assert.match(repeat.stderr, /not found|no planner/i)
     assert.equal(await checked(f, 'git', ['rev-parse', 'HEAD']), head)
   }
+  return f
+}
+
+export async function applyTransitive(t, s, runtime = {}) {
+  const f = await createProject(s, runtime, t), rows = await plan(f), row = rows.find(r => r.status === 'eligible')
+  assert.ok(row, JSON.stringify(rows))
+  const result = await runUpgrade(f, [row.id, '--format', 'json'])
+  await assertSuccess(f, result)
+  assert.deepEqual(await readFile(path.join(f.root, 'package.json')), f.initialFiles['package.json'])
   return f
 }

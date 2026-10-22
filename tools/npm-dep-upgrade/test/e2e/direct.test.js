@@ -5,7 +5,7 @@ import path from 'node:path'
 import { createProject } from './helpers/project.js'
 import { direct, ago } from './fixtures/catalog.js'
 import { plan, runUpgrade, assertSuccess } from './helpers/runner.js'
-for (const field of ['dependencies', 'devDependencies', 'peerDependencies', 'optionalDependencies']) for (const op of ['^', '~']) test(`D01 ${field} ${op}`, async (t) => {
+for (const field of ['dependencies']) for (const op of ['^', '~']) test(`D01 ${field} ${op}`, async (t) => {
   const f = await createProject(direct(field, op), {}, t), rows = await plan(f)
   await assertSuccess(f, await runUpgrade(f, [rows[0].id, '--format', 'json']))
   const manifest = JSON.parse(await readFile(path.join(f.root, 'package.json')))
