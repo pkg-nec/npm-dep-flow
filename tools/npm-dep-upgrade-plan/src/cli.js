@@ -7,11 +7,12 @@ import { loadProject } from './project.js'
 import { readPlanningContext } from './context.js'
 import { parseArgs } from './args.js'
 import { runNpmDepAudit } from './audit.js'
+import { resolveChoices } from './resolver.js'
 import { evaluateFindings } from './evaluate.js'
 import { runNpmDepVersions } from './versions.js'
 import { renderJson, renderMarkdown } from './report.js'
 
-const defaults = { loadProject, readPlanningContext, runNpmDepAudit, runNpmDepVersions, renderJson, renderMarkdown }
+const defaults = { loadProject, readPlanningContext, runNpmDepAudit, runNpmDepVersions, resolveChoices, renderJson, renderMarkdown }
 const packageDir = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const packageJson = JSON.parse(readFileSync(resolve(packageDir, 'package.json'), 'utf8'))
 const versionOutput = `${packageJson.name} v${packageJson.version}\nLocation: ${packageDir}\n`
@@ -63,8 +64,17 @@ async function mainWithDebug(argv, io = process, deps = defaults) {
         versionsByPackage.set(packageName, { versions: catalog.versions, releaseTimes: catalog.releaseTimes })
         freshAt = Math.min(freshAt, Date.parse(catalog.fetchedAt))
       }
+      const findings = evaluateFindings(auditReport.rows, versionsByPackage)
+      for (const finding of findings) {
+        if (finding.resolution !== 'partial' && finding.choices.length <= 1) continue
+        const auditRow = auditReport.rows.find(row => row.package === finding.package && row.version === finding.version)
+        const verified = await deps.resolveChoices(project, { ...auditRow, targetLocation: finding.targetLocation }, finding.choices, options)
+        finding.choices = verified.choices
+        finding.resolution = verified.coverage.resolution
+        freshAt = Math.min(freshAt, verified.freshAt)
+      }
       return {
-        value: { findings: evaluateFindings(auditReport.rows, versionsByPackage), auditedAt: auditReport.auditedAt },
+        value: { findings, auditedAt: auditReport.auditedAt },
         freshAt,
         expiresAt: freshAt + options.ttlMs,
       }

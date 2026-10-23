@@ -14,7 +14,7 @@ export async function cachedResult({ tool, version, project, identity = null, qu
     debugLog('cache bypass result')
     return (await compute()).value
   }
-  const key = digest([2, version, project.root, createHash('sha256').update(project.manifestBytes).digest('hex'), createHash('sha256').update(project.lockBytes).digest('hex'), identity, query])
+  const key = digest([3, version, project.root, createHash('sha256').update(project.manifestBytes).digest('hex'), createHash('sha256').update(project.lockBytes).digest('hex'), identity, query])
   const file = join(cacheRoot, `result-${digest([project.root, query])}.json`)
   try {
     const entry = JSON.parse(await readFile(file, 'utf8'))

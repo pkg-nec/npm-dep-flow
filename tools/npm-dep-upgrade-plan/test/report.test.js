@@ -10,13 +10,15 @@ function row(overrides = {}) {
     severity: 'high',
     minimumSafeVersion: '5.0.12',
     minimumSafeVersionReleasedAt: '2026-10-01T12:00:00.000Z',
-    status: 'eligible',
-    strategy: {
-      id: 'update-within-declared-range',
+    resolution: 'complete',
+    choices: [{
+      strategy: 'update-within-declared-range',
       targetPackage: 'brace-expansion',
       currentVersion: '5.0.9',
       targetVersion: '5.0.12',
-    },
+      targetLocation: 'node_modules/brace-expansion',
+      affectedConsumers: [{ location: 'node_modules/minimatch', requestedName: 'brace-expansion', type: 'dependencies' }],
+    }],
     ...overrides,
   }
 }
@@ -51,18 +53,18 @@ test('renders one Markdown row per package version and target location', () => {
   const markdown = renderMarkdown([
     row({
       targetLocation: 'node_modules/nx/node_modules/brace-expansion',
-      status: 'ineligible',
-      strategy: null,
+      resolution: 'none',
+      choices: [],
     }),
     row(),
   ])
   const resultRows = markdown.split('\n').filter(line => /^\| [a-f0-9]{7} \| brace-expansion \|/.test(line))
 
   assert.equal(resultRows.length, 2)
-  assert.match(markdown, /\| ID \| Package \| Installed \| Highest severity \| Minimum safe version \| Released at \| Target location \| Status \| Strategy \|/)
+  assert.match(markdown, /\| ID \| Package \| Installed \| Highest severity \| Minimum safe version \| Released at \| Target location \| Resolution \| Strategy \|/)
   assert.match(markdown, /<strong style="color: red">high<\/strong>/)
   assert.match(markdown, /Update within declared range \|/)
-  assert.ok(resultRows.some(line => line.includes('| ineligible | — |')))
+  assert.ok(resultRows.some(line => line.includes('| none | — |')))
   assert.ok(resultRows.some(line => line.includes('node\\_modules/nx/node\\_modules/brace-expansion')))
   assert.doesNotMatch(markdown, /Advisories|Requirement|Direct dependent/)
 })
@@ -74,62 +76,31 @@ test('escapes Markdown values and renders null versions and project-root locatio
     targetLocation: '',
     minimumSafeVersion: null,
     minimumSafeVersionReleasedAt: null,
-    status: 'ineligible',
-    strategy: null,
+    resolution: 'none',
+    choices: [],
   })])
 
   assert.match(markdown, /bad\\\|pkg/)
-  assert.match(markdown, /\| — \| — \| \(project root\) \| ineligible \| — \|/)
+  assert.match(markdown, /\| — \| — \| \(project root\) \| none \| — \|/)
 })
 
 test('renders a clear empty Markdown report', () => {
   assert.equal(renderMarkdown([]), '# npm-dep-upgrade-plan\n\nNo vulnerable package findings.\n')
 })
 
-test('renders schema version 2 rows without audit details', () => {
-  const ineligible = row({
-    targetLocation: 'node_modules/nx/node_modules/brace-expansion',
-    status: 'ineligible',
-    strategy: null,
-  })
-  const report = JSON.parse(renderJson([row(), ineligible], '2026-10-13T06:00:00.000Z'))
-
-  assert.deepEqual(report, {
-    schemaVersion: 2,
-    auditedAt: '2026-10-13T06:00:00.000Z',
-    rows: [
-      {
-        id: 'ea47178ea641751ab935afac50eb277e52a29d6778025d7ce978b0226d5967b1',
-        package: 'brace-expansion',
-        version: '5.0.9',
-        targetLocation: 'node_modules/brace-expansion',
-        severity: 'high',
-        minimumSafeVersion: '5.0.12',
-        minimumSafeVersionReleasedAt: '2026-10-01T12:00:00.000Z',
-        status: 'eligible',
-        strategy: {
-          id: 'update-within-declared-range',
-          targetPackage: 'brace-expansion',
-          currentVersion: '5.0.9',
-          targetVersion: '5.0.12',
-        },
-      },
-      {
-        id: 'eaddeac214c24d42eb5ca413c98c9a8fb9958b89ded137215d73322ab22bfb78',
-        package: 'brace-expansion',
-        version: '5.0.9',
-        targetLocation: 'node_modules/nx/node_modules/brace-expansion',
-        severity: 'high',
-        minimumSafeVersion: '5.0.12',
-        minimumSafeVersionReleasedAt: '2026-10-01T12:00:00.000Z',
-        status: 'ineligible',
-        strategy: null,
-      },
-    ],
-  })
+test('renders schema version 3 resolution and actions without legacy fields', () => {
+  const report = JSON.parse(renderJson([row(), row({ targetLocation: 'node_modules/nx/node_modules/brace-expansion', resolution: 'none', choices: [] })], '2026-10-13T06:00:00.000Z'))
+  assert.equal(report.schemaVersion, 3)
+  assert.equal(report.auditedAt, '2026-10-13T06:00:00.000Z')
+  assert.equal(report.rows[0].id, 'ea47178ea641751ab935afac50eb277e52a29d6778025d7ce978b0226d5967b1')
+  assert.equal(report.rows[0].resolution, 'complete')
+  assert.equal(report.rows[0].choices[0].targetVersion, '5.0.12')
+  assert.equal('status' in report.rows[0], false)
+  assert.equal('strategy' in report.rows[0], false)
+  assert.deepEqual(report.rows[1].choices, [])
   assert.equal('advisories' in report.rows[0], false)
   assert.equal('requirements' in report.rows[0], false)
-  assert.equal(renderJson([], '2026-10-13T06:00:00.000Z').includes('"rows": []'), true)
+  assert.equal(JSON.parse(renderJson([], '2026-10-13T06:00:00.000Z')).rows.length, 0)
 })
 
 const literalInput = 'a|b [x] *x* _x_ ` \\ <tag>&\n\r\t\x1b\x7f 🌱'
