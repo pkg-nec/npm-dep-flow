@@ -2,7 +2,7 @@
 
 `npm-dep-upgrade-plan` is a read-only CLI that reports which vulnerable package installations have an eligible remediation strategy. It emits one row for each `(package, installed version, target location)` because each physical installation must be upgraded separately.
 
-The first strategy is `update-within-declared-range`. It checks whether the vulnerable package itself can move to a newer stable version while satisfying every declared requirement that points to the same target location. For example, a vulnerable `brace-expansion@5.0.9` required as exact `5.0.9` by `nx@23.1.2` is ineligible, while a separate installation required as `^5.0.5` by `minimatch@10.2.5` can be eligible with `5.0.12` as the target version. The planner reports a possible update; it does not select or apply it.
+The strategy is `update-within-declared-range`. It groups compatible incoming consumers into upgrade actions. An exact pin can remain on the vulnerable version while a caret consumer moves to a safe version. Four compatible consumers accepting the same safe version form one action, not four findings. The planner is read-only.
 
 ## Requirements and installation
 
@@ -56,9 +56,17 @@ For each distinct vulnerable package, the planner invokes the separately install
 
 `minimumSafeVersion` is the lowest stable registry version that is newer than the installed version and outside every advisory range for that package/version. It is the same across target locations. Its registry release time is returned as `minimumSafeVersionReleasedAt`; that value is `null` if there is no newer safe version or the registry has no valid timestamp for it.
 
-`status` is evaluated per target location. The current strategy is eligible only when one newer safe version satisfies every declared requirement associated with that location. If no strategy can resolve the finding at that location, `status` is `ineligible` and `strategy` is `null`. When eligible, `strategy` identifies the package and version change that can remediate that location. The planner chooses the first eligible strategy in its configured order.
+`resolution` is evaluated per target location:
 
-The planner invokes `npm-dep-audit` and `npm-dep-versions` as standalone commands. It does not install dependencies, run lifecycle scripts, select an update, write a lockfile, or modify the target project.
+- `none`: no available action clears a vulnerable consumer branch; `choices` is empty.
+- `partial`: available actions clear some branches while incompatible consumers retain vulnerable versions.
+- `complete`: the action set clears every affected branch of this installation.
+
+`choices` contains one compatible set of actions to execute together, not alternatives to select between. Each action records its safe target version and original `affectedConsumers` by location, requested name, and declaration type. Splits and multi-action sets are checked together using the selected npm's read-only resolver in a private scratch project. Temporary scoped rules must be removable while retaining valid resolutions. The target project is unchanged, dependencies are not installed, and lifecycle scripts are not run during planning. Existing whole-target single-action checks remain metadata-based; the mutator independently verifies every execution.
+
+Unsupported isolation can produce `none` even when a safe version exists. Registry/resolver failures are errors rather than a no-solution report. Other installations remain separate findings. The installed version may split into safe and vulnerable copies, and npm may change their physical locations.
+
+The planner invokes audit and versions as standalone commands and loads the selected npm's bundled resolver when a split or action combination needs verification. Resolver metadata is revalidated using the effective project npm configuration. Install npm versions compatible with the Node version you run; Node 20 requires a compatible npm such as the tested npm 11 runtime.
 
 ## Cache behavior
 
@@ -79,54 +87,49 @@ Markdown starts with the tool name and contains one row per vulnerable installat
 ```markdown
 # npm-dep-upgrade-plan
 
-| ID | Package | Installed | Highest severity | Minimum safe version | Released at | Target location | Status | Strategy |
+| ID | Package | Installed | Highest severity | Minimum safe version | Released at | Target location | Resolution | Strategy |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| ea47178 | brace-expansion | 5.0.9 | <strong style="color: red">high</strong> | 5.0.12 | 2026-10-01 12:00:00.000 UTC | node\_modules/brace-expansion | eligible | Update within declared range |
+| ea47178 | brace-expansion | 5.0.9 | <strong style="color: red">high</strong> | 5.0.12 | 2026-10-01 12:00:00.000 UTC | node\_modules/brace-expansion | complete | Update within declared range |
 ```
 
 An empty report contains the title and `No vulnerable package findings.`, without a table. Highest severity uses the same bold and color styling as audit. Markdown and HTML characters in values display literally, and control characters appear as visible escapes; JSON preserves original strings.
 
 ## JSON contract
 
-Use `--format json` for the versioned consumer contract. Each row includes a full lowercase SHA-256 `id` of UTF-8 `package + "__" + targetLocation`. Markdown shows its first seven characters. The ID identifies the package/location within this project and does not depend on the installed version. The composite row identity is `package`, `version`, and `targetLocation`; multiple rows may share a package and version.
+Planner JSON uses `schemaVersion: 3`, with no compatibility reader or migration for version 2. Audit, paths, and versions retain their own schema version 2 contracts. Update planner and mutator together.
 
 ```json
 {
-  "schemaVersion": 2,
-  "auditedAt": "2026-10-13T06:00:00.000Z",
-  "rows": [
-    {
-      "id": "ea47178ea641751ab935afac50eb277e52a29d6778025d7ce978b0226d5967b1",
-      "package": "brace-expansion",
-      "version": "5.0.9",
+  "schemaVersion": 3,
+  "auditedAt": "2026-10-23T06:00:00.000Z",
+  "rows": [{
+    "id": "ea47178ea641751ab935afac50eb277e52a29d6778025d7ce978b0226d5967b1",
+    "package": "brace-expansion",
+    "version": "5.0.9",
+    "targetLocation": "node_modules/brace-expansion",
+    "severity": "high",
+    "minimumSafeVersion": "5.0.12",
+    "minimumSafeVersionReleasedAt": "2026-10-01T12:00:00.000Z",
+    "resolution": "partial",
+    "choices": [{
+      "strategy": "update-within-declared-range",
+      "targetPackage": "brace-expansion",
       "targetLocation": "node_modules/brace-expansion",
-      "severity": "high",
-      "minimumSafeVersion": "5.0.12",
-      "minimumSafeVersionReleasedAt": "2026-10-01T12:00:00.000Z",
-      "status": "eligible",
-      "strategy": {
-        "id": "update-within-declared-range",
-        "targetPackage": "brace-expansion",
-        "currentVersion": "5.0.9",
-        "targetVersion": "5.0.12"
-      }
-    },
-    {
-      "id": "eaddeac214c24d42eb5ca413c98c9a8fb9958b89ded137215d73322ab22bfb78",
-      "package": "brace-expansion",
-      "version": "5.0.9",
-      "targetLocation": "node_modules/nx/node_modules/brace-expansion",
-      "severity": "high",
-      "minimumSafeVersion": "5.0.12",
-      "minimumSafeVersionReleasedAt": "2026-10-01T12:00:00.000Z",
-      "status": "ineligible",
-      "strategy": null
-    }
-  ]
+      "currentVersion": "5.0.9",
+      "targetVersion": "5.0.12",
+      "affectedConsumers": [{
+        "location": "node_modules/minimatch",
+        "requestedName": "brace-expansion",
+        "type": "dependencies"
+      }]
+    }]
+  }]
 }
 ```
 
-The JSON report retains the audit timestamp and highest severity, but does not repeat advisory details or declared requirements from `npm-dep-audit`. Markdown uses the **Highest severity** heading and the same bold and color styling as `npm-dep-audit`. An empty audit produces `rows: []` in JSON and a clear no-findings message in Markdown. A completed report exits 0 even when every row is ineligible.
+Each ID is the full lowercase SHA-256 of `package + "__" + targetLocation`; Markdown shows seven characters. Version, resolution, and action count do not change this identity. Another installation location gets another ID even for the same package/version.
+
+The old `status` and singular `strategy` fields are removed. No choice IDs, ancestor-search fields, or complete-resolution option groups are emitted. An empty report has `rows: []`; completed reports exit 0, including all-`none` reports. Findings omit full advisory details and declarations, which remain available from audit.
 
 ## Supported projects
 
@@ -146,7 +149,7 @@ The [planner design](../../docs/superpowers/specs/2026-10-13-npm-dep-upgrade-pla
 
 ## Applying a recommendation
 
-The separate [npm-dep-upgrade](../npm-dep-upgrade/README.md) command reruns this planner and accepts a full item ID or a unique prefix of at least seven hexadecimal characters, optionally with `--package <exact-name>`. It applies one installation per invocation and commits verified dependency-file changes. IDs do not encode the old version; the current planner report determines eligibility. The mutator independently chooses the newest safe stable release within every original incoming range and the effective age policy, rather than assuming that every version above the minimum is safe.
+The separate [npm-dep-upgrade](../npm-dep-upgrade/README.md) command reruns this planner and accepts a full item ID or a unique prefix of at least seven hexadecimal characters, optionally with `--package <exact-name>`. It executes all planned actions for one finding per invocation and commits each actual upgrade separately. Partial findings are executable; `none` findings are rejected. IDs do not encode the old version; the current planner report determines eligibility. The mutator independently chooses the newest safe stable release within the original incoming ranges of its selected consumers and the effective age policy, rather than assuming that every version above the minimum is safe.
 
 ## Debug logging
 
