@@ -44,7 +44,7 @@ test('direct transaction verifies then commits before emitting a completed resul
     lock.packages[''] = manifest
     lock.packages['node_modules/e2e-target'].version = '6.0.12'
     const files = { 'package.json': Buffer.from(JSON.stringify(manifest)), 'package-lock.json': Buffer.from(JSON.stringify(lock)) }
-    const expected = { nodes: new Map([...graph.nodes].map(([loc, node]) => [loc, loc === item.targetLocation ? { ...node, version: '6.0.12' } : node])), edges: graph.edges }
+    const expected = { nodes: new Map([...graph.nodes].map(([loc, node]) => [loc, loc === item.targetLocation ? { ...node, version: '6.0.12' } : node])), edges: graph.edges.map(edge => ({ ...edge, rawSpec: '^6.0.12', effectiveSpec: '^6.0.12' })) }
     return { snapshots: [{ choiceIndex: 0, files, graph: expected, candidate: { version: '6.0.12' }, changedVersions: new Map([['e2e-target', ['6.0.12']]]), supportingChanges: [] }], actions: [{ ...item.choices[0], outcome: 'applied' }], coverage: { resolution: 'complete' } }
   }, loadNpmContext: async () => ({ minAgeDays: 7, installArgs: ['install', '--ignore-scripts', '--min-release-age=7'] }), readCatalog: async () => ({ versions: ['6.0.12'], releaseTimes: new Map([['6.0.12', '2026-01-01T00:00:00Z']]) }), readCandidateAdvisories: async () => new Map(), installProject: async (installRoot) => {
     events.push('install')

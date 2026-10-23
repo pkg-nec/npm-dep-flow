@@ -42,6 +42,9 @@ export async function executeActions(project, item, evidence, context, adapters)
       changedVersions.set(node.name, [...new Set([...(changedVersions.get(node.name) || []), node.version])])
       if (node.name !== item.package) supportingChanges.push({ package: node.name, oldLocation: previous.nodes.has(location) ? location : null, newLocation: location, oldVersion: previous.nodes.get(location)?.version || null, newVersion: node.version })
     }
+    for (const [location, node] of previous.nodes) {
+      if (location && node.name !== item.package && !current.nodes.has(location)) supportingChanges.push({ package: node.name, oldLocation: location, newLocation: null, oldVersion: node.version, newVersion: null })
+    }
     const coverage = verifyCoverage(evidence, current)
     if (coverage.resolution === 'none') fail('NO_CHANGES', 'verification', 'Upgrade did not clear any vulnerable consumer')
     snapshots.push({ choiceIndex, files, graph: current, changedVersions, supportingChanges, candidate: candidates[choiceIndex] })

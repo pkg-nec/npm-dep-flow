@@ -21,5 +21,16 @@ export function verifyInstalledGraph(expected, actual) {
     const locked = expected.nodes.get(location)
     if (!locked || node.name !== locked.name || node.version !== locked.version) fail('TARGET_MISMATCH', 'verification', `Installed dependency differs from verified graph: ${location}`)
   }
-  for (const edge of expected.edges) if (actual.nodes.has(edge.from) && edge.to !== null && !actual.nodes.has(edge.to) && !edge.optional) fail('INVALID_GRAPH', 'verification', 'Installed tree omits a required verified dependency')
+  const expectedEdges = new Map(expected.edges.map(edge => [consumerKey(edge), edge]))
+  const actualEdges = new Map(actual.edges.map(edge => [consumerKey(edge), edge]))
+  for (const edge of actual.edges) {
+    if (edge.to === null && edge.optional) continue
+    if (edge.valid === false || edge.to === null || !actual.nodes.has(edge.to)) fail('INVALID_GRAPH', 'verification', 'Installed tree contains an invalid required dependency')
+    const locked = expectedEdges.get(consumerKey(edge))
+    if (!locked || edge.to !== locked.to || edge.rawSpec !== locked.rawSpec || edge.effectiveSpec !== locked.effectiveSpec || Boolean(edge.optional) !== Boolean(locked.optional)) fail('INVALID_GRAPH', 'verification', 'Installed dependency relationship differs from verified graph')
+  }
+  for (const edge of expected.edges) {
+    if (!actual.nodes.has(edge.from) || edge.optional) continue
+    if (edge.to === null || !actual.nodes.has(edge.to) || !actualEdges.has(consumerKey(edge))) fail('INVALID_GRAPH', 'verification', 'Installed tree omits a required verified dependency')
+  }
 }

@@ -40,3 +40,25 @@ test('preserves the first commit when the second commit hook rejects', async (t)
   assert.equal((await runGit(f.root, ['diff', '--cached', '--name-only'])).trim(), '')
   assert.deepEqual(await readFile(f.root + '/package.json'), snapshots[1].files['package.json'])
 })
+
+test('reports a created commit when post-commit file verification fails', async (t) => {
+  const { writeFile } = await import('node:fs/promises')
+  const f = await gitProject(t), guard = await preflightGit(f.root), initial = guard.head
+  const manifest = { ...f.manifest, dependencies: { 'e2e-target': '^6.0.12' } }, lock = structuredClone(f.lock)
+  lock.packages[''] = manifest
+  lock.packages['node_modules/e2e-target'].version = '6.0.12'
+  const snapshot = { choiceIndex: 0, files: { 'package.json': Buffer.from(JSON.stringify(manifest)), 'package-lock.json': Buffer.from(JSON.stringify(lock)) } }
+  await writeFile(f.repo + '/empty-hooks/post-commit', '#!/bin/sh\nprintf "\\n" >> package-lock.json\n', { mode: 0o755 })
+  let failure
+  try {
+    await commitSnapshots(guard, [snapshot], [{ strategy: 'update-within-declared-range', targetPackage: 'e2e-target', currentVersion: '6.0.9', targetVersion: '6.0.12' }], {}, {}, { prepareSnapshot: async () => {} })
+  }
+  catch (error) { failure = error }
+  assert.ok(failure)
+  const head = (await runGit(f.root, ['rev-parse', 'HEAD'])).trim()
+  assert.notEqual(head, initial)
+  assert.equal(failure.committed.length, 1)
+  assert.equal(failure.committed[0].hash, head)
+  assert.ok(failure.message.includes(head))
+  assert.deepEqual(await readFile(f.root + '/package-lock.json'), Buffer.concat([snapshot.files['package-lock.json'], Buffer.from('\n')]))
+})

@@ -201,3 +201,24 @@ assert.deepEqual(committedDependencyStates, verifiedSnapshotStates)
 ## Execution handoff
 
 Review this plan before implementation and choose native or subagent-driven execution. Execute PR 1 independently; PR 2 has its own dependent plan. Do not implement product code before that review.
+
+
+## Native execution record
+
+PR 1 implemented Tasks 1–7. Parent discovery and parent upgrade execution remain deferred to PR 2. Native execution used one independent final review and one correction pass; no second review was requested. The review found three important issues, all reproduced before correction: installed verification missed tarball-only dependency edges, post-commit verification failures omitted a created commit, and supporting changes omitted removals. Corrections read installed manifests without the hidden-lock shortcut, compare installed relationships with the verified graph, preserve independently verified commit evidence, and report removed supporting installations. No minor findings were deferred.
+
+Implementation rulings and their costs:
+
+- Keep scratch, test logs, and the execution ledger in the user-designated temporary directory; this requires manual bookkeeping instead of the skill's default scratch layout.
+- Run subprocess-heavy tests outside sandbox restrictions after EPERM/empty-output failures; this changes test execution permissions without a product workaround.
+- Read the planner's own virtual graph during scoped resolution instead of repeatedly invoking paths; this maintains another graph adapter while preserving the public sibling CLI boundary.
+- Keep pure synchronous strategy evaluation and coordinate asynchronous split verification in the CLI; this adds a coordinator step while retaining cheap evaluator tests.
+- Keep ordinary single-action, whole-installation planning metadata-only, and verify new consumer splits and multiple-action sets with npm; execution always performs fresh installed verification.
+- Keep independent resolver workers inside the two tools to avoid sibling private imports; duplicated resolution logic must be maintained and tested on both runtimes.
+- Commit Tasks 5 and 6 together because the executor result and snapshot publication must work together; the executor commit is correspondingly larger.
+- Prefer real-npm transaction scenarios over a second heavily mocked transaction harness; feedback is slower but exercises actual split behavior and reproducible lockfiles.
+- Restore owned dependency files after a first commit failure when guards permit; retain a committed prefix after subsequent failures. Recovery may require rebuilding node_modules and never resets history or overwrites concurrent edits.
+
+Release versions remain planner 0.7.0 and mutator 0.4.0. Schema 3 is required; no version 2 migration is included. Parent strategy work remains intentionally outside this review.
+
+Final verification: planner/public audit integration 100 passed with one optional skip; mutator units 89 passed; real-npm E2E matrix 134 passed on npm 12.1.0 and npm 11.10.0; shared lint passed with zero warnings. Node 20.20.2 with compatible npm 11 passed the read-only split resolver check. Release metadata is synchronized and both changed CLI help outputs were inspected.

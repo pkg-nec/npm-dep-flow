@@ -27,3 +27,12 @@ for (const variant of ['R01', 'R03 missing', 'R03 invalid', 'R04 A', 'R04 C']) t
   const f = await createProject(s, {}, t), [row] = await plan(f)
   await assertSuccess(f, await runUpgrade(f, [row.id, '--format', 'json']), expected)
 })
+
+test('reports supporting dependency removals in the action result', async (t) => {
+  const scenario = supporting()
+  for (const version of ['6.0.10', '6.0.12']) delete scenario.packages['e2e-target'][version].manifest.dependencies
+  const f = await createProject(scenario, {}, t), [row] = await plan(f)
+  const result = await runUpgrade(f, [row.id, '--format', 'json'])
+  assert.equal(result.code, 0, result.stderr)
+  assert.deepEqual(JSON.parse(result.stdout).actions[0].supportingChanges, [{ package: 'e2e-helper', oldLocation: 'node_modules/e2e-helper', newLocation: null, oldVersion: '2.0.5', newVersion: null }])
+})

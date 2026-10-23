@@ -4,8 +4,10 @@ import { assertGitState, commitUpgrade } from './git.js'
 import { recordOwnedFiles } from './recovery.js'
 export async function commitSnapshots(guard, snapshots, actions, context, options, adapters) {
   const commits = []
+  let activeSnapshot
   try {
     for (const snapshot of snapshots) {
+      activeSnapshot = snapshot
       await assertGitState(guard, 'before-snapshot')
       for (const [name, bytes] of Object.entries(snapshot.files)) {
         await assertGitState(guard, 'before-snapshot-write')
@@ -24,6 +26,7 @@ export async function commitSnapshots(guard, snapshots, actions, context, option
     return commits
   }
   catch (error) {
+    if (error.createdCommit) commits.push({ ...error.createdCommit, actionIndex: activeSnapshot.choiceIndex })
     error.committed = commits
     if (commits.length) error.message += `; completed commits: ${commits.map(c => c.hash).join(', ')}. Remaining verified dependency changes may be uncommitted`
     throw error

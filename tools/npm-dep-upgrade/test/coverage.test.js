@@ -19,3 +19,10 @@ test('installed verification rejects a changed supporting version', () => {
   const actual = { ...expected, nodes: new Map([['', expected.nodes.get('')], ['node_modules/helper', { name: 'helper', version: '1.0.0' }]]) }
   assert.throws(() => verifyInstalledGraph(expected, actual), /installed|verified/i)
 })
+test('installed verification rejects a missing required edge absent from registry metadata', () => {
+  const nodes = new Map([['', { name: 'app', version: '1.0.0' }], ['node_modules/a', { name: 'a', version: '1.2.5' }]])
+  const rootEdge = { from: '', to: 'node_modules/a', requestedName: 'a', type: 'dependencies', rawSpec: '^1', effectiveSpec: '^1', valid: true, optional: false }
+  const expected = { nodes, edges: [rootEdge] }
+  const actual = { nodes, edges: [rootEdge, { from: 'node_modules/a', to: null, requestedName: 'helper', type: 'dependencies', rawSpec: '^3', effectiveSpec: '^3', valid: false, optional: false }] }
+  assert.throws(() => verifyInstalledGraph(expected, actual), /installed|invalid|required/i)
+})

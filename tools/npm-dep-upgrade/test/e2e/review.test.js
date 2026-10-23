@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import path from 'node:path'
 import { readFile, writeFile } from 'node:fs/promises'
 import { createProject } from './helpers/project.js'
-import { direct, leaf, ago } from './fixtures/catalog.js'
+import { direct, leaf, ago, supporting } from './fixtures/catalog.js'
 import { plan, runUpgrade, assertSuccess, assertUnchanged } from './helpers/runner.js'
 import { installCheckpoints, checked } from './helpers/commands.js'
 test('review concurrent lock metadata is preserved and never committed', async (t) => {
@@ -58,4 +58,10 @@ test('review private install cannot publish unrelated manifest edits', async (t)
   }
   await installCheckpoints(f)
   await assertUnchanged(f, await runUpgrade(f, [row.id]), /manifest|package.json|mutation/i)
+})
+
+test('review installed tarball requirements must match verified registry relationships', async (t) => {
+  const scenario = supporting(), f = await createProject(scenario, {}, t), [row] = await plan(f)
+  for (const [version, data] of Object.entries(scenario.packages['e2e-target'])) if (version !== '6.0.9') delete data.manifest.dependencies
+  await assertUnchanged(f, await runUpgrade(f, [row.id]), /installed|invalid|required|dependency/i)
 })
