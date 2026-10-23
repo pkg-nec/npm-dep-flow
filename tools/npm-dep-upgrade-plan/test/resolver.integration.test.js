@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { readFile } from 'node:fs/promises'
+import path from 'node:path'
+import { readFile, access } from 'node:fs/promises'
 import { resolveChoices } from '../src/resolver.js'
 import { selectWithinRangeChoices } from '../src/coverage.js'
 import { createProject } from '../../npm-dep-upgrade/test/e2e/helpers/project.js'
@@ -15,6 +16,8 @@ for (const npmCli of [process.env.NPM_DEP_UPGRADE_E2E_NPM_CLI, process.env.NPM_D
   const before = await Promise.all(['package.json', 'package-lock.json'].map(name => readFile(`${f.root}/${name}`, 'utf8')))
   const result = await resolveChoices({ root: f.root }, { ...row, targetLocation: 'node_modules/e2e-target' }, choices, { env: f.env })
   assert.equal(result.coverage.resolution, 'partial')
+  await assert.rejects(access(path.join(f.root, 'node_modules')), { code: 'ENOENT' })
+  assert.equal(f.registry.calls.filter(c => c.phase !== 'seed' && c.path.startsWith('/tarballs/')).length, 0)
   assert.equal(result.choices.length, 1)
   assert.deepEqual(await Promise.all(['package.json', 'package-lock.json'].map(name => readFile(`${f.root}/${name}`, 'utf8'))), before)
   assert.equal(result.coverage.remainingConsumers[0].location, 'node_modules/e2e-parent-b')

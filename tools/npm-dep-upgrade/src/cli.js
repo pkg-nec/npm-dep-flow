@@ -1,6 +1,6 @@
 import { executeActions } from './transaction.js'
 import { commitSnapshots } from './commit-sequence.js'
-import { verifyCoverage } from './coverage.js'
+import { verifyCoverage, verifyInstalledGraph } from './coverage.js'
 import { runDebug } from './debug.js'
 import { readFile, writeFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
@@ -83,9 +83,10 @@ Upgrade one partial or complete planner installation in the selected project and
     const verifySnapshot = async (snapshot, root, currentContext) => {
       await d.installProject(root, installContext(currentContext), { stderr: io.stderr })
       const files = await readDependencyFiles(root)
-      for (const name of Object.keys(files)) if (!files[name].equals(snapshot.files[name])) throw new Error('npm changed verified dependency files')
+      for (const name of Object.keys(files)) if (!files[name].equals(snapshot.files[name])) throw new Error(`npm changed verified dependency file: ${name}`)
       await d.verifyFinalSecurity(evidence, snapshot.candidate, snapshot, { ...currentContext, projectRoot: root })
       const installed = await d.loadGraph(root, { actual: true })
+      verifyInstalledGraph(snapshot.graph, installed)
       const coverage = verifyCoverage(evidence, installed)
       for (const expected of snapshot.graph.edges.filter(edge => evidence.incoming.some(original => original.from === edge.from && original.requestedName === edge.requestedName && original.type === edge.type))) {
         const actual = installed.edges.find(edge => edge.from === expected.from && edge.requestedName === expected.requestedName && edge.type === expected.type)

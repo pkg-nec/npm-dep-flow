@@ -23,7 +23,7 @@ export async function executeActions(project, item, evidence, context, adapters)
   const auditRow = evidence.auditRows.find(row => row.package === item.package && row.version === item.version)
   await writeFile(request, JSON.stringify({ root: staging.root, projectRoot: project.root, npmPath: await resolveNpmPath(), item: { ...item, advisories: auditRow?.advisories || [] }, choices, startedAt: Date.now(), strict: true, enforceAge: true }), { mode: 0o600 })
   const response = await runProcess(process.execPath, [fileURLToPath(new URL('./resolver-worker.js', import.meta.url)), request], { cwd: staging.root })
-  if (response.code) fail('RESOLUTION_FAILED', 'resolution', 'Cannot resolve the selected upgrades safely; check dependency constraints and npm configuration')
+  if (response.code) fail('RESOLUTION_FAILED', 'resolution', 'Cannot resolve selected upgrades: unsupported consumer scope, conflicting constraints, peer requirements, or npm registry/configuration failure')
   let resolved
   try {
     resolved = JSON.parse(response.stdout)

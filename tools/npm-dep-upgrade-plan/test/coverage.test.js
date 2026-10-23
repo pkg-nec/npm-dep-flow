@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { consumerKey, selectWithinRangeChoices } from '../src/coverage.js'
+import { consumerKey, selectWithinRangeChoices, withRootDeclarations } from '../src/coverage.js'
 const location = 'node_modules/a'
 function row(specs) {
   return { package: 'a', version: '1.2.3', advisories: [{ range: '>=1.2.3 <1.2.5' }], requirements: specs.map(([name, spec, targetLocation = location]) => ({ declaredRequirement: spec, directDependents: [{ name, version: '1.0.0', location: `node_modules/${name}`, targetLocation, requestedName: 'a', type: 'dependencies' }] })) }
@@ -28,4 +28,12 @@ test('supports aliases and distinguishes consumer names and declaration fields',
   r.requirements[0].directDependents[0].requestedName = 'alias'
   assert.equal(selectWithinRangeChoices(r, location, ['1.2.5'])[0].affectedConsumers[0].requestedName, 'alias')
   assert.notEqual(consumerKey({ location: '', requestedName: 'a', type: 'dependencies' }), consumerKey({ location: '', requestedName: 'a', type: 'devDependencies' }))
+})
+test('root duplicate declarations all constrain the same consumer resolution', () => {
+  const r = row([['app', '~1.2.0']])
+  Object.assign(r.requirements[0].directDependents[0], { location: '', requestedName: 'a', type: 'devDependencies' })
+  const enriched = withRootDeclarations([r], { devDependencies: { a: '~1.2.0' }, peerDependencies: { a: '^1.2.0' } })
+  const choices = selectWithinRangeChoices(enriched[0], location, ['1.2.5'])
+  assert.deepEqual(choices[0].affectedConsumers.map(c => c.type).sort(), ['devDependencies', 'peerDependencies'])
+  assert.equal(r.requirements.length, 1)
 })

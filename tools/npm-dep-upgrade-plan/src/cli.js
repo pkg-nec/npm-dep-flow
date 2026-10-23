@@ -7,6 +7,7 @@ import { loadProject } from './project.js'
 import { readPlanningContext } from './context.js'
 import { parseArgs } from './args.js'
 import { runNpmDepAudit } from './audit.js'
+import { withRootDeclarations } from './coverage.js'
 import { resolveChoices } from './resolver.js'
 import { evaluateFindings } from './evaluate.js'
 import { runNpmDepVersions } from './versions.js'
@@ -56,6 +57,7 @@ async function mainWithDebug(argv, io = process, deps = defaults) {
       ttlMs: options.ttlMs, noCache: options.noCache,
     }, async () => {
       const auditReport = await deps.runNpmDepAudit(project.root, undefined, undefined, { noCache: options.noCache, ttlMs: options.ttlMs })
+      auditReport.rows = withRootDeclarations(auditReport.rows, JSON.parse(project.manifestBytes?.toString() || '{}'))
       const versionsByPackage = new Map()
       const packageNames = [...new Set(auditReport.rows.map(row => row.package))]
       let freshAt = Date.parse(auditReport.auditedAt)

@@ -24,3 +24,18 @@ export function selectWithinRangeChoices(row, targetLocation, catalog) {
   }
   return choices
 }
+
+// paths reports npm's effective root edge; duplicate root fields also constrain it.
+export function withRootDeclarations(rows, manifest) {
+  return rows.map((row) => {
+    const requirements = structuredClone(row.requirements)
+    const roots = requirements.flatMap(r => r.directDependents.filter(d => d.location === ''))
+    for (const root of roots) for (const type of ['dependencies', 'devDependencies', 'optionalDependencies', 'peerDependencies']) {
+      const spec = manifest[type]?.[root.requestedName]
+      if (typeof spec !== 'string' || (type === 'dependencies' && Object.hasOwn(manifest.optionalDependencies || {}, root.requestedName))) continue
+      if (requirements.some(r => r.directDependents.some(d => d.location === '' && d.requestedName === root.requestedName && d.type === type))) continue
+      requirements.push({ declaredRequirement: spec, directDependents: [{ ...root, type }] })
+    }
+    return { ...row, requirements }
+  })
+}

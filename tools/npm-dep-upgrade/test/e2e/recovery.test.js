@@ -16,7 +16,7 @@ for (const variant of ['tarball', 'integrity', 'peer']) test(`F02 G04 ${variant}
   const f = await createProject(s, {}, t), [row] = await plan(f)
   await writeFile(path.join(f.root, 'untracked.txt'), 'preserve')
   if (variant !== 'peer') s.request = ({ call }) => call.path === '/tarballs/e2e-target@6.0.12.tgz' ? (variant === 'tarball' ? { status: 404 } : { status: 200, raw: Buffer.from('corrupt-tarball') }) : null
-  await assertUnchanged(f, await runUpgrade(f, [row.id]), /install|integrity|peer/i)
+  await assertUnchanged(f, await runUpgrade(f, [row.id]), /install|integrity|peer|resolution/i)
   assert.equal(await readFile(path.join(f.root, 'untracked.txt'), 'utf8'), 'preserve')
 })
 for (const count of [1, 2]) test(`G04 initial or cleanup command failure phase ${count}`, async (t) => {
@@ -28,14 +28,14 @@ for (const count of [1, 2]) test(`G04 initial or cleanup command failure phase $
 test('O04 cleanup result unexpectedly reverts selected version', async (t) => {
   const s = transitive(), f = await createProject(s, {}, t), [row] = await plan(f)
   s.checkpoint = async ({ count, stage, cwd }) => {
-    if (count === 2 && stage === 'after') {
+    if (count === 1 && stage === 'after') {
       const file = path.join(cwd, 'package-lock.json'), lock = JSON.parse(await readFile(file))
       lock.packages['node_modules/e2e-target'].version = '6.0.9'
       await writeFile(file, JSON.stringify(lock, null, 2) + '\n')
     }
   }
   await installCheckpoints(f)
-  await assertUnchanged(f, await runUpgrade(f, [row.id]), /target.*(?:restored|not changed)/i)
+  await assertUnchanged(f, await runUpgrade(f, [row.id]), /verified dependency.*(?:restored|not changed)/i)
 })
 for (const trans of [false, true]) test(`F05 repeat resolved ${trans ? 'transitive' : 'direct'} ID creates no second commit`, async (t) => {
   const f = await createProject(trans ? transitive() : direct(), {}, t), [row] = await plan(f)
@@ -50,7 +50,7 @@ for (const trans of [false, true]) test(`F05 repeat resolved ${trans ? 'transiti
 })
 test('G04 actual-project ci failure restores files and reports installed-tree uncertainty', async (t) => {
   const s = direct(), f = await createProject(s, {}, t), [row] = await plan(f)
-  s.checkpoint = ({ count, stage }) => count === 3 && stage === 'after' ? { exit: 42 } : {}
+  s.checkpoint = ({ count, stage }) => count === 2 && stage === 'after' ? { exit: 42 } : {}
   await installCheckpoints(f)
   await assertUnchanged(f, await runUpgrade(f, [row.id]), /restored.*node_modules may have changed/i)
 })

@@ -15,3 +15,11 @@ export function verifyCoverage(evidence, currentGraph) {
   }
   return { resolution: !clearedConsumers.length ? 'none' : remainingConsumers.length ? 'partial' : 'complete', clearedConsumers, remainingConsumers }
 }
+
+export function verifyInstalledGraph(expected, actual) {
+  for (const [location, node] of actual.nodes) {
+    const locked = expected.nodes.get(location)
+    if (!locked || node.name !== locked.name || node.version !== locked.version) fail('TARGET_MISMATCH', 'verification', `Installed dependency differs from verified graph: ${location}`)
+  }
+  for (const edge of expected.edges) if (actual.nodes.has(edge.from) && edge.to !== null && !actual.nodes.has(edge.to) && !edge.optional) fail('INVALID_GRAPH', 'verification', 'Installed tree omits a required verified dependency')
+}

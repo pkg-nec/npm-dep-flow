@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { verifyCoverage } from '../src/coverage.js'
+import { verifyCoverage, verifyInstalledGraph } from '../src/coverage.js'
 const before = { nodes: new Map([['old', { name: 'a', version: '1.2.3' }]]), edges: [{ from: 'b', to: 'old', requestedName: 'a', type: 'dependencies', rawSpec: '1.2.3' }, { from: 'c', to: 'old', requestedName: 'a', type: 'dependencies', rawSpec: '^1.2.0' }] }
 const item = { package: 'a', version: '1.2.3', targetLocation: 'old' }
 const evidence = { item, graph: before, incoming: before.edges, auditRows: [{ package: 'a', version: '1.2.3', advisories: [{ range: '<1.2.5' }] }] }
@@ -13,4 +13,9 @@ test('does not mistake a missing or relocated vulnerable dependency for remediat
   assert.throws(() => verifyCoverage(evidence, { nodes: before.nodes, edges: [before.edges[0]] }), /consumer|requirement/i)
   const after = { nodes: new Map([['moved', { name: 'a', version: '1.2.3' }]]), edges: before.edges.map(e => ({ ...e, to: 'moved' })) }
   assert.equal(verifyCoverage(evidence, after).resolution, 'none')
+})
+test('installed verification rejects a changed supporting version', () => {
+  const expected = { nodes: new Map([['', { name: 'app', version: '1.0.0' }], ['node_modules/helper', { name: 'helper', version: '2.0.0' }]]), edges: [{ from: '', to: 'node_modules/helper', optional: false }] }
+  const actual = { ...expected, nodes: new Map([['', expected.nodes.get('')], ['node_modules/helper', { name: 'helper', version: '1.0.0' }]]) }
+  assert.throws(() => verifyInstalledGraph(expected, actual), /installed|verified/i)
 })

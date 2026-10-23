@@ -24,7 +24,7 @@ test('debug follows the real CLI chain, preserves caches and logs upgrade HTTP, 
   await assertSuccess(f, result)
   assert.match(result.stderr, /http.*"method":"POST".*security\/advisories\/bulk/)
   assert.match(result.stderr, /http status=200/)
-  assert.match(result.stderr, /"args":\["install"/)
+  assert.match(result.stderr, /"args":\["ci"/)
   assert.match(result.stderr, /"args":\["ci"/)
   assert.match(result.stderr, /"command":"git"/)
   assert.match(result.stderr, /"hook","run"/)

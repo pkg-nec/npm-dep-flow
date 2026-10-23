@@ -4,9 +4,9 @@ import { createProject } from './helpers/project.js'
 import { supporting, direct, ago } from './fixtures/catalog.js'
 import { plan, runUpgrade, assertSuccess, assertResolved } from './helpers/runner.js'
 for (const multiple of [false, true]) test(`${multiple ? 'S02' : 'S01'} supporting helper major update`, async (t) => {
-  const f = await createProject(supporting(multiple), {}, t), rows = await plan(f), row = rows.find(r => r.package === 'e2e-target' && r.status === 'eligible')
+  const f = await createProject(supporting(multiple), {}, t), rows = await plan(f), row = rows.find(r => r.package === 'e2e-target' && r.resolution !== 'none')
   const output = await assertSuccess(f, await runUpgrade(f, [row.id, '--format', 'json']), undefined, { reproduce: true })
-  assert.ok(output.supportingChanges.some(c => c.package === 'e2e-helper' && c.newVersion === '3.0.2'))
+  assert.ok(output.actions[0].supportingChanges.some(c => c.package === 'e2e-helper' && c.newVersion === '3.0.2'))
   if (multiple) {
     await assertResolved(f, 'node_modules/e2e-parent-b', 'e2e-target', '6.0.9')
     await assertResolved(f, '', 'e2e-unrelated', '1.0.0')

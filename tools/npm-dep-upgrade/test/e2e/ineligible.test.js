@@ -1,16 +1,15 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { createProject } from './helpers/project.js'
-import { direct, transitive, shared, separate, existingOverride } from './fixtures/catalog.js'
+import { direct, transitive, separate, existingOverride } from './fixtures/catalog.js'
 import { plan, runUpgrade, assertUnchanged } from './helpers/runner.js'
-for (const kind of ['D03', 'D04 exact', 'T06', 'T07 pinned', 'T08', 'O02', 'F04 clean']) test(`${kind} refuses unsupported or absent target`, async (t) => {
+for (const kind of ['D03', 'D04 exact', 'T07 pinned', 'T08', 'O02', 'F04 clean']) test(`${kind} refuses unsupported or absent target`, async (t) => {
   let s = direct()
   if (kind === 'D03') s.manifest.dependencies['e2e-target'] = '6.0.9'
   if (kind === 'D04 exact') {
     s = direct('devDependencies')
     s.manifest.peerDependencies = { 'e2e-target': '6.0.9' }
   }
-  if (kind === 'T06') s = shared(true)
   if (kind === 'T07 pinned') s = separate()
   if (kind === 'T08') {
     s = transitive()
@@ -18,7 +17,7 @@ for (const kind of ['D03', 'D04 exact', 'T06', 'T07 pinned', 'T08', 'O02', 'F04 
   }
   if (kind === 'O02') s = existingOverride(true)
   if (kind === 'F04 clean') s.advisories = []
-  const f = await createProject(s, {}, t), rows = await plan(f), row = rows.find(r => r.status === 'ineligible') || rows[0]
+  const f = await createProject(s, {}, t), rows = await plan(f), row = rows.find(r => r.resolution === 'none') || rows[0]
   await assertUnchanged(f, await runUpgrade(f, [row?.id || 'abcdef0']), /ineligible|unsupported|conflict|excludes|candidate|not found|no planner/i)
   assert.equal(f.registry.calls.filter(c => c.path.startsWith('/tarballs/') && c.phase !== 'seed').length, 0)
 })

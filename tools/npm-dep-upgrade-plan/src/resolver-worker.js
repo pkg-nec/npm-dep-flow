@@ -31,15 +31,16 @@ function closure(g, starts) {
   }
   return found
 }
-function verify(before, after, item, choices, semver) {
+export function verifyResolution(before, after, item, choices, semver) {
   const oldNodes = new Map(before.nodes.map(n => [n.location, n])), nodes = new Map(after.nodes.map(n => [n.location, n]))
   const selected = new Map(choices.flatMap(c => c.affectedConsumers.map(e => [key(e), c])))
   const oldIncoming = before.edges.filter(e => e.to === item.targetLocation)
   for (const n of before.nodes) if (n.location && n.name !== item.package && !equal(n, nodes.get(n.location)) && !closure(before, [item.targetLocation]).has(n.location)) throw new Error('Unrelated parent installation changed')
   for (const old of before.edges) {
-    if (!oldIncoming.includes(old) && !old.from) continue
+    const oldNode = oldNodes.get(old.to)
+    if (oldNode?.name !== item.package) continue
     const current = after.edges.find(e => key(e) === key(old))
-    const oldNode = oldNodes.get(old.to), currentNode = nodes.get(current?.to)
+    const currentNode = nodes.get(current?.to)
     if (oldIncoming.includes(old)) {
       const choice = selected.get(key(old))
       if (!currentNode || currentNode.name !== item.package || !semver.validRange(old.rawSpec) || !semver.satisfies(currentNode.version, old.rawSpec)) throw new Error('Original consumer requirement not satisfied')
@@ -63,7 +64,8 @@ function mergeRule(base, route, name, version, nodes, rootEdges, semver) {
   else {
     const existing = typeof value[name] === 'string' ? value[name] : value[name]?.['.']
     if (existing && (!semver.validRange(existing) || !semver.satisfies(version, existing))) throw new Error('Unsupported existing override policy')
-    value[name] = value[name] && typeof value[name] === 'object' ? { ...value[name], '.': version } : version
+    const requirement = version.includes('+') ? `>=${version} <=${version}` : version
+    value[name] = value[name] && typeof value[name] === 'object' ? { ...value[name], '.': requirement } : requirement
   }
   return { [selector]: value, ...Object.fromEntries(Object.entries(base).filter(([k]) => k !== selector)) }
 }
@@ -102,7 +104,7 @@ export async function resolveRequest(request) {
       const newline = startFiles[0].includes('\r\n') ? '\r\n' : '\n'
       finalManifest = Buffer.from(JSON.stringify(manifest, null, indent).replaceAll('\n', newline) + (startFiles[0].toString().endsWith('\n') ? newline : ''))
       mutation = structuredClone(manifest)
-      for (const e of choice.affectedConsumers.filter(e => e.location === '')) mutation[e.type][e.requestedName] = choice.targetVersion
+      for (const e of choice.affectedConsumers.filter(e => e.location === '')) mutation[e.type][e.requestedName] = choice.targetVersion.includes('+') ? `>=${choice.targetVersion} <=${choice.targetVersion}` : choice.targetVersion
     }
     else {
       let routes = choice.affectedConsumers.map(e => [e.location]), matched = false
@@ -147,7 +149,7 @@ export async function resolveRequest(request) {
     await tree.meta.save()
     const after = graph(tree)
     try {
-      verify(before, after, request.item, [...accepted, choice], semver)
+      verifyResolution(before, after, request.item, [...accepted, choice], semver)
     }
     catch (error) {
       await Promise.all(['package.json', 'package-lock.json'].map((n, i) => writeFile(path.join(request.root, n), startFiles[i])))

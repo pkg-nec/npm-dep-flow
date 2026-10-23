@@ -148,20 +148,22 @@ test('planner consumes JSON emitted by the real npm-dep-audit CLI', { skip: !ena
 
   assert.equal(result.status, 0, JSON.stringify(result, null, 2))
   const report = JSON.parse(result.stdout)
-  assert.equal(report.schemaVersion, 2)
+  assert.equal(report.schemaVersion, 3)
   assert.equal(report.rows[0].package, 'brace-expansion')
   assert.equal(report.rows[0].version, '5.0.9')
   assert.equal(report.rows[0].targetLocation, 'node_modules/brace-expansion')
   assert.equal(report.rows[0].severity, 'high')
   assert.equal(report.rows[0].minimumSafeVersion, '5.0.12')
   assert.equal(report.rows[0].minimumSafeVersionReleasedAt, '2026-10-01T12:00:00.000Z')
-  assert.equal(report.rows[0].status, 'eligible')
-  assert.deepEqual(report.rows[0].strategy, {
-    id: 'update-within-declared-range',
+  assert.equal(report.rows[0].resolution, 'complete')
+  assert.deepEqual(report.rows[0].choices, [{
+    strategy: 'update-within-declared-range',
+    targetLocation: 'node_modules/brace-expansion',
+    affectedConsumers: [{ location: '', requestedName: 'brace-expansion', type: 'dependencies' }],
     targetPackage: 'brace-expansion',
     currentVersion: '5.0.9',
     targetVersion: '5.0.12',
-  })
+  }])
   assert.equal('advisories' in report.rows[0], false)
   assert.equal('requirements' in report.rows[0], false)
 
