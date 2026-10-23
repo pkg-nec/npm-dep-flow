@@ -61,7 +61,7 @@ test('renders one Markdown row per package version and target location', () => {
   assert.equal(resultRows.length, 2)
   assert.match(markdown, /\| ID \| Package \| Installed \| Highest severity \| Minimum safe version \| Released at \| Target location \| Status \| Strategy \|/)
   assert.match(markdown, /<strong style="color: red">high<\/strong>/)
-  assert.match(markdown, /Update within declared range: brace-expansion@5\.0\.9 → brace-expansion@5\.0\.12/)
+  assert.match(markdown, /Update within declared range \|/)
   assert.ok(resultRows.some(line => line.includes('| ineligible | — |')))
   assert.ok(resultRows.some(line => line.includes('node\\_modules/nx/node\\_modules/brace-expansion')))
   assert.doesNotMatch(markdown, /Advisories|Requirement|Direct dependent/)

@@ -228,7 +228,7 @@ test('main evaluates every link and renders findings by severity', async () => {
   assert.equal(lines[3].includes('| brace-expansion |') && lines[4].includes('| brace-expansion |'), true)
   assert.match(io.stdout, /Highest severity/)
   assert.match(io.stdout, /node\\_modules\/nx\/node\\_modules\/brace-expansion \| ineligible \| —/)
-  assert.match(io.stdout, /node\\_modules\/brace-expansion \| eligible \| Update within declared range: brace-expansion@5\.0\.9 → brace-expansion@5\.0\.12/)
+  assert.match(io.stdout, /node\\_modules\/brace-expansion \| eligible \| Update within declared range \|/)
 })
 
 test('main returns success when all links are ineligible', async () => {
@@ -350,7 +350,7 @@ test('executable emits Markdown and JSON, distinguishes both brace-expansion lin
   const markdown = fixture.run([])
   assert.equal(markdown.status, 0, JSON.stringify(markdown, null, 2))
   assert.match(markdown.stdout, /node\\_modules\/nx\/node\\_modules\/brace-expansion \| ineligible \| —/)
-  assert.match(markdown.stdout, /node\\_modules\/brace-expansion \| eligible \| Update within declared range: brace-expansion@5\.0\.9 → brace-expansion@5\.0\.12/)
+  assert.match(markdown.stdout, /node\\_modules\/brace-expansion \| eligible \| Update within declared range \|/)
   assert.deepEqual(readFileSync(path.join(fixture.project, 'package.json')), manifestBefore)
   assert.deepEqual(readFileSync(path.join(fixture.project, 'package-lock.json')), lockBefore)
 

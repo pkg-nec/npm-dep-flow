@@ -81,7 +81,7 @@ Markdown starts with the tool name and contains one row per vulnerable installat
 
 | ID | Package | Installed | Highest severity | Minimum safe version | Released at | Target location | Status | Strategy |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| ea47178 | brace-expansion | 5.0.9 | <strong style="color: red">high</strong> | 5.0.12 | 2026-10-01 12:00:00.000 UTC | node\_modules/brace-expansion | eligible | Update within declared range: brace-expansion@5.0.9 → brace-expansion@5.0.12 |
+| ea47178 | brace-expansion | 5.0.9 | <strong style="color: red">high</strong> | 5.0.12 | 2026-10-01 12:00:00.000 UTC | node\_modules/brace-expansion | eligible | Update within declared range |
 ```
 
 An empty report contains the title and `No vulnerable package findings.`, without a table. Highest severity uses the same bold and color styling as audit. Markdown and HTML characters in values display literally, and control characters appear as visible escapes; JSON preserves original strings.

@@ -88,9 +88,7 @@ function renderSeverity(value) {
 function renderStrategy(strategy) {
   if (!strategy) return '—'
   const label = escapeMarkdown(strategyLabels.get(strategy.id) ?? strategy.id)
-  const current = `${escapeMarkdown(strategy.targetPackage)}@${escapeMarkdown(strategy.currentVersion)}`
-  const target = `${escapeMarkdown(strategy.targetPackage)}@${escapeMarkdown(strategy.targetVersion)}`
-  return `${label}: ${current} → ${target}`
+  return label
 }
 
 export function renderMarkdown(rows) {
