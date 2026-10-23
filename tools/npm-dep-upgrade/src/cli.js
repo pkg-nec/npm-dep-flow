@@ -1,3 +1,6 @@
+import { executeActions } from './transaction.js'
+import { commitSnapshots } from './commit-sequence.js'
+import { verifyCoverage } from './coverage.js'
 import { runDebug } from './debug.js'
 import { readFile, writeFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
@@ -5,7 +8,7 @@ import path from 'node:path'
 import { parseArgs } from './args.js'
 import { resolveOptions } from './config.js'
 import { preflightGit, assertGitState, readDependencyFiles, commitUpgrade } from './git.js'
-import { recordOwnedFiles, restoreDependencyFiles } from './recovery.js'
+import { restoreDependencyFiles } from './recovery.js'
 import { loadProject } from './project.js'
 import { loadGraph } from './graph.js'
 import { readPlanner, selectItem } from './planner.js'
@@ -19,7 +22,7 @@ import { createStagingProject } from './staging.js'
 import { verifyGraph, verifyFinalSecurity } from './verify.js'
 import { renderJson, renderMarkdown } from './report.js'
 const toolRoot = fileURLToPath(new URL('../', import.meta.url))
-const defaults = { preflightGit, assertGitState, loadProject, loadGraph, readPlanner, readEvidence, loadNpmContext, readCatalog, readCandidateAdvisories, selectCandidate, buildMutation, writeMutation, installProject, createStagingProject, verifyGraph, verifyFinalSecurity, commitUpgrade }
+const defaults = { executeActions, commitSnapshots, preflightGit, assertGitState, loadProject, loadGraph, readPlanner, readEvidence, loadNpmContext, readCatalog, readCandidateAdvisories, selectCandidate, buildMutation, writeMutation, installProject, createStagingProject, verifyGraph, verifyFinalSecurity, commitUpgrade }
 export async function main(argv, io = process, overrides = {}) {
   try {
     const options = await resolveOptions(parseArgs(argv))
@@ -58,7 +61,7 @@ Options:
   --version                         Show version and tool directory
   --help                            Show this help
 
-Upgrade one eligible planner installation in the selected project and commit the verified dependency files.
+Upgrade one partial or complete planner installation in the selected project and commit the verified dependency files.
 `
       io.stdout.write(options.action === 'version' ? `${pkg.name} v${pkg.version}\nLocation: ${toolRoot}\n` : help)
       return 0
@@ -73,61 +76,44 @@ Upgrade one eligible planner installation in the selected project and commit the
     stage = 'configuration'
     const context = await d.loadNpmContext(project.root)
     context.projectRoot = project.root
-    stage = 'selection'
-    const catalog = await d.readCatalog(project.root, item.package, context)
-    const advisoryMap = await d.readCandidateAdvisories(new Map([[item.package, catalog.versions]]), context)
-    const candidate = d.selectCandidate(item, evidence.incoming.map(e => e.rawSpec), catalog, advisoryMap.get(item.package) || [], Date.now())
-    stage = 'scope'
-    const mutation = await d.buildMutation(project, evidence, candidate)
-    await d.assertGitState(guard, 'before-write')
     staging = await d.createStagingProject(project, context)
-    const installPhase = async (phase) => {
-      await d.installProject(staging.root, staging.context, { stderr: io.stderr })
-      const installedFiles = await readDependencyFiles(staging.root)
-      const expectedManifest = phase === 'installed' ? mutation.applyBytes : mutation.cleanupBytes
-      if (!installedFiles['package.json'].equals(expectedManifest)) throw new Error('npm changed package.json outside the intended mutation')
-      await d.loadProject(staging.root)
-      return d.verifyGraph(evidence.graph, await d.loadGraph(staging.root), evidence, candidate, mutation, phase)
+    stage = 'resolution'
+    const transaction = await d.executeActions(project, item, evidence, context, { ...d, staging })
+    const installContext = current => ({ ...current, installArgs: ['ci', ...current.installArgs.slice(1)] })
+    const verifySnapshot = async (snapshot, root, currentContext) => {
+      await d.installProject(root, installContext(currentContext), { stderr: io.stderr })
+      const files = await readDependencyFiles(root)
+      for (const name of Object.keys(files)) if (!files[name].equals(snapshot.files[name])) throw new Error('npm changed verified dependency files')
+      await d.verifyFinalSecurity(evidence, snapshot.candidate, snapshot, { ...currentContext, projectRoot: root })
+      const installed = await d.loadGraph(root, { actual: true })
+      const coverage = verifyCoverage(evidence, installed)
+      for (const expected of snapshot.graph.edges.filter(edge => evidence.incoming.some(original => original.from === edge.from && original.requestedName === edge.requestedName && original.type === edge.type))) {
+        const actual = installed.edges.find(edge => edge.from === expected.from && edge.requestedName === expected.requestedName && edge.type === expected.type)
+        const node = installed.nodes.get(actual?.to), target = snapshot.graph.nodes.get(expected.to)
+        if (!node || !target || node.name !== target.name || node.version !== target.version) throw new Error('Installed consumer differs from verified dependency graph')
+      }
+      return coverage
     }
-    stage = 'apply'
-    await writeFile(path.join(staging.root, 'package.json'), mutation.applyBytes)
-    stage = 'install'
-    let diff = await installPhase('installed')
-    if (mutation.cleanupBytes) {
-      stage = 'cleanup'
-      await writeFile(path.join(staging.root, 'package.json'), mutation.cleanupBytes)
-      diff = await installPhase('cleaned')
-    }
-    const resultFiles = await readDependencyFiles(staging.root)
-    // Publish only our private resolver output, after proving the real project
-    // has no concurrent edits. Invalid staged results never touch user files.
-    await d.assertGitState(guard, 'before-publish')
-    stage = 'publish'
-    await d.writeMutation(project.root, resultFiles['package.json'], guard)
-    mutated = true
-    await d.assertGitState(guard, 'before-lock-write')
-    await writeFile(path.join(project.root, 'package-lock.json'), resultFiles['package-lock.json'])
-    await recordOwnedFiles(guard, { 'package-lock.json': resultFiles['package-lock.json'] })
-    stage = 'install'
-    guard.installedTreeMayHaveChanged = true
-    await d.installProject(project.root, { ...context, installArgs: ['ci', ...context.installArgs.slice(1)] }, { stderr: io.stderr })
-    await d.assertGitState(guard, 'after-ci')
     stage = 'verification'
-    await d.verifyFinalSecurity(evidence, candidate, diff, context)
-    const actual = await d.loadGraph(project.root, { actual: true })
-    const target = actual.nodes.get(item.targetLocation)
-    if (!target || target.name !== item.package || target.version !== candidate.version) throw new Error('Installed target does not match the verified lockfile')
-    await d.assertGitState(guard, 'before-commit')
+    for (const snapshot of transaction.snapshots) {
+      for (const [name, bytes] of Object.entries(snapshot.files)) await writeFile(path.join(staging.root, name), bytes)
+      await verifySnapshot(snapshot, staging.root, staging.context)
+    }
+    await d.assertGitState(guard, 'before-publish')
     stage = 'commit'
+    mutated = true
     committing = true
-    const committed = await d.commitUpgrade(guard, guard.ownedFiles, { package: item.package, oldVersion: item.version, newVersion: candidate.version, strategy: 'update-within-declared-range', description: `bump ${item.package} from ${item.version} to ${candidate.version}` }, options)
-    const result = { schemaVersion: 2, id: item.id, package: item.package, oldVersion: item.version, newVersion: candidate.version, targetLocation: item.targetLocation, strategy: 'update-within-declared-range', releasedAt: candidate.releasedAt, changedFiles: committed.changedFiles, supportingChanges: diff.supportingChanges, commit: { hash: committed.hash, subject: committed.subject } }
+    const commits = await d.commitSnapshots(guard, transaction.snapshots, transaction.actions, context, options, { commitUpgrade: d.commitUpgrade, prepareSnapshot: async (snapshot) => {
+      guard.installedTreeMayHaveChanged = true
+      await verifySnapshot(snapshot, project.root, context)
+    } })
+    const result = { schemaVersion: 3, id: item.id, package: item.package, oldVersion: item.version, targetLocation: item.targetLocation, resolution: transaction.coverage.resolution, actions: transaction.actions, commits }
     io.stdout.write(options.format === 'json' ? renderJson(result) : renderMarkdown(result))
     return 0
   }
   catch (error) {
     let recovery = ''
-    if (mutated && !committing) {
+    if (mutated && (!committing || (error.committed && error.committed.length === 0))) {
       try {
         const result = await restoreDependencyFiles(guard)
         recovery = ` Dependency files restored.${result.installedTreeMayHaveChanged ? ' node_modules may have changed.' : ''}`
