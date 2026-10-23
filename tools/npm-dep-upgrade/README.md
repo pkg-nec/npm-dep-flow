@@ -1,6 +1,6 @@
 # npm-dep-upgrade
 
-Upgrade one vulnerable npm installation selected by a fresh planner ID, verify it, and create one local Git commit.
+Upgrade one vulnerable npm installation selected by a fresh planner ID, verify it, and create one local Git commit per upgrade performed.
 
 ## Setup
 
@@ -32,7 +32,7 @@ With two positional arguments, the first is always the project directory and the
 
 The selector is a lowercase hexadecimal prefix of 7–64 characters. Planner JSON contains the full SHA-256 of `package + "__" + targetLocation`; Markdown shows seven characters. IDs identify package/location, independent of the installed version and absolute project path. A short prefix can collide. `--package` filters by exact package name before uniqueness checking; two locations of the same package may still need a longer prefix. Automation should use full IDs plus package names.
 
-Each invocation reruns the planner and applies exactly one eligible `update-within-declared-range` row. There is no plan-file input, `--to`, parent upgrade, batch execution, or orchestration. A resolved ID usually disappears from the next report; repeating it returns target-not-found without another commit.
+Each invocation reruns the schema-version-3 planner and executes all `update-within-declared-range` actions in one partial or complete finding. A `none` finding is rejected. There is no choice-selection flag, plan-file input, `--to`, or parent upgrade. A complete finding normally disappears; a partial finding leaves the incompatible vulnerable consumers in the next report, potentially at a different location/ID. Re-executing a remaining `none` finding changes nothing.
 
 ## Per-invocation configuration
 
@@ -87,7 +87,7 @@ The default template is `deps: {description}` without a module, or `deps({module
 | `{oldVersion}` / `{newVersion}` | Installed / chosen version |
 | `{strategy}` | Currently `update-within-declared-range` |
 
-Descriptions are supplied separately from the formatter, allowing a future strategy to provide wording such as `migrate Angular toolchain from …`. This release adds no new strategies. Placeholder values are literal text, never executable code or nested templates. Unknown placeholders or unmatched braces are rejected. Templates and rendered subjects must be nonempty single lines without control characters or surrounding whitespace. Module names must be nonempty, without control characters, braces, parentheses, or surrounding whitespace. The actual rendered subject is protected by the commit guards and returned in the existing report's `commit.subject` field.
+Descriptions are supplied separately from the formatter, allowing a future strategy to provide wording such as `migrate Angular toolchain from …`. This release adds no new strategies. Placeholder values are literal text, never executable code or nested templates. Unknown placeholders or unmatched braces are rejected. Templates and rendered subjects must be nonempty single lines without control characters or surrounding whitespace. Module names must be nonempty, without control characters, braces, parentheses, or surrounding whitespace. The actual rendered subject is protected by the commit guards and returned in the report's ordered `commits[].subject` fields.
 
 ### Git commit arguments
 
@@ -97,17 +97,17 @@ Each array entry or repeated CLI option is one literal Git argument, with no she
 
 ## Selection and application
 
-The tool chooses the newest stable version that is newer than the installed version, at least the planner's minimum safe version, safe under fresh candidate-version advisories, within every original incoming requirement, and at least seven days old. It checks the chosen version's own release timestamp. Missing/invalid timestamps exclude a version; a valid older safe fallback is allowed. Effective stricter npm release-age and `before` cutoffs are preserved. A security service failure is an error. The planner's minimum timestamp alone does not establish candidate eligibility.
+The tool chooses the newest stable version that is newer than the installed version, at least the planner's minimum safe version, safe under fresh candidate-version advisories, within every original incoming requirement of the selected consumers, and at least seven days old. It checks the chosen version's own release timestamp. Missing/invalid timestamps exclude a version; a valid older safe fallback is allowed. Effective stricter npm release-age and `before` cutoffs are preserved. A security service failure is an error. The planner's minimum timestamp alone does not establish candidate eligibility.
 
 Direct dependencies in `dependencies`, `devDependencies`, `peerDependencies`, and `optionalDependencies` retain their section and literal `^` or `~` operator. For example, `~6.0.8` locked at 6.0.9 becomes `~6.0.12`. All compatible duplicate declarations are updated. Exact direct pins and unsupported declaration forms are outside this release's scope.
 
-For transitive targets, temporary parent-version/ancestor overrides must be proven to affect only the selected installation. A directly declared parent uses `".": "$parent-name"` within its scoped rule. Existing unrelated override policy is preserved; conflicting policy or unprovable isolation is refused. The temporary rule is removed and a second install must retain the selected version. The final manifest normally equals its original bytes.
+For transitive targets, temporary scoped overrides target only compatible consumers. Exact-pinned consumers remain valid on their old vulnerable version. A directly declared parent uses `".": "$parent-name"` within its scoped rule. Existing override policy is preserved; conflicting policy or unprovable isolation is refused. Temporary rules are removed before verification, and the final manifest normally equals its original bytes. No lockfile entries are patched by hand.
 
-Scope planning uses `npm-dep-paths` direct dependents filtered to the selected installation. It tests immediate-parent scopes first, then searches the compact upstream graph for deeper scopes when necessary. Equivalent selectors share their physical parent locations rather than expanding every ancestry route. Arborist verifies each proposal's actual effect. Deeper searches remain bounded to 1,024 distinct scope entries per proposal and the graph's node count in depth; a search that cannot prove isolation is refused.
+Equivalent selectors share their physical parent locations instead of expanding every ancestry route. Scope proposals are bounded to 1,024 entries and graph-node-count depth. The selected npm resolver constructs and serializes private lockfiles before any target files change. All actual installs use `--ignore-scripts` and at least seven days of release age.
 
-Both direct apply declarations and transitive temporary rules constrain resolution to the exact selected version during the first install. Direct final declarations then regain their original operator before the second install. This avoids npm selecting a higher release excluded by our security/timestamp checks; it does not leave permanent exact pins. Resolver installs run in a private temporary project using the same npm configuration and anchored path settings. Only verified dependency files are copied back after rechecking that the real project is unchanged. Then `npm ci` reproduces that pair in the real project. Invalid resolver output never touches user dependency files. Every install and ci runs with `--ignore-scripts` and `--min-release-age` of at least 7. No lifecycle scripts run. Projects needing install-time builds may require separate trusted setup and application tests afterward.
+A shared installation can split, reuse an existing safe installation, or relocate. Verification follows original incoming consumer relationships. Parents and unrelated target copies remain unchanged; selected consumers become safe, incompatible consumers retain valid original versions. Necessary supporting closure changes are verified for fresh security and release age. Remaining pre-existing vulnerabilities are permitted for a partial result.
 
-The selected installation must retain its location and consumers; its parents and every other installation of the same package remain unchanged. Necessary additions, removals, upgrades, and relocations within its dependency closure are allowed and reported as supporting changes. Unrelated graph changes and newly introduced vulnerable supporting versions fail verification. Other pre-existing vulnerabilities may remain.
+All actions are resolved and their intermediate snapshots checked before committing. Each snapshot is installed with scripts disabled and checked against fresh security evidence. Only verified dependency-file pairs are published under concurrency guards. Each actual upgrade then receives its own commit, containing its required supporting changes. Several consumers accepting one safe version form one action and one commit; different safe-version actions can produce several commits for the same finding. Hooks see the matching snapshot and installed tree. There is no interactive review pause.
 
 ## Git and failures
 
@@ -119,11 +119,13 @@ After uncached security checks and installed-target verification, only changed d
 deps: bump <package-name> from <old-version> to <new-version>
 ```
 
-Nothing is pushed or tagged. Git hooks run by default; explicitly configured `--no-verify` skips pre-commit and commit-msg. Guards after pre-commit and message hooks reject changed files, staged content, branch state, or commit subject before Git creates the dependency commit. Git clean filters are respected for CRLF files while recovery retains original working-file bytes. A rejected commit leaves verified working changes for inspection/retry and removes only staging owned by this operation when safe.
+Nothing is pushed or tagged. Git hooks run by default; explicitly configured `--no-verify` skips pre-commit and commit-msg. Guards after pre-commit and message hooks reject changed files, staged content, branch state, or commit subject before Git creates the dependency commit. Git clean filters are respected for CRLF files while recovery retains original working-file bytes. A failed first commit restores owned dependency files when guards permit; node_modules may need rebuilding. If a later commit fails, earlier commits remain and diagnostics identify their hashes. A verified commit created before a post-commit check fails is also retained and identified; hook edits remain untouched. Remaining verified changes can stay uncommitted. The tool never resets history and removes only its own staging when safe.
 
 Failures in the private resolver project leave original dependency files untouched. After publication, failures before Git staging restore captured dependency-file bytes when ownership and Git state still match. `node_modules` may have changed and can need rebuilding. Concurrent edits, staged work or HEAD movement are detected; recovery refuses to overwrite them. Inspect diagnostics and Git state if recovery cannot finish. A newly published advisory detected during application produces a stale-recommendation error and requires a fresh run; the same invocation never silently selects another version.
 
-Completed reports exit 0 and use Markdown (default) or schema-version-2 JSON. JSON includes full ID, package, old/new versions, location, strategy, release timestamp, changed files, supporting changes and commit hash/subject. Errors exit 1 with stage-specific stderr and no success report on stdout.
+Completed reports exit 0 and use Markdown (default) or schema-version-3 JSON. Partial remediation is a successful operation. JSON includes `id`, `package`, `oldVersion`, original `targetLocation`, final `resolution`, ordered `actions`, and ordered `commits`. Actions include strategy, original and actual target versions/locations, affected consumers, outcome (`applied` or `already-satisfied`), release timestamp, and supporting changes. Supporting changes record added, updated, and removed installations; removals have `newLocation: null` and `newVersion: null`. Commits include `hash`, `subject`, `actionIndex`, and `changedFiles`. The old singular `newVersion`, `strategy`, `commit`, and `changedFiles` result fields are replaced by these arrays. No schema-version-2 reader is provided.
+
+Errors exit 1 with stage-specific stderr and no partial success report on stdout. A failure before commits leaves no upgrade commits; a failure after a committed prefix preserves and identifies that prefix.
 
 ## Debug logging
 

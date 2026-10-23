@@ -11,7 +11,7 @@ test('IDs identify exact package locations independently of version and ordering
   assert.notEqual(findingId('brace-expansion', 'node_modules/brace-expansion'), expected)
   const scoped = '@e2e/target'
   assert.equal(findingId(scoped, `node_modules/${scoped}`), createHash('sha256').update(`${scoped}__node_modules/${scoped}`).digest('hex'))
-  const row = { package: 'brace-expansion', version: '5.0.9', targetLocation: location, severity: 'high', minimumSafeVersion: null, minimumSafeVersionReleasedAt: null, status: 'ineligible', strategy: null }
+  const row = { package: 'brace-expansion', version: '5.0.9', targetLocation: location, severity: 'high', minimumSafeVersion: null, minimumSafeVersionReleasedAt: null, resolution: 'none', choices: [] }
   assert.equal(JSON.parse(renderJson([row], '2026-10-20T00:00:00.000Z')).rows[0].id, expected)
   assert.equal(JSON.parse(renderJson([{ ...row, version: '5.0.10' }], '2026-10-20T00:00:00.000Z')).rows[0].id, expected)
   assert.match(renderMarkdown([row]), /\| 73ecbd5 \|/)

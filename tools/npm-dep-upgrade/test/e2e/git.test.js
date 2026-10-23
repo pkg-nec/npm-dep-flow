@@ -64,16 +64,16 @@ for (const variant of ['identity', 'detached', 'operation']) test(`G06 Git ${var
   if (variant === 'operation') await writeFile(path.join(f.root, '.git', 'MERGE_HEAD'), f.initialHead + '\n')
   await assertUnchanged(f, await runUpgrade(f, [row.id]), /identity|branch|operation/i)
 })
-test('G06 rejecting commit hook retains verified changes and clears owned staging', async (t) => {
+test('G06 rejecting first commit hook restores owned files and clears staging', async (t) => {
   const f = await createProject(direct(), {}, t), [row] = await plan(f)
   await writeFile(path.join(f.scratch, 'hooks', 'pre-commit'), '#!/bin/sh\nexit 42\n', { mode: 0o755 })
   const result = await runUpgrade(f, [row.id])
   assert.equal(result.code, 1)
   assert.equal(result.stdout, '')
-  assert.match(result.stderr, /commit.*uncommitted/i)
+  assert.match(result.stderr, /commit.*restored/i)
   assert.equal(await checked(f, 'git', ['rev-parse', 'HEAD']), f.initialHead)
   assert.equal(await checked(f, 'git', ['diff', '--cached', '--name-only']), '')
-  assert.equal(JSON.parse(await readFile(path.join(f.root, 'package.json'))).dependencies['e2e-target'], '^6.0.12')
+  assert.deepEqual(await readFile(path.join(f.root, 'package.json')), f.initialFiles['package.json'])
 })
 for (const variant of ['user edit', 'staged file', 'HEAD movement']) test(`G07 concurrent ${variant} at explicit checkpoint`, async (t) => {
   const s = transitive(), f = await createProject(s, {}, t), [row] = await plan(f)

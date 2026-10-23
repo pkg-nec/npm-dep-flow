@@ -80,116 +80,29 @@ test('strategy supports matching npm aliases and rejects non-range or mismatched
   assert.equal(updateWithinDeclaredRange(auditRow(), ['npm:other-package@^5.0.5'], versions), null)
 })
 
-test('evaluation emits one row per target location with global safe version and per-location strategy', () => {
-  const row = auditRow({
-    requirements: [
-      { declaredRequirement: '5.0.9', directDependents: [dependent({
-        name: 'nx', version: '23.1.2', targetLocation: 'node_modules/nx/node_modules/brace-expansion',
-      })] },
-      { declaredRequirement: '^5.0.5', directDependents: [dependent()] },
-    ],
-  })
-  const releaseAt = '2026-10-01T12:00:00.000Z'
-  const evaluated = evaluateFindings([row], new Map([['brace-expansion', {
-    versions,
-    releaseTimes: new Map([['5.0.12', releaseAt]]),
-  }]]))
-
-  assert.deepEqual(evaluated, [
-    {
-      package: 'brace-expansion',
-      version: '5.0.9',
-      targetLocation: 'node_modules/nx/node_modules/brace-expansion',
-      severity: 'high',
-      minimumSafeVersion: '5.0.12',
-      minimumSafeVersionReleasedAt: releaseAt,
-      status: 'ineligible',
-      strategy: null,
-    },
-    {
-      package: 'brace-expansion',
-      version: '5.0.9',
-      targetLocation: 'node_modules/brace-expansion',
-      severity: 'high',
-      minimumSafeVersion: '5.0.12',
-      minimumSafeVersionReleasedAt: releaseAt,
-      status: 'eligible',
-      strategy: currentStrategy,
-    },
+test('evaluation keeps separate installations separate with global safe metadata', () => {
+  const row = auditRow({ requirements: [
+    { declaredRequirement: '5.0.9', directDependents: [dependent({ name: 'nx', targetLocation: 'node_modules/nx/node_modules/brace-expansion' })] },
+    { declaredRequirement: '^5.0.5', directDependents: [dependent()] },
+  ] })
+  const evaluated = evaluateFindings([row], new Map([['brace-expansion', { versions, releaseTimes: new Map([['5.0.12', '2026-10-01T12:00:00.000Z']]) }]]))
+  assert.deepEqual(evaluated.map(r => [r.targetLocation, r.resolution, r.choices.length]), [
+    ['node_modules/nx/node_modules/brace-expansion', 'none', 0], ['node_modules/brace-expansion', 'complete', 1],
   ])
-  assert.equal('strategies' in row.requirements[0].directDependents[0], false)
+  assert.equal(evaluated[0].minimumSafeVersionReleasedAt, '2026-10-01T12:00:00.000Z')
+  assert.equal(evaluated[1].minimumSafeVersion, '5.0.12')
 })
-
-test('same target location requires one candidate satisfying all associated requirements', () => {
-  const row = auditRow({
-    requirements: [
-      { declaredRequirement: '5.0.9', directDependents: [dependent({ name: 'nx' })] },
-      { declaredRequirement: '^5.0.5', directDependents: [dependent()] },
-    ],
-  })
+test('one installation gets a partial action for compatible consumers', () => {
+  const row = auditRow({ requirements: [
+    { declaredRequirement: '5.0.9', directDependents: [dependent({ name: 'nx', location: 'node_modules/nx' })] },
+    { declaredRequirement: '^5.0.5', directDependents: [dependent()] },
+  ] })
   const evaluated = evaluateFindings([row], new Map([['brace-expansion', versions]]))
-
   assert.equal(evaluated.length, 1)
-  assert.equal(evaluated[0].targetLocation, 'node_modules/brace-expansion')
-  assert.equal(evaluated[0].minimumSafeVersion, '5.0.12')
-  assert.equal(evaluated[0].status, 'ineligible')
-  assert.equal(evaluated[0].strategy, null)
-})
-
-test('missing release metadata emits null while preserving the safe version', () => {
-  const row = auditRow({ requirements: [{
-    declaredRequirement: '^5.0.5',
-    directDependents: [dependent()],
-  }] })
-  const evaluated = evaluateFindings([row], new Map([['brace-expansion', { versions }]]))
-
-  assert.equal(evaluated[0].minimumSafeVersion, '5.0.12')
+  assert.equal(evaluated[0].resolution, 'partial')
+  assert.deepEqual(evaluated[0].choices[0].affectedConsumers, [{ location: 'node_modules/minimatch', requestedName: 'brace-expansion', type: 'dependencies' }])
   assert.equal(evaluated[0].minimumSafeVersionReleasedAt, null)
-  assert.equal(evaluated[0].status, 'eligible')
 })
-
-test('an eligible future strategy can apply even without a safe version of the vulnerable package', () => {
-  const row = auditRow({ requirements: [{
-    declaredRequirement: '5.0.9',
-    directDependents: [dependent()],
-  }] })
-  const strategies = [{
-    id: 'upgrade-dependent',
-    label: 'Upgrade dependent',
-    order: 2,
-    evaluate: () => ({
-      id: 'upgrade-dependent',
-      targetPackage: 'minimatch',
-      currentVersion: '10.2.5',
-      targetVersion: '10.3.0',
-    }),
-  }]
-  const evaluated = evaluateFindings([row], new Map([['brace-expansion', []]]), strategies)
-
-  assert.equal(evaluated[0].minimumSafeVersion, null)
-  assert.equal(evaluated[0].status, 'eligible')
-  assert.deepEqual(evaluated[0].strategy, strategies[0].evaluate())
-})
-
-test('evaluation chooses the first eligible strategy by configured order', () => {
-  const calls = []
-  const strategies = [
-    { id: 'second', order: 2, evaluate: () => {
-      calls.push('second')
-      return { id: 'second' }
-    } },
-    { id: 'first', order: 1, evaluate: () => {
-      calls.push('first')
-      return { id: 'first' }
-    } },
-  ]
-  const row = auditRow({ requirements: [{ declaredRequirement: '^5', directDependents: [dependent()] }] })
-  const result = evaluateFindings([row], new Map(), strategies)
-
-  assert.deepEqual(calls, ['first'])
-  assert.equal(result[0].status, 'eligible')
-  assert.deepEqual(result[0].strategy, { id: 'first' })
-  assert.deepEqual(orderedStrategies.map(strategy => [strategy.id, strategy.order]), [
-    ['update-within-declared-range', 1],
-  ])
+test('strategy ordering still starts with within-range remediation', () => {
+  assert.deepEqual(orderedStrategies.map(s => [s.id, s.order]), [['update-within-declared-range', 1]])
 })

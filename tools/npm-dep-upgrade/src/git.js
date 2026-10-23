@@ -109,7 +109,7 @@ export async function commitUpgrade(guard, expectedFiles, identity, options = {}
   if (!names.length) fail('NO_CHANGES', 'commit', 'No dependency changes to commit')
   const paths = names.map(name => guard.projectPrefix ? `${guard.projectPrefix}/${name}` : name)
   const blobs = Object.fromEntries(await Promise.all(paths.map(async file => [file, await filteredBlob(guard.repoRoot, file)])))
-  let hooks
+  let hooks, createdCommit
   try {
     await runGit(guard.repoRoot, ['add', '--', ...paths])
     await assertCommitState(guard, paths, blobs)
@@ -121,11 +121,15 @@ export async function commitUpgrade(guard, expectedFiles, identity, options = {}
     const branch = line(await runGit(guard.repoRoot, ['symbolic-ref', '--quiet', '--short', 'HEAD']))
     const committed = (await runGit(guard.repoRoot, ['diff-tree', '--no-commit-id', '--name-only', '-r', '-z', hash])).split('\0').filter(Boolean)
     if (parent !== guard.head || branch !== guard.branch || actualSubject !== subject || committed.length !== paths.length || committed.some(p => !paths.includes(p))) fail('COMMIT_MISMATCH', 'commit', `Unexpected commit state; inspect ${hash}`)
-    const current = await readDependencyFiles(guard.root)
     for (let i = 0; i < names.length; i++) {
-      if (!current[names[i]].equals(expectedFiles[names[i]]) || line(await runGit(guard.repoRoot, ['rev-parse', `${hash}:${paths[i]}`])) !== blobs[paths[i]]) fail('COMMIT_MISMATCH', 'commit', 'Committed dependency files differ from verified contents')
+      if (line(await runGit(guard.repoRoot, ['rev-parse', `${hash}:${paths[i]}`])) !== blobs[paths[i]]) fail('COMMIT_MISMATCH', 'commit', 'Committed dependency files differ from verified contents')
     }
-    return { hash, subject, changedFiles: names }
+    createdCommit = { hash, subject, changedFiles: names }
+    const current = await readDependencyFiles(guard.root)
+    for (const name of names) {
+      if (!current[name].equals(expectedFiles[name])) fail('COMMIT_MISMATCH', 'commit', 'Dependency files changed after commit')
+    }
+    return createdCommit
   }
   catch (error) {
     if (line(await runGit(guard.repoRoot, ['rev-parse', 'HEAD'])) === guard.head) {
@@ -134,7 +138,7 @@ export async function commitUpgrade(guard, expectedFiles, identity, options = {}
         if (!indexed.code && line(indexed.stdout) === blobs[file]) await runGit(guard.repoRoot, ['restore', '--staged', '--', file])
       }
     }
-    Object.assign(error, { stage: 'commit', changesRemainUncommitted: true })
+    Object.assign(error, { stage: 'commit', changesRemainUncommitted: true, ...(createdCommit ? { createdCommit } : {}) })
     throw error
   }
   finally { if (hooks) await hooks.cleanup() }

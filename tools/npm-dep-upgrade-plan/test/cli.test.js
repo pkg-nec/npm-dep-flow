@@ -161,7 +161,7 @@ test('main accepts an explicit project path and JSON format', async () => {
     ['json', [], '2026-10-13T06:00:00.000Z'],
   ])
   assert.deepEqual(JSON.parse(io.stdout), {
-    schemaVersion: 2,
+    schemaVersion: 3,
     auditedAt: '2026-10-13T06:00:00.000Z',
     rows: [],
   })
@@ -227,8 +227,8 @@ test('main evaluates every link and renders findings by severity', async () => {
   assert.equal(lines[2].includes('| left-pad |'), true)
   assert.equal(lines[3].includes('| brace-expansion |') && lines[4].includes('| brace-expansion |'), true)
   assert.match(io.stdout, /Highest severity/)
-  assert.match(io.stdout, /node\\_modules\/nx\/node\\_modules\/brace-expansion \| ineligible \| —/)
-  assert.match(io.stdout, /node\\_modules\/brace-expansion \| eligible \| Update within declared range: brace-expansion@5\.0\.9 → brace-expansion@5\.0\.12/)
+  assert.match(io.stdout, /node\\_modules\/nx\/node\\_modules\/brace-expansion \| none \| —/)
+  assert.match(io.stdout, /node\\_modules\/brace-expansion \| complete \| Update within declared range \|/)
 })
 
 test('main returns success when all links are ineligible', async () => {
@@ -239,7 +239,7 @@ test('main returns success when all links are ineligible', async () => {
   ]), { renderMarkdown }))
 
   assert.equal(result, 0)
-  assert.match(io.stdout, /\| ineligible \| — \|/)
+  assert.match(io.stdout, /\| none \| — \|/)
   assert.equal(io.stderr, '')
 })
 
@@ -349,22 +349,22 @@ test('executable emits Markdown and JSON, distinguishes both brace-expansion lin
 
   const markdown = fixture.run([])
   assert.equal(markdown.status, 0, JSON.stringify(markdown, null, 2))
-  assert.match(markdown.stdout, /node\\_modules\/nx\/node\\_modules\/brace-expansion \| ineligible \| —/)
-  assert.match(markdown.stdout, /node\\_modules\/brace-expansion \| eligible \| Update within declared range: brace-expansion@5\.0\.9 → brace-expansion@5\.0\.12/)
+  assert.match(markdown.stdout, /node\\_modules\/nx\/node\\_modules\/brace-expansion \| none \| —/)
+  assert.match(markdown.stdout, /node\\_modules\/brace-expansion \| complete \| Update within declared range \|/)
   assert.deepEqual(readFileSync(path.join(fixture.project, 'package.json')), manifestBefore)
   assert.deepEqual(readFileSync(path.join(fixture.project, 'package-lock.json')), lockBefore)
 
   const json = fixture.run(['--format', 'json'])
   assert.equal(json.status, 0, JSON.stringify(json, null, 2))
   const report = JSON.parse(json.stdout)
-  assert.equal(report.schemaVersion, 2)
-  assert.deepEqual(report.rows.map(item => [item.targetLocation, item.status]), [
-    ['node_modules/brace-expansion', 'eligible'],
-    ['node_modules/nx/node_modules/brace-expansion', 'ineligible'],
+  assert.equal(report.schemaVersion, 3)
+  assert.deepEqual(report.rows.map(item => [item.targetLocation, item.resolution]), [
+    ['node_modules/brace-expansion', 'complete'],
+    ['node_modules/nx/node_modules/brace-expansion', 'none'],
   ])
   assert.equal(report.rows[0].minimumSafeVersion, '5.0.12')
   assert.equal(report.rows[0].minimumSafeVersionReleasedAt, null)
-  assert.equal(report.rows[1].strategy, null)
+  assert.deepEqual(report.rows[1].choices, [])
   assert.equal('advisories' in report.rows[0], false)
   assert.equal('requirements' in report.rows[0], false)
   for (const projectPath of ['.', path.join('..', path.basename(fixture.project)), fixture.project]) {

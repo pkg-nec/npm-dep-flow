@@ -4,9 +4,9 @@ import { createProject } from './helpers/project.js'
 import { supporting, direct, ago } from './fixtures/catalog.js'
 import { plan, runUpgrade, assertSuccess, assertResolved } from './helpers/runner.js'
 for (const multiple of [false, true]) test(`${multiple ? 'S02' : 'S01'} supporting helper major update`, async (t) => {
-  const f = await createProject(supporting(multiple), {}, t), rows = await plan(f), row = rows.find(r => r.package === 'e2e-target' && r.status === 'eligible')
+  const f = await createProject(supporting(multiple), {}, t), rows = await plan(f), row = rows.find(r => r.package === 'e2e-target' && r.resolution !== 'none')
   const output = await assertSuccess(f, await runUpgrade(f, [row.id, '--format', 'json']), undefined, { reproduce: true })
-  assert.ok(output.supportingChanges.some(c => c.package === 'e2e-helper' && c.newVersion === '3.0.2'))
+  assert.ok(output.actions[0].supportingChanges.some(c => c.package === 'e2e-helper' && c.newVersion === '3.0.2'))
   if (multiple) {
     await assertResolved(f, 'node_modules/e2e-parent-b', 'e2e-target', '6.0.9')
     await assertResolved(f, '', 'e2e-unrelated', '1.0.0')
@@ -26,4 +26,13 @@ for (const variant of ['R01', 'R03 missing', 'R03 invalid', 'R04 A', 'R04 C']) t
   }
   const f = await createProject(s, {}, t), [row] = await plan(f)
   await assertSuccess(f, await runUpgrade(f, [row.id, '--format', 'json']), expected)
+})
+
+test('reports supporting dependency removals in the action result', async (t) => {
+  const scenario = supporting()
+  for (const version of ['6.0.10', '6.0.12']) delete scenario.packages['e2e-target'][version].manifest.dependencies
+  const f = await createProject(scenario, {}, t), [row] = await plan(f)
+  const result = await runUpgrade(f, [row.id, '--format', 'json'])
+  assert.equal(result.code, 0, result.stderr)
+  assert.deepEqual(JSON.parse(result.stdout).actions[0].supportingChanges, [{ package: 'e2e-helper', oldLocation: 'node_modules/e2e-helper', newLocation: null, oldVersion: '2.0.5', newVersion: null }])
 })

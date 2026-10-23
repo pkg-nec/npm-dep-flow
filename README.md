@@ -11,14 +11,14 @@ Each tool is an independent Node.js project under `tools/`, with its own package
 | [npm-dep-audit](tools/npm-dep-audit/README.md) | Report direct npm vulnerability advisories by exact installed package version. |
 | [npm-dep-paths](tools/npm-dep-paths/README.md) | Group the requirements declared by direct dependents of an installed package version, with optional upstream graph detail. |
 | [npm-dep-versions](tools/npm-dep-versions/README.md) | List stable or prerelease versions and publication dates with semantic version filters and a cached catalog. |
-| [npm-dep-upgrade](tools/npm-dep-upgrade/README.md) | Apply one safe within-range upgrade by planner hash, verify isolation, and commit dependency files. |
+| [npm-dep-upgrade](tools/npm-dep-upgrade/README.md) | Apply all within-range actions for one planner finding, including partial fixes, and commit each upgrade. |
 | [npm-dep-upgrade-plan](tools/npm-dep-upgrade-plan/README.md) | Report per-installation eligibility for ordered, read-only vulnerability remediation strategies. |
 
 `npm-dep-audit` uses the separately installed `npm-dep-paths` CLI to show which declared requirements resolved to vulnerable versions. Install `npm-dep-paths` as a standalone command and keep it on `PATH` when running the audit tool; each tool has its own setup and usage instructions in its README.
 
 `npm-dep-upgrade-plan` consumes the public JSON output from `npm-dep-audit` and checks stable versions through the separately installed `npm-dep-versions` CLI, which merges registry versions and publication dates in one npm command. Its versioned report has one row per vulnerable package version and target installation location, and it does not change the target project. Install `npm-dep-paths`, `npm-dep-audit`, `npm-dep-versions`, and `npm-dep-upgrade-plan` as standalone commands and keep them on `PATH` when using the planner.
 
-`npm-dep-upgrade` reruns the planner, accepts an optional project directory plus one full or abbreviated item hash, and applies a verified upgrade with scripts disabled before creating a local commit. It requires all four analysis CLIs on `PATH` and clean dependency files with an empty staging area.
+`npm-dep-upgrade` reruns the planner, accepts an optional project directory plus one full or abbreviated item hash, and executes its compatible-consumer actions with scripts disabled, verifies their combined effect, and creates one commit per actual upgrade. Partial remediation preserves incompatible consumers. Planner and upgrade output use schema version 3; audit, paths, and versions retain version 2. It requires all four analysis CLIs on `PATH` and clean dependency files with an empty staging area.
 
 ## Analysis caches
 

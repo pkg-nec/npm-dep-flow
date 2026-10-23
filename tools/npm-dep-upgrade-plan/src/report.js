@@ -85,12 +85,9 @@ function renderSeverity(value) {
   return formatted
 }
 
-function renderStrategy(strategy) {
-  if (!strategy) return '—'
-  const label = escapeMarkdown(strategyLabels.get(strategy.id) ?? strategy.id)
-  const current = `${escapeMarkdown(strategy.targetPackage)}@${escapeMarkdown(strategy.currentVersion)}`
-  const target = `${escapeMarkdown(strategy.targetPackage)}@${escapeMarkdown(strategy.targetVersion)}`
-  return `${label}: ${current} → ${target}`
+function renderStrategies(choices) {
+  if (choices.length === 0) return '—'
+  return [...new Set(choices.map(choice => escapeMarkdown(strategyLabels.get(choice.strategy) ?? choice.strategy)))].join('; ')
 }
 
 export function renderMarkdown(rows) {
@@ -102,12 +99,12 @@ export function renderMarkdown(rows) {
   const output = [
     '# npm-dep-upgrade-plan',
     '',
-    '| ID | Package | Installed | Highest severity | Minimum safe version | Released at | Target location | Status | Strategy |',
+    '| ID | Package | Installed | Highest severity | Minimum safe version | Released at | Target location | Resolution | Strategy |',
     '| --- | --- | --- | --- | --- | --- | --- | --- | --- |',
   ]
 
   for (const row of orderedRows) {
-    output.push(`| ${findingId(row.package, row.targetLocation).slice(0, 7)} | ${escapeMarkdown(row.package)} | ${escapeMarkdown(row.version)} | ${renderSeverity(row.severity)} | ${displayValue(row.minimumSafeVersion)} | ${displayReleasedAt(row.minimumSafeVersionReleasedAt)} | ${escapeMarkdown(displayLocation(row.targetLocation))} | ${escapeMarkdown(row.status)} | ${renderStrategy(row.strategy)} |`)
+    output.push(`| ${findingId(row.package, row.targetLocation).slice(0, 7)} | ${escapeMarkdown(row.package)} | ${escapeMarkdown(row.version)} | ${renderSeverity(row.severity)} | ${displayValue(row.minimumSafeVersion)} | ${displayReleasedAt(row.minimumSafeVersionReleasedAt)} | ${escapeMarkdown(displayLocation(row.targetLocation))} | ${escapeMarkdown(row.resolution)} | ${renderStrategies(row.choices)} |`)
   }
 
   return `${output.join('\n')}\n`
@@ -122,15 +119,15 @@ export function renderJson(rows, auditedAt) {
     severity: row.severity,
     minimumSafeVersion: row.minimumSafeVersion,
     minimumSafeVersionReleasedAt: row.minimumSafeVersionReleasedAt,
-    status: row.status,
-    strategy: row.strategy === null
-      ? null
-      : {
-          id: row.strategy.id,
-          targetPackage: row.strategy.targetPackage,
-          currentVersion: row.strategy.currentVersion,
-          targetVersion: row.strategy.targetVersion,
-        },
+    resolution: row.resolution,
+    choices: row.choices.map(choice => ({
+      strategy: choice.strategy,
+      targetPackage: choice.targetPackage,
+      targetLocation: choice.targetLocation,
+      currentVersion: choice.currentVersion,
+      targetVersion: choice.targetVersion,
+      affectedConsumers: choice.affectedConsumers.map(consumer => ({ location: consumer.location, requestedName: consumer.requestedName, type: consumer.type })),
+    })),
   }))
-  return `${JSON.stringify({ schemaVersion: 2, auditedAt, rows: orderedRows }, null, 2)}\n`
+  return `${JSON.stringify({ schemaVersion: 3, auditedAt, rows: orderedRows }, null, 2)}\n`
 }

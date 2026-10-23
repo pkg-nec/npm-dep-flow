@@ -3,7 +3,7 @@ import { DEPENDENCY_FIELDS } from './model.js'
 const types = { prod: 'dependencies', dev: 'devDependencies', peer: 'peerDependencies', peerOptional: 'peerDependencies', optional: 'optionalDependencies' }
 export async function loadGraph(projectRoot, { actual = false } = {}) {
   const arb = new Arborist({ path: projectRoot, ignoreScripts: true })
-  const tree = actual ? await arb.loadActual() : await arb.loadVirtual()
+  const tree = actual ? await arb.loadActual({ forceActual: true }) : await arb.loadVirtual()
   const nodes = new Map(), edges = []
   for (const node of tree.inventory.values()) {
     nodes.set(node.location, { location: node.location, name: node.package.name || node.name, version: node.version, resolved: node.resolved || null, integrity: node.integrity || null })
