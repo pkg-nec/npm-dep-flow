@@ -20,6 +20,16 @@ for (const field of ['dependencies', 'devDependencies', 'peerDependencies', 'opt
 test('T02 transitive parent', async (t) => {
   await apply(t, ancestor())
 })
+test('scoped dependency override ignores selector metadata on its incoming parent edge', async (t) => {
+  const scenario = ancestor()
+  scenario.packages['e2e-ancestor']['1.0.0'].manifest.dependencies['e2e-parent-a'] = '^1.2.0'
+  const f = await createProject(scenario, {}, t), rows = await plan(f), row = rows.find(r => r.package === 'e2e-target')
+  assert.equal(row.resolution, 'complete')
+  const result = await runUpgrade(f, [row.id, '--format', 'json'])
+  await assertSuccess(f, result)
+  await assertResolved(f, 'node_modules/e2e-ancestor', 'e2e-parent-a', '1.2.4')
+  await assertResolved(f, 'node_modules/e2e-ancestor/node_modules/e2e-parent-a', 'e2e-target', '6.0.12')
+})
 test('T09 shared ancestry with 2048 routes upgrades without expanding every route', async (t) => {
   const f = await apply(t, sharedAncestry())
   await assertResolved(f, 'node_modules/e2e-parent-a', 'e2e-target', '6.0.12')

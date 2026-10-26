@@ -9,6 +9,7 @@ The committed catalog and its final addendum define the inputs and expected beha
 | D03, D04 | `ineligible.test.js`: exact/shared-exact refusal; `direct.test.js`: compatible duplicate declarations |
 | T01 | `transitive.test.js`: all four parent sections × child caret/tilde, original manifest bytes |
 | T02, T03 | `transitive.test.js`: transitive parent and two parent versions |
+| Scoped override metadata regression | `transitive.test.js`: a compatible nested child upgrades when npm reports selector metadata on the incoming parent edge; the parent version remains unchanged |
 | T04 | `transitive.test.js`: asserts repeated-parent topology and eligible versus pinned shared consumer; narrow scope or safe refusal |
 | T05 | `transitive.test.js`: one shared installation, caret/tilde incoming consumers |
 | T06, T08 | `ineligible.test.js`: shared exact pin / sole exact pin refusal |

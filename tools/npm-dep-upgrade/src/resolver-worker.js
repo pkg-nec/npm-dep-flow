@@ -128,7 +128,7 @@ export async function resolveRequest(request) {
         const probe = await load()
         const affected = probe.edges.filter((e) => {
           const old = before.edges.find(x => key(x) === key(e))
-          return old && e.effectiveSpec !== old.effectiveSpec
+          return old && nodes.get(old.to)?.name === request.item.package && e.effectiveSpec !== old.effectiveSpec
         })
         if (affected.length && affected.every(e => selected.has(key(e))) && choice.affectedConsumers.every(e => affected.some(x => key(x) === key(e)))) {
           matched = true
