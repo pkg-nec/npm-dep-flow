@@ -196,3 +196,16 @@ test('candidates younger than the release-age floor, or without a release time, 
   assert.equal(result[0].targetVersion, '1.2.0')
   assert.deepEqual(second.evaluations, [['b@1.2.0']])
 })
+
+test('the configured release-age policy, not a fixed number, decides which releases are old enough', async () => {
+  const now = Date.parse('2026-10-26T00:00:00.000Z')
+  const releases = { 'b@1.1.0': '2026-09-20T00:00:00.000Z', 'b@1.2.0': '2026-08-20T00:00:00.000Z', 'b@1.3.0': '2026-07-20T00:00:00.000Z' }
+  const clears = clearsWhen(c => c.targetPackage === 'b')
+  const strict = harness({ catalogs: { b: ['1.1.0', '1.2.0', '1.3.0'] }, releases, clears })
+  assert.equal((await find(strict, { now, policy: { minAgeDays: 60, cutoffMs: null } }))[0].targetVersion, '1.2.0')
+  const bounded = harness({ catalogs: { b: ['1.1.0', '1.2.0', '1.3.0'] }, releases, clears })
+  assert.equal((await find(bounded, { now, policy: { minAgeDays: 7, cutoffMs: Date.parse('2026-08-01T00:00:00.000Z') } }))[0].targetVersion, '1.3.0')
+  const none = harness({ catalogs: { b: ['1.1.0', '1.2.0', '1.3.0'] }, releases, clears })
+  assert.deepEqual(await find(none, { now, policy: { minAgeDays: 365, cutoffMs: null } }), [])
+  assert.deepEqual(none.evaluations, [])
+})

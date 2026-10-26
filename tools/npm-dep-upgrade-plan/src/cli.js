@@ -14,6 +14,7 @@ import { evaluateFindings } from './evaluate.js'
 import { clearNpmDepVersionsCache, runNpmDepVersions } from './versions.js'
 import { renderJson, renderMarkdown } from './report.js'
 import { readUpstream } from './paths.js'
+import { readReleasePolicy } from './policy.js'
 import { findParentChoices } from './ancestors.js'
 import { planParentChoices } from './parent-planning.js'
 
@@ -92,7 +93,7 @@ async function mainWithDebug(argv, io = process, deps = defaults) {
         finding.resolution = verified.coverage.resolution
         freshAt = Math.min(freshAt, verified.freshAt)
       }
-      const adapters = { readCatalog, readUpstream: deps.readUpstream ?? readUpstream, findParentChoices: deps.findParentChoices ?? findParentChoices, resolveChoices: deps.resolveChoices }
+      const adapters = { readCatalog, readUpstream: deps.readUpstream ?? readUpstream, findParentChoices: deps.findParentChoices ?? findParentChoices, resolveChoices: deps.resolveChoices, readReleasePolicy: deps.readReleasePolicy ?? readReleasePolicy }
       for (const finding of findings) {
         if (finding.resolution === 'complete') continue
         const row = auditReport.rows.find(candidate => candidate.package === finding.package && candidate.version === finding.version)

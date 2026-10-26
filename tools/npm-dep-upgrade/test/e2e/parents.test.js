@@ -6,7 +6,7 @@ import { createProject } from './helpers/project.js'
 import { plan, runUpgrade, assertResolved } from './helpers/runner.js'
 import { checked, command } from './helpers/commands.js'
 import { target } from './fixtures/catalog.js'
-import { chain, constrained, grandName, hName, parents, pb, pc, reintroduced, sharedGrand, twoAncestorCopies } from './fixtures/parents.js'
+import { bringsIn, chain, constrained, grandName, helperName, hName, parents, pb, pc, reintroduced, sharedGrand, twoAncestorCopies } from './fixtures/parents.js'
 
 const runtimes = [process.env.NPM_DEP_UPGRADE_E2E_NPM_CLI, process.env.NPM_DEP_UPGRADE_E2E_COMPAT_NPM_CLI].filter(Boolean)
 const subjects = async f => (await checked(f, 'git', ['log', '--format=%s', `${f.initialHead}..HEAD`])).split('\n').filter(Boolean).reverse()
@@ -253,6 +253,29 @@ for (const npmCli of runtimes) {
     assert.equal(result.code, 0, result.stderr)
     assert.deepEqual(await subjects(f), [`deps: bump ${pb} from 1.0.1 to 1.2.0`])
     await assertResolved(f, `node_modules/${pb}`, target, '6.0.12')
+  })
+
+  for (const [minAge, expected] of [[7, '2.0.6'], [30, '2.0.5']]) {
+    test(`what a parent release brings in resolves to the newest release old enough under a ${minAge}-day policy (${npmCli})`, async (t) => {
+      const f = await createProject(bringsIn(), { npmCli }, t)
+      f.env = { ...f.env, npm_config_min_release_age: String(minAge) }
+      const row = finding(await plan(f))
+      assert.equal(row.resolution, 'complete')
+      const result = await runUpgrade(f, [row.id, '--format', 'json'])
+      assert.equal(result.code, 0, result.stderr)
+      const lock = JSON.parse(await checked(f, 'git', ['show', 'HEAD:package-lock.json']))
+      assert.equal(lock.packages[`node_modules/${helperName}`].version, expected)
+      assert.equal(lock.packages[`node_modules/${pb}`].version, '1.1.0')
+      assert.equal(JSON.parse(await checked(f, 'git', ['show', 'HEAD:package.json'])).overrides, undefined)
+      await assertResolved(f, `node_modules/${pb}`, helperName, expected)
+    })
+  }
+
+  test(`a parent release younger than the configured policy is never planned (${npmCli})`, async (t) => {
+    const f = await createProject(bringsIn(), { npmCli }, t)
+    f.env = { ...f.env, npm_config_min_release_age: '60' }
+    const row = finding(await plan(f))
+    assert.ok(!row.choices.some(c => c.strategy === 'upgrade-via-parent-dependency'))
   })
 
   test(`a parent release that is no longer old enough is refused before any commit (${npmCli})`, async (t) => {

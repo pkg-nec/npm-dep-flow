@@ -81,3 +81,20 @@ export function twoAncestorCopies() {
   s.packages[pxName] = releases(pxName, { '1.0.0': [{ [pb]: '^1.0.0' }, 90] })
   return s
 }
+
+export const helperName = 'e2e-helper'
+
+// pb@1.1.0 clears the target and also brings in a helper whose newest releases are too young for the release-age policy.
+export function bringsIn() {
+  return parents({
+    pbNext: { [target]: '6.0.12', [helperName]: '^2.0.0' },
+    extra: {
+      [helperName]: releases(helperName, {
+        '2.0.4': [null, 60, false],
+        '2.0.5': [null, 35, false],
+        '2.0.6': [null, 20, false],
+        '2.0.7': [null, 2, false],
+      }),
+    },
+  })
+}

@@ -89,6 +89,9 @@ function injectedDeps(report, versions = new Map(), renderers = {}) {
     async readUpstream() {
       return { nodes: new Map(), edges: [] }
     },
+    async readReleasePolicy() {
+      return { minAgeDays: 7, cutoffMs: null }
+    },
     renderMarkdown: renderers.renderMarkdown ?? (() => 'markdown report\n'),
     renderJson: renderers.renderJson ?? (() => '{"schemaVersion":1}\n'),
   }
@@ -678,6 +681,7 @@ function parentDeps(calls) {
     calls.versions.push([name, controls])
     return { versions: name === 'brace-expansion' ? ['5.0.9', '5.0.12'] : ['23.1.2', '23.2.0'], releaseTimes: new Map([['23.2.0', '2026-10-01T00:00:00.000Z']]), fetchedAt: new Date().toISOString() }
   }
+  deps.readReleasePolicy = async () => ({ minAgeDays: 7, cutoffMs: null })
   deps.readUpstream = async (root, target, parents, controls) => {
     calls.upstream.push({ target, parents, controls })
     return { nodes: new Map([['', { location: '', name: 'app', version: '1.0.0' }], ['node_modules/nx', { location: 'node_modules/nx', name: 'nx', version: '23.1.2' }]]), edges: [{ from: '', to: 'node_modules/nx', requestedName: 'nx', type: 'dependencies', spec: '^23.0.0' }] }

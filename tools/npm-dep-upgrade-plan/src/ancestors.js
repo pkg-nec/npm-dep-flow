@@ -1,5 +1,6 @@
 import semver from 'semver'
 import { consumerKey } from './coverage.js'
+import { effectiveCutoff, MIN_RELEASE_AGE_FLOOR_DAYS } from './policy.js'
 
 export const MAX_ANCESTOR_LEVELS = 2
 export const PARENT_STRATEGY = 'upgrade-via-parent-dependency'
@@ -10,16 +11,13 @@ function rangeOf(spec) {
   return semver.validRange(range)
 }
 
-const DAY_MS = 86_400_000
-export const MIN_RELEASE_AGE_DAYS = 7
-
 function releasedAt(catalog, version) {
   const time = catalog.releaseTimes instanceof Map ? catalog.releaseTimes.get(version) : catalog.releaseTimes?.[version]
   return typeof time === 'string' ? Date.parse(time) : NaN
 }
 
-// The planner cannot pin a release it has no publication time for, and the executor refuses releases younger than
-// the seven-day floor, so neither is offered as a candidate.
+// The planner cannot pin a release it has no publication time for, and the executor refuses releases newer than the
+// release-age cutoff from npm configuration, so neither is offered as a candidate.
 function candidateVersions(ancestor, catalog, incoming, cutoff) {
   const ranges = incoming.map(edge => rangeOf(edge.spec))
   if (!incoming.length || ranges.includes(null)) return []
@@ -40,8 +38,8 @@ function reverseIndex(graph) {
 // Bounded breadth-first ancestor search for the consumer branches that within-range actions did not cover.
 // `evaluate(choices)` returns the keys of the original consumers a complete action set clears; it is the
 // only authority on suitability, so a candidate counts only when the resolved closure clears its branch.
-export async function findParentChoices({ unresolvedConsumers, graph, readCatalog, evaluate, accepted = [], now = Date.now() }) {
-  const cutoff = now - MIN_RELEASE_AGE_DAYS * DAY_MS
+export async function findParentChoices({ unresolvedConsumers, graph, readCatalog, evaluate, accepted = [], now = Date.now(), policy = { minAgeDays: MIN_RELEASE_AGE_FLOOR_DAYS, cutoffMs: null } }) {
+  const cutoff = effectiveCutoff(policy, now)
   const parentsOf = reverseIndex(graph)
   const catalogs = new Map()
   const catalogFor = (name) => {

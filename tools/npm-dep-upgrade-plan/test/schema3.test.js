@@ -9,7 +9,7 @@ test('planner verifies split coverage and propagates resolver failures without p
   const deps = { loadProject: async root => ({ root }), runNpmDepAudit: async () => ({ auditedAt: new Date().toISOString(), rows: [row] }), runNpmDepVersions: async () => ({ versions: ['1.2.5'], fetchedAt: new Date().toISOString() }), resolveChoices: async (project, item, choices, options) => {
     seen = [item, choices, options]
     return { choices, coverage: { resolution: 'partial' }, freshAt: Date.now() }
-  }, readUpstream: async () => ({ nodes: new Map(), edges: [] }), renderJson }
+  }, readUpstream: async () => ({ nodes: new Map(), edges: [] }), readReleasePolicy: async () => ({ minAgeDays: 7, cutoffMs: null }), renderJson }
   assert.equal(await main(['--no-cache', '--format', 'json'], io, deps), 0)
   assert.equal(JSON.parse(stdout).rows[0].resolution, 'partial')
   assert.equal(seen[2].noCache, true)
@@ -31,7 +31,7 @@ test('a finding whose jointly resolved coverage is none never carries choices', 
     loadProject: async root => ({ root }), runNpmDepAudit: async () => ({ auditedAt: new Date().toISOString(), rows: [row] }),
     runNpmDepVersions: async () => ({ versions: ['1.2.5'], fetchedAt: new Date().toISOString() }),
     resolveChoices: async (project, item, choices) => ({ choices, coverage: { resolution: 'none', clearedConsumers: [] }, freshAt: Date.now() }),
-    readUpstream: async () => ({ nodes: new Map(), edges: [] }), renderJson,
+    readUpstream: async () => ({ nodes: new Map(), edges: [] }), readReleasePolicy: async () => ({ minAgeDays: 7, cutoffMs: null }), renderJson,
   }
   assert.equal(await main(['--no-cache', '--format', 'json'], io, deps), 0)
   const [result] = JSON.parse(stdout).rows

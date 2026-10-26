@@ -31,6 +31,7 @@ export async function planParentChoices({ finding, row, project, options, contro
 
   let freshAt = Infinity
   const releaseTimes = {}
+  const policy = await adapters.readReleasePolicy(project.root)
   const graph = await adapters.readUpstream(project.root, { package: finding.package, version: finding.version }, parents, controls)
   const readCatalog = async (name) => {
     const catalog = await adapters.readCatalog(name)
@@ -54,7 +55,7 @@ export async function planParentChoices({ finding, row, project, options, contro
     return new Set(verified.coverage.clearedConsumers.map(consumerKey))
   }
 
-  const parentChoices = await adapters.findParentChoices({ unresolvedConsumers: unresolved.map(entry => entry.consumer), graph, readCatalog, evaluate, accepted: finding.choices })
+  const parentChoices = await adapters.findParentChoices({ unresolvedConsumers: unresolved.map(entry => entry.consumer), graph, readCatalog, evaluate, accepted: finding.choices, policy })
   if (!parentChoices.length) return { freshAt }
   const final = await resolve([...finding.choices, ...parentChoices])
   freshAt = Math.min(freshAt, final.freshAt)

@@ -37,9 +37,10 @@ const files = async f => Promise.all(['package.json', 'package-lock.json'].map(n
 const versionAt = (graph, location) => graph.nodes.find(n => n.location === location)?.version
 
 for (const npmCli of [process.env.NPM_DEP_UPGRADE_E2E_NPM_CLI, process.env.NPM_DEP_UPGRADE_E2E_COMPAT_NPM_CLI].filter(Boolean)) {
-  const run = async (t, packages, choices, releaseTimes, cSpec = '^1.2.0') => {
+  const run = async (t, packages, choices, releaseTimes, cSpec = '^1.2.0', minAge = null) => {
     const { createProject } = await import('../../npm-dep-upgrade/test/e2e/helpers/project.js')
     const f = await createProject(packages, { npmCli, installed: false }, t)
+    if (minAge !== null) f.env = { ...f.env, npm_config_min_release_age: String(minAge) }
     const before = await files(f)
     const result = await resolveChoices({ root: f.root }, rowFor(cSpec), choices, { env: f.env, releaseTimes })
     assert.deepEqual(await files(f), before, 'the project files are never modified')
@@ -100,6 +101,47 @@ for (const npmCli of [process.env.NPM_DEP_UPGRADE_E2E_NPM_CLI, process.env.NPM_D
     const { result } = await run(t, packages, [parentChoice('b', '1.1.0', '1.0.1')], { 'b@1.1.0': conflicting.releasedAt })
     assert.deepEqual(result.choices, [])
     assert.equal(result.coverage.resolution, 'none')
+  })
+
+  const withHelper = (helperVersions, leafVersions, bDeps = { a: '1.2.5', helper: '^2.0.0' }, extra = {}) => {
+    const release = entry('b', '1.1.0', bDeps, 40, false)
+    const packages = scenario({ '1.1.0': release }, {
+      helper: helperVersions,
+      leaf: leafVersions,
+      ...extra,
+    })
+    return { release, packages }
+  }
+  const helperVersions = { '2.0.4': entry('helper', '2.0.4', { leaf: '^1.0.0' }, 60, false), '2.0.5': entry('helper', '2.0.5', { leaf: '^1.0.0' }, 30, false), '2.0.6': entry('helper', '2.0.6', { leaf: '^1.0.0' }, 2, false) }
+  const leafVersions = { '1.0.0': entry('leaf', '1.0.0', {}, 85, false), '1.1.0': entry('leaf', '1.1.0', {}, 20, false), '1.1.1': entry('leaf', '1.1.1', {}, 3, false) }
+
+  test(`everything a parent release brings in resolves to the newest releases that are old enough: ${npmCli}`, async (t) => {
+    const { release, packages } = withHelper(helperVersions, leafVersions)
+    const { result } = await run(t, packages, [parentChoice('b', '1.1.0', '1.0.1')], { 'b@1.1.0': release.releasedAt })
+    assert.equal(versionAt(result.graph, 'node_modules/b'), '1.1.0', 'the ancestor is exactly the tested release')
+    assert.equal(versionAt(result.graph, 'node_modules/helper'), '2.0.5', 'not the 60-day-old release the ancestor date would allow, and not the 2-day-old one')
+    assert.equal(versionAt(result.graph, 'node_modules/leaf'), '1.1.0', 'not the 3-day-old release')
+    assert.equal(JSON.parse(Buffer.from(result.snapshots[0].files['package.json'], 'base64')).overrides, undefined)
+    assert.deepEqual(result.snapshots[0].graph.nodes.filter(n => n.name === 'helper').map(n => n.version), ['2.0.5'])
+  })
+
+  test(`a copy of the same package elsewhere in the tree is left alone: ${npmCli}`, async (t) => {
+    const helper = { '2.0.3': entry('helper', '2.0.3', {}, 80), '2.0.9': entry('helper', '2.0.9', {}, 25, false), '3.0.1': entry('helper', '3.0.1', {}, 50, false), '3.0.2': entry('helper', '3.0.2', {}, 30, false), '3.0.3': entry('helper', '3.0.3', {}, 2, false) }
+    const { release, packages } = withHelper(helper, {}, { a: '1.2.5', helper: '^3.0.0' }, { d: { '1.0.0': entry('d', '1.0.0', { helper: '^2.0.0' }, 90) } })
+    packages.manifest.dependencies.d = '^1.0.0'
+    const { result } = await run(t, packages, [parentChoice('b', '1.1.0', '1.0.1')], { 'b@1.1.0': release.releasedAt })
+    assert.equal(versionAt(result.graph, 'node_modules/b/node_modules/helper'), '3.0.2')
+    assert.equal(versionAt(result.graph, 'node_modules/helper'), '2.0.3', 'the unrelated installation did not move')
+    assert.equal(result.choices.length, 1)
+  })
+
+  test(`the release-age policy from npm config applies to the ancestor and to what it brings in: ${npmCli}`, async (t) => {
+    const helper = { '2.0.4': entry('helper', '2.0.4', {}, 60, false), '2.0.5': entry('helper', '2.0.5', {}, 35, false), '2.0.6': entry('helper', '2.0.6', {}, 20, false) }
+    const { release, packages } = withHelper(helper, {})
+    const { result } = await run(t, packages, [parentChoice('b', '1.1.0', '1.0.1')], { 'b@1.1.0': release.releasedAt }, '^1.2.0', 30)
+    assert.equal(versionAt(result.graph, 'node_modules/helper'), '2.0.5', 'the 20-day-old release violates a 30-day policy')
+    const young = await run(t, packages, [parentChoice('b', '1.1.0', '1.0.1')], { 'b@1.1.0': release.releasedAt }, '^1.2.0', 60)
+    assert.deepEqual(young.result.choices, [], 'an ancestor release younger than the policy is never used')
   })
 
   test(`a grandparent upgrade can clear a branch through its resolved closure: ${npmCli}`, async (t) => {

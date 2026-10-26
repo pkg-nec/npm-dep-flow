@@ -24,6 +24,10 @@ function adapters(overrides = {}) {
   return {
     calls,
     adapters: {
+      readReleasePolicy: async () => {
+        calls.policy = (calls.policy ?? 0) + 1
+        return { minAgeDays: 30, cutoffMs: null }
+      },
       readUpstream: async (root, target, parents, controls) => {
         calls.upstream.push({ root, target, parents, controls })
         return { nodes: new Map(), edges: [] }
@@ -165,4 +169,18 @@ test('parent actions are resolved in the executor order: ancestor level first, t
     const names = call.choices.map(c => c.targetPackage)
     assert.ok(names.indexOf('z-parent') < names.indexOf('a-grand') || !names.includes('a-grand') || !names.includes('z-parent'))
   }
+})
+
+test('the release-age policy is read once from npm config and handed to the candidate search', async () => {
+  const { adapters: a, calls } = adapters()
+  await planParentChoices({ ...base, finding: finding(), row, adapters: a })
+  assert.equal(calls.policy, 1)
+  assert.deepEqual(calls.find[0].policy, { minAgeDays: 30, cutoffMs: null })
+})
+
+test('the policy is not read when no ancestor search is needed', async () => {
+  const { adapters: a, calls } = adapters()
+  const rootOnly = { ...row, requirements: [{ declaredRequirement: '^1', directDependents: [dependent('app', '1.0.0', '')] }] }
+  await planParentChoices({ ...base, finding: finding([], 'none'), row: rootOnly, adapters: a })
+  assert.equal(calls.policy, undefined)
 })

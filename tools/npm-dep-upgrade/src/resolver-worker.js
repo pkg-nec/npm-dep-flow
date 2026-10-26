@@ -125,6 +125,36 @@ function mergeRule(base, route, name, version, nodes, rootEdges, semver) {
   }
   return { [selector]: value, ...Object.fromEntries(Object.entries(base).filter(([k]) => k !== selector)) }
 }
+const DAY_MS = 86_400_000
+// The release-age cutoff from npm configuration: never fewer than seven days, bounded by an explicit `before`.
+function releaseCutoff(config, now = Date.now()) {
+  const configured = Number(config.get('min-release-age') || 0)
+  const before = config.get('before')
+  const explicit = before ? new Date(before).getTime() : Infinity
+  if (!Number.isFinite(configured) || Number.isNaN(explicit)) throw new Error('Invalid release-age policy')
+  return Math.min(now - Math.max(7, configured) * DAY_MS, explicit)
+}
+// Phase 1 lands the ancestor on exactly the tested release (npm's named update, capped at that release's publication
+// time). That cap would also hold back everything the new release brings in, so phase 2 removes those new or changed
+// installations from the tree and lets npm resolve them again under the real cutoff: the newest releases that are old
+// enough, with every other installation left untouched. No overrides, no manifest edits, no hand-edited lockfile.
+async function landAncestor({ Arborist, opts, choice, releasedAt, cutoff, load }) {
+  const current = new Map((await load()).nodes.map(n => [n.location, n]))
+  const first = await new Arborist({ ...opts, before: new Date(Math.min(releasedAt, cutoff)) }).buildIdealTree({ update: { names: [choice.targetPackage] } })
+  await first.meta.save()
+  const stale = graph(first).nodes.filter(n => n.location && n.location !== choice.targetLocation && !equal(current.get(n.location), n)).map(n => n.location).sort((a, b) => a.length - b.length)
+  if (!stale.length) return first
+  const arborist = new Arborist({ ...opts, before: new Date(cutoff) })
+  const virtual = await arborist.loadVirtual()
+  for (const location of stale) {
+    const node = virtual.inventory.get(location)
+    if (node) node.parent = null
+  }
+  arborist.virtualTree = virtual
+  const ideal = await arborist.buildIdealTree()
+  await ideal.meta.save()
+  return ideal
+}
 export async function resolveRequest(request) {
   const require = createRequire(path.join(request.npmPath, 'package.json'))
   const Arborist = require('@npmcli/arborist'), Config = require('@npmcli/config'), semver = require('semver')
@@ -156,11 +186,9 @@ export async function resolveRequest(request) {
       // ancestor lands on exactly that version. No overrides, no declaration edits.
       const restore = () => Promise.all(['package.json', 'package-lock.json'].map((n, i) => writeFile(path.join(request.root, n), startFiles[i])))
       const releasedAt = Date.parse(request.releaseTimes?.[`${choice.targetPackage}@${choice.targetVersion}`])
-      if (!Number.isFinite(releasedAt)) throw new Error('Ancestor release time is unavailable')
-      const cutoff = opts.before ? Math.min(releasedAt, new Date(opts.before).getTime()) : releasedAt
-      const tree = await new Arborist({ ...opts, before: new Date(cutoff) }).buildIdealTree({ update: { names: [choice.targetPackage] } })
-      await tree.meta.save()
-      const after = graph(tree)
+      const cutoff = releaseCutoff(config)
+      if (!Number.isFinite(releasedAt) || releasedAt > cutoff) throw new Error('Ancestor release is not old enough under the release-age policy')
+      const after = graph(await landAncestor({ Arborist, opts, choice, releasedAt, cutoff, load }))
       try {
         if (!(await readFile(path.join(request.root, 'package.json'))).equals(startFiles[0])) throw new Error('Ancestor update changed the manifest')
         verifyResolution(before, after, request.item, [...accepted, choice], semver)
