@@ -52,7 +52,7 @@ export function selectItem(report, selector, packageName = null) {
   if (found.length !== 1) fail('AMBIGUOUS_TARGET', 'selection', `Ambiguous target; use a longer ID or --package:\n${found.map(r => `${r.id} ${r.package}@${r.version} ${r.targetLocation}`).join('\n')}`)
   const row = found[0]
   if (row.resolution === 'none') fail('INELIGIBLE_TARGET', 'selection', 'Selected target is ineligible')
-  if (!Array.isArray(row.choices) || row.choices.some(choice => choice.strategy !== STRATEGY)) fail('UNSUPPORTED_STRATEGY', 'selection', 'Selected strategy is unsupported')
+  if (!Array.isArray(row.choices) || row.choices.some(choice => ![STRATEGY, PARENT_STRATEGY].includes(choice.strategy))) fail('UNSUPPORTED_STRATEGY', 'selection', 'Selected strategy is unsupported')
   return row
 }
 export async function readPlanner(root, run = runProcess, { clearCache = false } = {}) {

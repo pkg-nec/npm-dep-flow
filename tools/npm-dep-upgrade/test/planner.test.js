@@ -94,6 +94,7 @@ test('malformed or forged parent choices are rejected', () => {
   assert.throws(() => validatePlanner(mixed([parent(), parent({ targetPackage: 'other-parent', targetLocation: 'node_modules/other-parent' })])), /duplicate/i)
 })
 
-test('the executor still refuses to select parent strategies until it can execute them', () => {
-  assert.throws(() => selectItem(validatePlanner(mixed([parent()])), id), /unsupported/i)
+test('the executor selects parent strategies and still refuses unknown ones', () => {
+  assert.equal(selectItem(validatePlanner(mixed([parent()])), id).choices[0].strategy, 'upgrade-via-parent-dependency')
+  assert.throws(() => selectItem({ rows: [{ ...row, choices: [{ ...row.choices[0], strategy: 'upgrade-via-grandparent' }] }] }, id), /unsupported/i)
 })

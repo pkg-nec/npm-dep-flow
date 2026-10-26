@@ -90,12 +90,21 @@ export function computeCoverage(before, after, item, semver) {
     const reachable = closure(after, holders)
     const affected = [...reachable].some((location) => {
       const n = nodes.get(location)
-      return n?.name === item.package && !safe(n) && !(known.has(location) && equal(oldNodes.get(location), n))
+      return n?.name === item.package && !safe(n) && !(location !== item.targetLocation && known.has(location) && equal(oldNodes.get(location), n))
     })
     ;
     (affected ? remainingConsumers : clearedConsumers).push({ location: e.from, requestedName: e.requestedName, type: e.type })
   }
   return { resolution: !clearedConsumers.length ? 'none' : remainingConsumers.length ? 'partial' : 'complete', clearedConsumers, remainingConsumers }
+}
+export function choiceSatisfied(current, choice, item, semver) {
+  const nodes = new Map(current.nodes.map(n => [n.location, n]))
+  return choice.affectedConsumers.every((consumer) => {
+    const edge = current.edges.find(e => key(e) === key(consumer))
+    if (!edge) return true
+    const node = nodes.get(edge.to)
+    return !!node && node.name === item.package && semver.gt(node.version, item.version) && item.advisories.every(a => !semver.satisfies(node.version, a.range))
+  })
 }
 export function matchesSelectedScope(before, probe, targetLocation, affectedConsumers) {
   const selected = new Set(affectedConsumers.map(key))
@@ -139,12 +148,19 @@ export async function resolveRequest(request) {
   delete opts.minReleaseAge
   const load = async () => graph(await new Arborist(opts).loadVirtual())
   const before = await load(), original = await readFile(path.join(request.root, 'package.json'))
-  const snapshots = [], accepted = [], nodes = new Map(before.nodes.map(n => [n.location, n]))
-  const rootEdges = before.edges.filter(e => e.from === ''), parents = new Map()
-  for (const e of before.edges) {
-    if (!parents.has(e.to)) parents.set(e.to, new Set())
-    parents.get(e.to).add(e.from)
+  const snapshots = [], accepted = [], satisfied = []
+  let nodes, rootEdges, parents
+  // Scope probing follows the tree as it stands after earlier actions, which may have moved installations.
+  const indexScope = (current) => {
+    nodes = new Map(current.nodes.map(n => [n.location, n]))
+    rootEdges = current.edges.filter(e => e.from === '')
+    parents = new Map()
+    for (const e of current.edges) {
+      if (!parents.has(e.to)) parents.set(e.to, new Set())
+      parents.get(e.to).add(e.from)
+    }
   }
+  indexScope(before)
   for (let choiceIndex = 0;
     choiceIndex < request.choices.length;
     choiceIndex++) {
@@ -175,6 +191,13 @@ export async function resolveRequest(request) {
       continue
     }
     const scopeBefore = await load()
+    indexScope(scopeBefore)
+    // An action whose consumers an earlier ancestor upgrade already cleared stays in the plan: whether npm dedupes
+    // is decided again at execution, where the executor skips it only if it is still satisfied.
+    if (accepted.length && choiceSatisfied(scopeBefore, choice, request.item, semver)) {
+      satisfied.push(choice)
+      continue
+    }
     const manifest = JSON.parse(startFiles[0])
     let finalManifest = startFiles[0], mutation
     if (choice.affectedConsumers.some(e => e.location === '')) {
@@ -239,7 +262,7 @@ export async function resolveRequest(request) {
     snapshots.push({ choiceIndex, graph: after, files: Object.fromEntries(await Promise.all(['package.json', 'package-lock.json'].map(async n => [n, (await readFile(path.join(request.root, n))).toString('base64')]))) })
   }
   const after = await load()
-  return { schemaVersion: 1, choices: accepted, graph: after, before, snapshots, coverage: computeCoverage(before, after, request.item, semver), manifestChanged: !(await readFile(path.join(request.root, 'package.json'))).equals(original), freshAt: request.startedAt }
+  return { schemaVersion: 1, choices: request.choices.filter(choice => accepted.includes(choice) || satisfied.includes(choice)), graph: after, before, snapshots, coverage: computeCoverage(before, after, request.item, semver), manifestChanged: !(await readFile(path.join(request.root, 'package.json'))).equals(original), freshAt: request.startedAt }
 }
 if (process.argv[2]) {
   try {

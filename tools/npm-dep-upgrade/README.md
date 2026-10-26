@@ -32,7 +32,7 @@ With two positional arguments, the first is always the project directory and the
 
 The selector is a lowercase hexadecimal prefix of 7–64 characters. Planner JSON contains the full SHA-256 of `package + "__" + targetLocation`; Markdown shows seven characters. IDs identify package/location, independent of the installed version and absolute project path. A short prefix can collide. `--package` filters by exact package name before uniqueness checking; two locations of the same package may still need a longer prefix. Automation should use full IDs plus package names.
 
-Each invocation reruns the schema-version-3 planner and executes all `update-within-declared-range` actions in one partial or complete finding. A `none` finding is rejected. There is no choice-selection flag, plan-file input, `--to`, or parent upgrade. A complete finding normally disappears; a partial finding leaves the incompatible vulnerable consumers in the next report, potentially at a different location/ID. Re-executing a remaining `none` finding changes nothing.
+Each invocation reruns the schema-version-3 planner and executes all planned actions of one partial or complete finding: `upgrade-via-parent-dependency` actions first (ancestor level ascending, then location, name and version), then `update-within-declared-range` actions. Each action is reassessed against the tree left by the previous one and is skipped (`already-satisfied`, no commit) when its consumers are already cleared. A `none` finding is rejected. There is no choice-selection flag, plan-file input, or `--to`. A complete finding normally disappears; a partial finding leaves the incompatible vulnerable consumers in the next report, potentially at a different location/ID. Re-executing a remaining `none` finding changes nothing.
 
 ## Per-invocation configuration
 
@@ -85,7 +85,7 @@ The default template is `deps: {description}` without a module, or `deps({module
 | `{description}` | Strategy-supplied action, currently `bump <package> from <oldVersion> to <newVersion>` |
 | `{package}` | Selected package name |
 | `{oldVersion}` / `{newVersion}` | Installed / chosen version |
-| `{strategy}` | Currently `update-within-declared-range` |
+| `{strategy}` | `update-within-declared-range` or `upgrade-via-parent-dependency` |
 
 Descriptions are supplied separately from the formatter, allowing a future strategy to provide wording such as `migrate Angular toolchain from …`. This release adds no new strategies. Placeholder values are literal text, never executable code or nested templates. Unknown placeholders or unmatched braces are rejected. Templates and rendered subjects must be nonempty single lines without control characters or surrounding whitespace. Module names must be nonempty, without control characters, braces, parentheses, or surrounding whitespace. The actual rendered subject is protected by the commit guards and returned in the report's ordered `commits[].subject` fields.
 
@@ -105,7 +105,7 @@ For transitive targets, temporary scoped overrides target only compatible consum
 
 Equivalent selectors share their physical parent locations instead of expanding every ancestry route. Scope proposals are bounded to 1,024 entries and graph-node-count depth. The selected npm resolver constructs and serializes private lockfiles before any target files change. All actual installs use `--ignore-scripts` and at least seven days of release age.
 
-A shared installation can split, reuse an existing safe installation, or relocate. Verification follows original incoming consumer relationships. Parents and unrelated target copies remain unchanged; selected consumers become safe, incompatible consumers retain valid original versions. Necessary supporting closure changes are verified for fresh security and release age. Remaining pre-existing vulnerabilities are permitted for a partial result.
+A shared installation can split, reuse an existing safe installation, or relocate. Verification follows original incoming consumer relationships. Unrelated installations and unrelated target copies remain unchanged; selected consumers become safe, incompatible consumers retain valid original versions. Necessary supporting closure changes are verified for fresh security and release age. Remaining pre-existing vulnerabilities are permitted for a partial result.
 
 All actions are resolved and their intermediate snapshots checked before committing. Each snapshot is installed with scripts disabled and checked against fresh security evidence. Only verified dependency-file pairs are published under concurrency guards. Each actual upgrade then receives its own commit, containing its required supporting changes. Several consumers accepting one safe version form one action and one commit; different safe-version actions can produce several commits for the same finding. Hooks see the matching snapshot and installed tree. There is no interactive review pause.
 

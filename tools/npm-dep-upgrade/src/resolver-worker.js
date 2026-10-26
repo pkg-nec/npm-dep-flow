@@ -31,11 +31,24 @@ function closure(g, starts) {
   }
   return found
 }
+const PARENT_STRATEGY = 'upgrade-via-parent-dependency'
+const isParent = choice => choice.strategy === PARENT_STRATEGY
 export function verifyResolution(before, after, item, choices, semver) {
+  const withinRange = choices.filter(c => !isParent(c)), parents = choices.filter(isParent)
   const oldNodes = new Map(before.nodes.map(n => [n.location, n])), nodes = new Map(after.nodes.map(n => [n.location, n]))
-  const selected = new Map(choices.flatMap(c => c.affectedConsumers.map(e => [key(e), c])))
+  const selected = new Map(withinRange.flatMap(c => c.affectedConsumers.map(e => [key(e), c])))
+  const parentSelected = new Set(parents.flatMap(c => c.affectedConsumers.map(key)))
+  for (const choice of parents) {
+    const old = oldNodes.get(choice.targetLocation), landed = nodes.get(choice.targetLocation)
+    if (!old || old.name !== choice.targetPackage || old.version !== choice.currentVersion) throw new Error('Ancestor installation changed since planning')
+    if (!landed || landed.name !== choice.targetPackage || landed.version !== choice.targetVersion) throw new Error('Ancestor did not resolve to the tested version')
+    for (const n of before.nodes) if (n.name === choice.targetPackage && n.location !== choice.targetLocation && !equal(n, nodes.get(n.location))) throw new Error('Another ancestor installation changed')
+  }
+  const parentLocations = parents.map(c => c.targetLocation)
+  const parentClosureBefore = closure(before, parentLocations), parentClosureAfter = closure(after, parentLocations)
+  const scoped = new Set([...closure(before, [item.targetLocation]), ...parentClosureBefore, ...parentClosureAfter])
   const oldIncoming = before.edges.filter(e => e.to === item.targetLocation)
-  for (const n of before.nodes) if (n.location && n.name !== item.package && !equal(n, nodes.get(n.location)) && !closure(before, [item.targetLocation]).has(n.location)) throw new Error('Unrelated parent installation changed')
+  for (const n of before.nodes) if (n.location && n.name !== item.package && !equal(n, nodes.get(n.location)) && !scoped.has(n.location)) throw new Error('Unrelated parent installation changed')
   for (const old of before.edges) {
     const oldNode = oldNodes.get(old.to)
     if (oldNode?.name !== item.package) continue
@@ -43,15 +56,56 @@ export function verifyResolution(before, after, item, choices, semver) {
     const currentNode = nodes.get(current?.to)
     if (oldIncoming.includes(old)) {
       const choice = selected.get(key(old))
+      if (!choice && (parentSelected.has(key(old)) || parentClosureBefore.has(old.from))) {
+        // The ancestor's own change may remove this dependency; if it survives it must satisfy its current declaration.
+        if (current && (!currentNode || currentNode.name !== item.package || !semver.validRange(current.rawSpec) || !semver.satisfies(currentNode.version, current.rawSpec))) throw new Error('Original consumer requirement not satisfied')
+        continue
+      }
       if (!currentNode || currentNode.name !== item.package || !semver.validRange(old.rawSpec) || !semver.satisfies(currentNode.version, old.rawSpec)) throw new Error('Original consumer requirement not satisfied')
-      if (choice ? currentNode.version !== choice.targetVersion : !equal(oldNode, currentNode)) throw new Error('Consumer resolved outside intended scope')
+      // An ancestor's new closure may let npm dedupe the shared installation upward; moving a consumer to a newer
+      // valid release of the same installation is permitted then, but never to an older one or to another location.
+      const upgradedInPlace = parents.length > 0 && !choice && current.to === old.to && semver.gt(currentNode.version, oldNode.version)
+      if (choice ? currentNode.version !== choice.targetVersion : !equal(oldNode, currentNode) && !upgradedInPlace) throw new Error('Consumer resolved outside intended scope')
     }
-    else if (oldNode?.name === item.package && !equal(oldNode, currentNode)) throw new Error('Another target installation changed')
+    else if (oldNode?.name === item.package && !equal(oldNode, currentNode) && !parentClosureBefore.has(old.from)) throw new Error('Another target installation changed')
   }
   const newTargets = oldIncoming.map(e => after.edges.find(x => key(x) === key(e))?.to).filter(x => x !== undefined)
-  const allowed = new Set([...closure(before, [item.targetLocation]), ...closure(after, newTargets)])
+  const allowed = new Set([...closure(before, [item.targetLocation]), ...closure(after, newTargets), ...parentClosureBefore, ...parentClosureAfter])
   for (const n of [...before.nodes, ...after.nodes]) if (n.location && !equal(oldNodes.get(n.location), nodes.get(n.location)) && !allowed.has(n.location)) throw new Error('Unrelated installation changed')
   for (const e of after.edges) if (e.to === null ? !e.optional : e.valid === false) throw new Error('Invalid dependency graph after resolution')
+}
+// A consumer branch is cleared when nothing reachable from where the consumer now lives is still an affected
+// installation of the package, so removing a dependency clears it but a descendant that reintroduces the
+// vulnerability does not. Affected installations the consumer already reached by another route are other findings.
+export function computeCoverage(before, after, item, semver) {
+  const oldNodes = new Map(before.nodes.map(n => [n.location, n])), nodes = new Map(after.nodes.map(n => [n.location, n]))
+  const safe = n => semver.gt(n.version, item.version) && item.advisories.every(a => !semver.satisfies(n.version, a.range))
+  const clearedConsumers = [], remainingConsumers = []
+  for (const e of before.edges.filter(e => e.to === item.targetLocation)) {
+    const holder = oldNodes.get(e.from), here = nodes.get(e.from)
+    const holders = here && holder && here.name === holder.name
+      ? [e.from]
+      : after.nodes.filter(n => n.location && holder && n.name === holder.name && oldNodes.get(n.location)?.name !== holder.name).map(n => n.location)
+    const known = closure({ edges: before.edges.filter(x => x !== e) }, [e.from])
+    const reachable = closure(after, holders)
+    const affected = [...reachable].some((location) => {
+      const n = nodes.get(location)
+      return n?.name === item.package && !safe(n) && !(location !== item.targetLocation && known.has(location) && equal(oldNodes.get(location), n))
+    })
+    ;
+    (affected ? remainingConsumers : clearedConsumers).push({ location: e.from, requestedName: e.requestedName, type: e.type })
+  }
+  return { resolution: !clearedConsumers.length ? 'none' : remainingConsumers.length ? 'partial' : 'complete', clearedConsumers, remainingConsumers }
+}
+// An action whose consumers are all already cleared (dependency removed or resolved to a safe version) is skipped.
+export function choiceSatisfied(current, choice, item, semver) {
+  const nodes = new Map(current.nodes.map(n => [n.location, n]))
+  return choice.affectedConsumers.every((consumer) => {
+    const edge = current.edges.find(e => key(e) === key(consumer))
+    if (!edge) return true
+    const node = nodes.get(edge.to)
+    return !!node && node.name === item.package && semver.gt(node.version, item.version) && item.advisories.every(a => !semver.satisfies(node.version, a.range))
+  })
 }
 function mergeRule(base, route, name, version, nodes, rootEdges, semver) {
   const location = route[0], n = nodes.get(location), selector = `${n.name}@${n.version}`
@@ -85,17 +139,44 @@ export async function resolveRequest(request) {
   else opts.minReleaseAge = Math.max(7, Number(opts.minReleaseAge || 0))
   const load = async () => graph(await new Arborist(opts).loadVirtual())
   const before = await load(), original = await readFile(path.join(request.root, 'package.json'))
-  const snapshots = [], accepted = [], nodes = new Map(before.nodes.map(n => [n.location, n]))
-  const rootEdges = before.edges.filter(e => e.from === ''), parents = new Map()
-  for (const e of before.edges) {
-    if (!parents.has(e.to)) parents.set(e.to, new Set())
-    parents.get(e.to).add(e.from)
-  }
+  const snapshots = [], accepted = [], skipped = []
   for (let choiceIndex = 0;
     choiceIndex < request.choices.length;
     choiceIndex++) {
     const choice = request.choices[choiceIndex], startFiles = await Promise.all(['package.json', 'package-lock.json'].map(n => readFile(path.join(request.root, n))))
+    const scopeBefore = await load()
+    if (!isParent(choice) && accepted.length && choiceSatisfied(scopeBefore, choice, request.item, semver)) {
+      skipped.push(choiceIndex)
+      continue
+    }
+    if (isParent(choice)) {
+      // npm's named update under the original declarations, capped at the tested release's publication time so the
+      // ancestor lands on exactly that version. No overrides, no declaration edits.
+      const restore = () => Promise.all(['package.json', 'package-lock.json'].map((n, i) => writeFile(path.join(request.root, n), startFiles[i])))
+      const releasedAt = Date.parse(request.releaseTimes?.[`${choice.targetPackage}@${choice.targetVersion}`])
+      if (!Number.isFinite(releasedAt)) throw new Error('Ancestor release time is unavailable')
+      const cutoff = opts.before ? Math.min(releasedAt, new Date(opts.before).getTime()) : releasedAt
+      const tree = await new Arborist({ ...opts, before: new Date(cutoff) }).buildIdealTree({ update: { names: [choice.targetPackage] } })
+      await tree.meta.save()
+      const after = graph(tree)
+      try {
+        if (!(await readFile(path.join(request.root, 'package.json'))).equals(startFiles[0])) throw new Error('Ancestor update changed the manifest')
+        verifyResolution(before, after, request.item, [...accepted, choice], semver)
+      }
+      catch (error) {
+        await restore()
+        throw error
+      }
+      accepted.push(choice)
+      snapshots.push({ choiceIndex, graph: after, files: Object.fromEntries(await Promise.all(['package.json', 'package-lock.json'].map(async n => [n, (await readFile(path.join(request.root, n))).toString('base64')]))) })
+      continue
+    }
     const manifest = JSON.parse(startFiles[0]), selected = new Set(choice.affectedConsumers.map(key))
+    const scopeNodes = new Map(scopeBefore.nodes.map(n => [n.location, n])), scopeParents = new Map(), scopeRootEdges = scopeBefore.edges.filter(e => e.from === '')
+    for (const e of scopeBefore.edges) {
+      if (!scopeParents.has(e.to)) scopeParents.set(e.to, new Set())
+      scopeParents.get(e.to).add(e.from)
+    }
     let finalManifest = startFiles[0], mutation
     if (choice.affectedConsumers.some(e => e.location === '')) {
       for (const e of choice.affectedConsumers.filter(e => e.location === '')) {
@@ -113,12 +194,12 @@ export async function resolveRequest(request) {
       let routes = choice.affectedConsumers.map(e => [e.location]), matched = false
       const attempted = new Set()
       for (let depth = 1;
-        routes.length && depth <= nodes.size;
+        routes.length && depth <= scopeNodes.size;
         depth++) {
         mutation = structuredClone(manifest)
         mutation.overrides = structuredClone(manifest.overrides || {})
         try {
-          for (const route of routes) mutation.overrides = mergeRule(mutation.overrides, route, choice.targetPackage, choice.targetVersion, nodes, rootEdges, semver)
+          for (const route of routes) mutation.overrides = mergeRule(mutation.overrides, route, choice.targetPackage, choice.targetVersion, scopeNodes, scopeRootEdges, semver)
         }
         catch { break }
         const signature = JSON.stringify(mutation.overrides)
@@ -127,14 +208,14 @@ export async function resolveRequest(request) {
         await writeFile(path.join(request.root, 'package.json'), JSON.stringify(mutation))
         const probe = await load()
         const affected = probe.edges.filter((e) => {
-          const old = before.edges.find(x => key(x) === key(e))
-          return old && nodes.get(old.to)?.name === request.item.package && e.effectiveSpec !== old.effectiveSpec
+          const old = scopeBefore.edges.find(x => key(x) === key(e))
+          return old && scopeNodes.get(old.to)?.name === request.item.package && e.effectiveSpec !== old.effectiveSpec
         })
         if (affected.length && affected.every(e => selected.has(key(e))) && choice.affectedConsumers.every(e => affected.some(x => key(x) === key(e)))) {
           matched = true
           break
         }
-        routes = routes.flatMap(route => [...(parents.get(route[0]) || [])].map(p => p === '' ? route : [p, ...route]))
+        routes = routes.flatMap(route => [...(scopeParents.get(route[0]) || [])].map(p => p === '' ? route : [p, ...route]))
         if (routes.length > 1024) break
       }
       if (!matched) {
@@ -162,14 +243,8 @@ export async function resolveRequest(request) {
     accepted.push(choice)
     snapshots.push({ choiceIndex, graph: after, files: Object.fromEntries(await Promise.all(['package.json', 'package-lock.json'].map(async n => [n, (await readFile(path.join(request.root, n))).toString('base64')]))) })
   }
-  const after = await load(), clearedConsumers = [], remainingConsumers = [], afterNodes = new Map(after.nodes.map(n => [n.location, n]))
-  for (const e of before.edges.filter(e => e.to === request.item.targetLocation)) {
-    const current = after.edges.find(x => key(x) === key(e)), node = afterNodes.get(current?.to)
-    const safe = node && semver.gt(node.version, request.item.version) && request.item.advisories.every(a => !semver.satisfies(node.version, a.range))
-    ;
-    (safe ? clearedConsumers : remainingConsumers).push({ location: e.from, requestedName: e.requestedName, type: e.type })
-  }
-  return { schemaVersion: 1, choices: accepted, graph: after, before, snapshots, coverage: { resolution: !clearedConsumers.length ? 'none' : remainingConsumers.length ? 'partial' : 'complete', clearedConsumers, remainingConsumers }, manifestChanged: !(await readFile(path.join(request.root, 'package.json'))).equals(original), freshAt: request.startedAt }
+  const after = await load()
+  return { schemaVersion: 1, choices: accepted, graph: after, before, snapshots, coverage: computeCoverage(before, after, request.item, semver), skipped, manifestChanged: !(await readFile(path.join(request.root, 'package.json'))).equals(original), freshAt: request.startedAt }
 }
 if (process.argv[2]) {
   try {

@@ -117,3 +117,13 @@ test('verification rejects an invalid resulting graph', () => {
   const invalid = { ...safePin, edges: safePin.edges.map(e => (e.from === 'node_modules/b' ? { ...e, valid: false } : e)) }
   assert.throws(() => verifyResolution(before, invalid, item, [parentChoice()], semver), /Invalid dependency graph/)
 })
+
+test('another route to the original vulnerable installation keeps the branch uncleared', () => {
+  // The consumer declares the target twice (like a dev and a peer declaration); one edge changes, the other still reaches it.
+  const twice = {
+    nodes: [node('', 'app', '1.0.0'), node('node_modules/a', 'a', '1.2.3')],
+    edges: [edge('', 'node_modules/a', 'a', '^1.2.0'), { ...edge('', 'node_modules/a', 'a', '1.2.3'), type: 'peerDependencies' }],
+  }
+  assert.deepEqual(computeCoverage(twice, twice, item, semver).clearedConsumers, [])
+  assert.equal(computeCoverage(twice, twice, item, semver).resolution, 'none')
+})
