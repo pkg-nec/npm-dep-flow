@@ -28,6 +28,9 @@ jobs:
         with:
           node-version: '24'
           package-manager-cache: false
+      - name: Install npm-dep-paths dependencies for integration test
+        working-directory: tools/npm-dep-paths
+        run: npm ci --ignore-scripts
       - name: Install npm-dep-audit dependencies for integration test
         working-directory: tools/npm-dep-audit
         run: npm ci --ignore-scripts
