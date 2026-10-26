@@ -116,3 +116,36 @@ test('renders unusual values literally without changing JSON data', () => {
   assert.equal(json.rows[0].package, literalInput)
   assert.equal(json.rows[0].targetLocation, literalInput)
 })
+
+const parentChoice = (name, from, to, location = `node_modules/${name}`) => ({
+  strategy: 'upgrade-via-parent-dependency', targetPackage: name, currentVersion: from, targetVersion: to, targetLocation: location,
+  affectedConsumers: [{ location, requestedName: 'brace-expansion', type: 'dependencies' }],
+})
+
+test('a mixed item lists the within-range label once and each parent transition after it', () => {
+  const [within] = row().choices
+  const markdown = renderMarkdown([row({ resolution: 'partial', choices: [parentChoice('nx', '23.1.2', '23.2.0'), within, { ...within, targetVersion: '5.0.13' }, parentChoice('@scope/b', '1.0.1', '1.1.0')] })])
+  const line = markdown.split('\n').find(item => item.startsWith('| ') && item.includes('brace-expansion |'))
+  assert.match(line, /Update within declared range; Upgrade via parent dependency: @scope\/b@1\.0\.1 → @scope\/b@1\.1\.0; Upgrade via parent dependency: nx@23\.1\.2 → nx@23\.2\.0 \|$/)
+  assert.doesNotMatch(markdown, /Update within declared range:/)
+  assert.equal((markdown.match(/Update within declared range/g) || []).length, 1)
+})
+
+test('parent-only items list transitions in deterministic location order regardless of input order', () => {
+  const a = parentChoice('b', '1.0.1', '1.1.0')
+  const c = parentChoice('c', '2.0.0', '2.1.0')
+  const forward = renderMarkdown([row({ choices: [a, c] })])
+  const reversed = renderMarkdown([row({ choices: [c, a] })])
+  assert.equal(forward, reversed)
+  assert.ok(forward.indexOf('b@1.0.1') < forward.indexOf('c@2.0.0'))
+  assert.doesNotMatch(forward, /Update within declared range/)
+})
+
+test('parent names are escaped and the finding id and JSON choices are unchanged by strategy', () => {
+  const markdown = renderMarkdown([row({ choices: [parentChoice('we|ird_pkg', '1.0.0', '1.1.0')] })])
+  assert.match(markdown, /Upgrade via parent dependency: we\\\|ird\\_pkg@1\.0\.0 → we\\\|ird\\_pkg@1\.1\.0/)
+  const plain = JSON.parse(renderJson([row()], '2026-10-01T00:00:00.000Z')).rows[0]
+  const mixed = JSON.parse(renderJson([row({ choices: [...row().choices, parentChoice('nx', '1.0.0', '1.1.0')] })], '2026-10-01T00:00:00.000Z')).rows[0]
+  assert.equal(mixed.id, plain.id)
+  assert.deepEqual(mixed.choices[1], { strategy: 'upgrade-via-parent-dependency', targetPackage: 'nx', targetLocation: 'node_modules/nx', currentVersion: '1.0.0', targetVersion: '1.1.0', affectedConsumers: [{ location: 'node_modules/nx', requestedName: 'brace-expansion', type: 'dependencies' }] })
+})

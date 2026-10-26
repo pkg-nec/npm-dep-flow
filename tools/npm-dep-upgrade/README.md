@@ -171,3 +171,7 @@ npm run test:e2e
 ```
 
 Set `TEST_TOOLS` and `TEST_SCRATCH` to absolute directories first. Runtime selection variables are test-only. A requested missing compatibility runtime fails rather than silently skipping. Fixtures isolate npm user/global configuration, caches, Git configuration, hooks and scratch files. The default full suite covers npm12.1, genuine 7-character ID collisions, security drift, Git guards/recovery, supporting changes and clean `npm ci` reproduction. Compatibility tests cover npm11.10, lockfile v2 and absent initial `node_modules`. Windows CI runs the real D01/T01/O03/F06 smoke paths plus unit checks. See the [coverage map](test/e2e/COVERAGE.md) and [approved catalog](../../docs/superpowers/specs/2026-10-20-npm-dep-upgrade-e2e-cases.md).
+
+## Parent upgrades: schema decision
+
+The planner contract stays at schema version 3. Parent choices (`upgrade-via-parent-dependency`) reuse the existing choice fields, so the mutator needs no new planner field: `targetPackage`, `targetLocation`, `currentVersion` and `targetVersion` describe the ancestor, and `affectedConsumers` lists the covered branches of the selected finding. Validation is strategy-aware; within-range choices keep their original checks. No older-schema reader is provided.

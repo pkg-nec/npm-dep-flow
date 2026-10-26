@@ -85,9 +85,17 @@ function renderSeverity(value) {
   return formatted
 }
 
+const PARENT_STRATEGY = 'upgrade-via-parent-dependency'
+
+// Within-range actions share one label; parent upgrades keep their package and version transition.
 function renderStrategies(choices) {
   if (choices.length === 0) return '—'
-  return [...new Set(choices.map(choice => escapeMarkdown(strategyLabels.get(choice.strategy) ?? choice.strategy)))].join('; ')
+  const parents = choices.filter(choice => choice.strategy === PARENT_STRATEGY)
+    .sort((a, b) => compareText(a.targetLocation, b.targetLocation) || compareText(a.targetPackage, b.targetPackage) || compareVersion(a.currentVersion, b.currentVersion) || compareVersion(a.targetVersion, b.targetVersion))
+  const others = choices.filter(choice => choice.strategy !== PARENT_STRATEGY)
+  const labels = [...new Set(others.map(choice => escapeMarkdown(strategyLabels.get(choice.strategy) ?? choice.strategy)))]
+  const transitions = [...new Set(parents.map(choice => `Upgrade via parent dependency: ${escapeMarkdown(choice.targetPackage)}@${escapeMarkdown(choice.currentVersion)} → ${escapeMarkdown(choice.targetPackage)}@${escapeMarkdown(choice.targetVersion)}`))]
+  return [...labels, ...transitions].join('; ')
 }
 
 export function renderMarkdown(rows) {

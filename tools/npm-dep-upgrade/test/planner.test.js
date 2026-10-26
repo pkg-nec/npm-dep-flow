@@ -66,3 +66,34 @@ test('clear-only adapter asks the planner to clear and reports failures', async 
   assert.deepEqual(calls, [['npm-dep-upgrade-plan', ['--clear-cache'], { cwd: '/project' }]])
   await assert.rejects(clearPlannerCache('/project', async () => ({ code: 1, stderr: 'cannot clear cache', stdout: '' })), /npm-dep-upgrade-plan --clear-cache failed: cannot clear cache/)
 })
+
+const parentLocation = 'node_modules/e2e-parent'
+const parent = (extra = {}) => ({ strategy: 'upgrade-via-parent-dependency', targetPackage: 'e2e-parent', targetLocation: parentLocation, currentVersion: '1.0.1', targetVersion: '1.1.0', affectedConsumers: [{ location: parentLocation, requestedName: '@e2e/target', type: 'dependencies' }], ...extra })
+const mixed = (choices, resolution = 'partial') => report([{ ...row, resolution, choices }])
+
+test('parent choices validate against the ancestor, not the vulnerable installation', () => {
+  const ok = validatePlanner(mixed([parent()]))
+  assert.equal(ok.rows[0].choices[0].targetPackage, 'e2e-parent')
+  validatePlanner(mixed([row.choices[0], parent({ affectedConsumers: [{ location: 'node_modules/other', requestedName: '@e2e/target', type: 'dependencies' }] })]))
+  assert.equal(validatePlanner(mixed([parent({ targetVersion: '1.0.2' })])).rows.length, 1)
+})
+
+test('malformed or forged parent choices are rejected', () => {
+  for (const choice of [
+    parent({ targetPackage: 'Not A Package' }),
+    parent({ targetLocation: '../node_modules/e2e-parent' }),
+    parent({ targetLocation: location }),
+    parent({ currentVersion: 'x' }),
+    parent({ targetVersion: '1.0.1' }),
+    parent({ targetVersion: '1.0.0' }),
+    parent({ affectedConsumers: [] }),
+    parent({ affectedConsumers: [{ location: '../bad', requestedName: '@e2e/target', type: 'dependencies' }] }),
+    parent({ affectedConsumers: [{ location: parentLocation, requestedName: '@e2e/target', type: 'overrides' }] }),
+    parent({ strategy: 'upgrade-via-grandparent' }),
+  ]) assert.throws(() => validatePlanner(mixed([choice])), /choice|location|consumer|package/i)
+  assert.throws(() => validatePlanner(mixed([parent(), parent({ targetPackage: 'other-parent', targetLocation: 'node_modules/other-parent' })])), /duplicate/i)
+})
+
+test('the executor still refuses to select parent strategies until it can execute them', () => {
+  assert.throws(() => selectItem(validatePlanner(mixed([parent()])), id), /unsupported/i)
+})

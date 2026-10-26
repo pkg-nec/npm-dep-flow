@@ -4,6 +4,8 @@
 
 The strategy is `update-within-declared-range`. It groups compatible incoming consumers into upgrade actions. An exact pin can remain on the vulnerable version while a caret consumer moves to a safe version. Four compatible consumers accepting the same safe version form one action, not four findings. The planner is read-only.
 
+When consumers remain that no within-range action can cover, the planner also searches up to two ancestor levels for a parent release that clears the branch (strategy `upgrade-via-parent-dependency`). The Strategy cell then shows the within-range label once, followed by each parent transition, for example `Upgrade via parent dependency: B@1.0.1 → B@1.1.0`. Parent choices use the same schema 3 fields as other choices: `targetPackage`, `targetLocation`, `currentVersion` and `targetVersion` describe the ancestor, and `affectedConsumers` lists the finding's branches the upgrade clears. See [Parent upgrades](#parent-upgrades-schema-decision).
+
 ## Requirements and installation
 
 - Node.js 20 or newer.
@@ -166,3 +168,7 @@ Logs show commands, arguments, working directories, durations and exit outcomes.
 Credentials in logged arguments and URLs are redacted. Debug records omit environment values, request bodies and subprocess output. Existing error diagnostics and installation progress retain their usual behavior. See the [shared debug guide](../../README.md#debug-logging) for propagation and scope.
 
 Cache identity also hashes active npm configuration source files and referenced environment values, so protected token changes invalidate cached data even though npm redacts those values from configuration output. Only digests are stored. Registry inspection from a workspace member retains npm’s workspace-root configuration; context discovery may query the resolved npm prefix when npm rejects an implicit workspace.
+
+## Parent upgrades: schema decision
+
+Planner JSON keeps `schemaVersion: 3`. The parent strategy needs no field that choices lack: the existing target fields describe the ancestor and `affectedConsumers` already identifies the covered branches of the original finding. The ancestor level is recomputed from fresh graph data by the executor and is not part of the contract. The finding ID, `resolution` meanings and one-row-per-installation rule are unchanged. The mutator validates parent choices by strategy; they do not have to match the vulnerable package or location.
