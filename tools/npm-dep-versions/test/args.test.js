@@ -29,3 +29,9 @@ test('--clear-cache is a switch that defaults to false', () => {
   assert.equal(parseArgs(['pkg', '--clear-cache']).clearCache, true)
   assert.equal(parseArgs(['--clear-cache', 'pkg', '--no-cache']).noCache, true)
 })
+test('--clear-cache makes the package name optional', () => {
+  assert.equal(parseArgs(['--clear-cache']).clearCache, true)
+  assert.equal(parseArgs(['--clear-cache']).packageName, null)
+  assert.throws(() => parseArgs([]), /package name/)
+  assert.throws(() => parseArgs(['a;echo', '--clear-cache']), /package name/)
+})

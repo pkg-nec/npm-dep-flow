@@ -121,7 +121,7 @@ test('--clear-cache does not delete anything for --help or --version', async () 
   const deps = { clearCache: () => assert.fail('must not clear') }
   const help = capture()
   assert.equal(await main(['--clear-cache', '--help'], help, deps), 0)
-  assert.match(help.output().stdout, /^ {2}--clear-cache {2,}Delete this tool's cache before running$/m)
+  assert.match(help.output().stdout, /^ {2}--clear-cache {2,}Delete this tool's cache; with no package, only clear$/m)
   assert.equal(await main(['--clear-cache', '--version'], capture(), deps), 0)
 })
 
@@ -138,4 +138,22 @@ test('a cache that cannot be cleared exits 1 before any context or registry work
   assert.equal(await main(['pkg', '--project', root, '--clear-cache'], io, deps), 1)
   assert.equal(io.output().stdout, '')
   assert.equal(io.output().stderr, 'npm-dep-versions: EACCES: cannot clear\n')
+})
+
+test('--clear-cache alone clears the cache and exits 0 without a package name', async (t) => {
+  const cacheRoot = join(await scratch(t), 'cache')
+  await mkdir(cacheRoot)
+  await writeFile(join(cacheRoot, 'catalog-x.json'), 'stale')
+  const io = capture()
+  const deps = { cacheRoot, readContext: () => assert.fail('must not read context'), fetchCatalog: () => assert.fail('must not fetch') }
+  assert.equal(await main(['--clear-cache'], io, deps), 0)
+  assert.deepEqual(io.output(), { stdout: '', stderr: '' })
+  await assert.rejects(stat(cacheRoot), { code: 'ENOENT' })
+})
+
+test('without --clear-cache a missing package name is still an error, and a bad one stays an error with it', async () => {
+  const io = capture()
+  assert.equal(await main([], io, {}), 1)
+  assert.match(io.output().stderr, /valid package name is required/)
+  assert.equal(await main(['a;echo', '--clear-cache'], capture(), { clearCache: () => assert.fail('must not clear') }), 1)
 })

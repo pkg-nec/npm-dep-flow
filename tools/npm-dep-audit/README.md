@@ -29,6 +29,7 @@ npm-dep-audit /path/to/project --min-severity high --format json
 npm-dep-audit /path/to/project --cache-ttl 30m
 npm-dep-audit /path/to/project --no-cache
 npm-dep-audit /path/to/project --clear-cache
+npm-dep-audit --clear-cache
 npm-dep-audit --version
 npm-dep-audit --help
 ```
@@ -107,7 +108,7 @@ The cache defaults to one hour and lives under `XDG_CACHE_HOME/npm-dep-audit` or
 
 An additional result cache reuses the complete enriched report, including dependency requirements from `npm-dep-paths`. Its key also includes the audit tool version, original audit data/timestamp and the paths tool version/location. Severity filtering and Markdown/JSON rendering happen after enrichment, so output options reuse one result. On a miss, requirements are collected for all advisory rows even when the requested severity filter hides some of them. A result hit avoids paths queries; project validation, npm context discovery and raw audit-cache validation still run.
 
-`--cache-ttl` takes a positive number followed by `s`, `m`, `h`, or `d`. Enriched results retain the original `auditedAt` and cannot outlive the underlying audit's requested TTL. `--no-cache` bypasses both audit caches and forwards bypass to paths. It neither reads nor replaces cached results. `--clear-cache` deletes the whole audit cache directory (`XDG_CACHE_HOME/npm-dep-audit` or `~/.cache/npm-dep-audit`), runs paths with `--clear-cache` on every paths call, then continues normally and writes fresh entries; use it to repair stale entries that `--no-cache` cannot. A directory that cannot be removed is an error. Malformed or inaccessible cache entries trigger computation; writes are atomic, and cache-storage failure does not prevent a valid report. Failed refreshes remain errors and never fall back to stale data.
+`--cache-ttl` takes a positive number followed by `s`, `m`, `h`, or `d`. Enriched results retain the original `auditedAt` and cannot outlive the underlying audit's requested TTL. `--no-cache` bypasses both audit caches and forwards bypass to paths. It neither reads nor replaces cached results. `--clear-cache` deletes the whole audit cache directory (`XDG_CACHE_HOME/npm-dep-audit` or `~/.cache/npm-dep-audit`), runs paths with `--clear-cache` on every paths call, then continues normally and writes fresh entries. Without an explicit project argument, `--clear-cache` only clears: audit runs `npm-dep-paths --clear-cache` (itself clear-only) and exits 0 without analyzing the current directory. Use it to repair stale entries that `--no-cache` cannot. A directory that cannot be removed is an error. Malformed or inaccessible cache entries trigger computation; writes are atomic, and cache-storage failure does not prevent a valid report. Failed refreshes remain errors and never fall back to stale data.
 
 ## Supported projects
 

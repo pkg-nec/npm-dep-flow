@@ -11,7 +11,7 @@ import { preflightGit, assertGitState, readDependencyFiles, commitUpgrade } from
 import { restoreDependencyFiles } from './recovery.js'
 import { loadProject } from './project.js'
 import { loadGraph } from './graph.js'
-import { readPlanner, selectItem } from './planner.js'
+import { clearPlannerCache, readPlanner, selectItem } from './planner.js'
 import { readEvidence } from './evidence.js'
 import { loadNpmContext } from './npm-context.js'
 import { readCatalog, readCandidateAdvisories } from './registry.js'
@@ -22,7 +22,7 @@ import { createStagingProject } from './staging.js'
 import { verifyGraph, verifyFinalSecurity } from './verify.js'
 import { renderJson, renderMarkdown } from './report.js'
 const toolRoot = fileURLToPath(new URL('../', import.meta.url))
-const defaults = { executeActions, commitSnapshots, preflightGit, assertGitState, loadProject, loadGraph, readPlanner, readEvidence, loadNpmContext, readCatalog, readCandidateAdvisories, selectCandidate, buildMutation, writeMutation, installProject, createStagingProject, verifyGraph, verifyFinalSecurity, commitUpgrade }
+const defaults = { clearPlannerCache, executeActions, commitSnapshots, preflightGit, assertGitState, loadProject, loadGraph, readPlanner, readEvidence, loadNpmContext, readCatalog, readCandidateAdvisories, selectCandidate, buildMutation, writeMutation, installProject, createStagingProject, verifyGraph, verifyFinalSecurity, commitUpgrade }
 export async function main(argv, io = process, overrides = {}) {
   try {
     const options = await resolveOptions(parseArgs(argv))
@@ -56,7 +56,7 @@ Options:
   --commit-message-template <text>  Customize the commit subject using placeholders
   --git-commit-arg=<arg>            Add a supported Git commit argument (repeatable)
   --clear-git-commit-args           Replace configured Git arguments with an empty list
-  --clear-cache                     Delete analysis caches (planner, audit, paths, versions) before running
+  --clear-cache                     Delete analysis caches (planner, audit, paths, versions); with no item ID, only clear
   --debug                           Log external actions and cache decisions to stderr
   --no-debug                        Disable debug logging, overriding configuration
   --version                         Show version and tool directory
@@ -65,6 +65,11 @@ Options:
 Upgrade one partial or complete planner installation in the selected project and commit the verified dependency files.
 `
       io.stdout.write(options.action === 'version' ? `${pkg.name} v${pkg.version}\nLocation: ${toolRoot}\n` : help)
+      return 0
+    }
+    if (options.clearOnly) {
+      stage = 'planner'
+      await d.clearPlannerCache(process.cwd())
       return 0
     }
     stage = 'preflight'

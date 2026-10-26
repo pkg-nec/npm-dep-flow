@@ -46,6 +46,10 @@ export function parseArgs(argv, cwd = process.cwd()) {
     else if (arg.startsWith('-')) fail('INVALID_ARGUMENT', 'arguments', `Unknown option: ${arg}`)
     else positional.push(arg)
   }
+  if (positional.length === 0 && result.clearCache) {
+    assign('clearOnly', true)
+    return result
+  }
   if (positional.length < 1 || positional.length > 2) fail('INVALID_ARGUMENT', 'arguments', 'Expected an item ID and optional project directory')
   result.selector = positional.at(-1)
   if (!/^[a-f0-9]{7,64}$/.test(result.selector)) fail('INVALID_ARGUMENT', 'arguments', 'Expected exactly one lowercase hexadecimal item ID (7–64 characters)')

@@ -10,6 +10,7 @@ test('argument parser defaults to the current directory and Markdown', () => {
     help: false,
     noCache: false,
     clearCache: false,
+    clearOnly: false,
     ttlMs: 3600000,
   })
 })
@@ -21,6 +22,7 @@ test('argument parser accepts a project path and JSON format', () => {
     help: false,
     noCache: false,
     clearCache: false,
+    clearOnly: false,
     ttlMs: 3600000,
   })
 })
@@ -63,6 +65,7 @@ test('argument parser accepts flags first with an omitted or explicit project pa
       help: false,
       noCache: false,
       clearCache: false,
+      clearOnly: false,
       ttlMs: 3600000,
     })
   }
@@ -81,4 +84,11 @@ test('--clear-cache is a switch that defaults to false and combines with --no-ca
   assert.equal(parseArgs([], '/workspace').clearCache, false)
   const both = parseArgs(['--no-cache', '--clear-cache'], '/workspace')
   assert.equal(both.noCache && both.clearCache, true)
+})
+
+test('--clear-cache without a project is clear-only; with a project it is not', () => {
+  assert.equal(parseArgs(['--clear-cache'], '/workspace').clearOnly, true)
+  assert.equal(parseArgs(['--clear-cache', '--format', 'json'], '/workspace').clearOnly, true)
+  assert.equal(parseArgs(['../target', '--clear-cache'], '/workspace').clearOnly, false)
+  assert.equal(parseArgs([], '/workspace').clearOnly, false)
 })

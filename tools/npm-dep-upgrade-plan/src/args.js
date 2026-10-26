@@ -55,5 +55,5 @@ export function parseArgs(argv, cwd = process.cwd()) {
     hasProjectPath = true
   }
 
-  return { projectPath, format, help: false, noCache, clearCache, ttlMs }
+  return { projectPath, format, help: false, noCache, clearCache, clearOnly: clearCache && !hasProjectPath, ttlMs }
 }

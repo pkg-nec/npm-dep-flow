@@ -324,7 +324,7 @@ test('--clear-cache clears once before any cache read and forwards to every path
       return h.summaries[packageName]
     },
   }
-  assert.equal(await main(['--clear-cache', '--no-cache'], h.io, deps), 0, h.stderr)
+  assert.equal(await main(['/project', '--clear-cache', '--no-cache'], h.io, deps), 0, h.stderr)
   assert.deepEqual(events, [['clear', 'npm-dep-audit'], ['load']])
   assert.deepEqual(pathOptions.map(([name]) => name).sort(), ['dep', 'other'])
   assert.ok(pathOptions.every(([, options]) => options.clearCache === true && options.noCache === true))
@@ -349,7 +349,7 @@ test('--clear-cache does not delete anything for --help or --version', async () 
   const h = harness()
   const deps = { ...h.deps, clearCache: () => assert.fail('must not clear') }
   assert.equal(await main(['--clear-cache', '--help'], h.io, deps), 0)
-  assert.match(h.stdout, /^ {2}--clear-cache {2,}Delete this tool's and paths' caches before running$/m)
+  assert.match(h.stdout, /^ {2}--clear-cache {2,}Delete this tool's and paths' caches; with no project, only clear$/m)
   assert.equal(await main(['--clear-cache', '--version'], h.io, deps), 0)
 })
 
@@ -362,7 +362,54 @@ test('a cache that cannot be cleared exits 1 before the project is loaded', asyn
     },
     loadProject: () => assert.fail('must not load'),
   }
-  assert.equal(await main(['--clear-cache'], h.io, deps), 1)
+  assert.equal(await main(['/project', '--clear-cache'], h.io, deps), 1)
   assert.equal(h.stdout, '')
   assert.equal(h.stderr, 'npm-dep-audit: EACCES: cannot clear\n')
+})
+
+test('--clear-cache without a project only clears this tool and paths, with no analysis', async () => {
+  const h = harness()
+  const events = []
+  const deps = {
+    ...h.deps,
+    clearCache: async (options) => {
+      events.push(['clear', options.tool])
+    },
+    clearNpmDepPathsCache: async () => {
+      events.push(['clear paths'])
+    },
+    loadProject: () => assert.fail('must not load a project'),
+    getAudit: () => assert.fail('must not audit'),
+  }
+  assert.equal(await main(['--clear-cache', '--format', 'json'], h.io, deps), 0, h.stderr)
+  assert.deepEqual(events, [['clear', 'npm-dep-audit'], ['clear paths']])
+  assert.equal(h.stdout, '')
+})
+
+test('--clear-cache with a project clears then analyzes it normally', async () => {
+  const h = harness()
+  const events = []
+  const deps = { ...h.deps, clearCache: async () => events.push('clear'), clearNpmDepPathsCache: () => assert.fail('only paths calls forward in a normal run') }
+  assert.equal(await main(['/project', '--clear-cache', '--no-cache'], h.io, deps), 0, h.stderr)
+  assert.deepEqual(events, ['clear'])
+  assert.match(h.stdout, /dep/)
+})
+
+test('a failing paths clear in clear-only mode exits 1', async () => {
+  const h = harness()
+  const deps = {
+    ...h.deps, clearCache: async () => {},
+    clearNpmDepPathsCache: async () => {
+      throw new Error('npm-dep-paths is not available on PATH; install it as a standalone CLI')
+    },
+  }
+  assert.equal(await main(['--clear-cache'], h.io, deps), 1)
+  assert.equal(h.stdout, '')
+  assert.match(h.stderr, /^npm-dep-audit: npm-dep-paths is not available/)
+})
+
+test('without --clear-cache a missing project still defaults to the current directory', async () => {
+  const h = harness()
+  assert.equal(await main([], h.io, h.deps), 0, h.stderr)
+  assert.equal(h.loadedPath, process.cwd())
 })

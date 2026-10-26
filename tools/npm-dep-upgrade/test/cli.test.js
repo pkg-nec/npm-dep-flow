@@ -94,6 +94,31 @@ test('--clear-cache reaches the planner adapter only when supplied', async () =>
 test('help lists --clear-cache aligned and --clear-cache never reaches git for help or version', async () => {
   const c = capture()
   assert.equal(await main(['--clear-cache', '--help'], c.io, { preflightGit: () => assert.fail('must not run') }), 0)
-  assert.match(c.out(), /^ {2}--clear-cache {2,}Delete analysis caches \(planner, audit, paths, versions\) before running$/m)
+  assert.match(c.out(), /^ {2}--clear-cache {2,}Delete analysis caches \(planner, audit, paths, versions\); with no item ID, only clear$/m)
   assert.equal(await main(['--clear-cache', '--version'], capture().io, { readPlanner: () => assert.fail('must not run') }), 0)
+})
+test('--clear-cache without an item ID only asks the planner chain to clear', async () => {
+  const events = []
+  const deps = {
+    clearPlannerCache: async (cwd) => {
+      events.push(['clear planner', cwd])
+    },
+    preflightGit: () => assert.fail('must not touch git'),
+    readPlanner: () => assert.fail('must not plan'),
+  }
+  const c = capture()
+  assert.equal(await main(['--clear-cache'], c.io, deps), 0)
+  assert.deepEqual(events, [['clear planner', process.cwd()]])
+  assert.equal(c.out(), '')
+  const bad = capture()
+  assert.equal(await main([], bad.io, deps), 1)
+  assert.match(bad.err(), /item ID/)
+})
+test('a failing planner clear in clear-only mode exits 1', async () => {
+  const c = capture()
+  assert.equal(await main(['--clear-cache'], c.io, { clearPlannerCache: async () => {
+    throw new Error('npm-dep-upgrade-plan --clear-cache failed: EACCES')
+  } }), 1)
+  assert.equal(c.out(), '')
+  assert.match(c.err(), /npm-dep-upgrade: .*EACCES/)
 })

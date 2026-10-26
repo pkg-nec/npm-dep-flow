@@ -355,7 +355,7 @@ test('--clear-cache does not delete anything for --help or --version', async (t)
   await writeFile(join(cacheRoot, 'keep.json'), '{}')
   const help = capture()
   assert.equal(await main(['--clear-cache', '--help'], help.io), 0)
-  assert.match(help.stdout, /^ {2}--clear-cache {2,}Delete this tool's cache before running$/m)
+  assert.match(help.stdout, /^ {2}--clear-cache {2,}Delete this tool's cache; with no selector, only clear$/m)
   assert.equal(await main(['--clear-cache', '--version'], capture().io), 0)
   assert.ok((await stat(join(cacheRoot, 'keep.json'))).isFile())
 })
@@ -377,4 +377,32 @@ test('a cache that cannot be cleared exits 1 before the project is loaded', asyn
   assert.equal(out.stdout, '')
   assert.equal(out.stderr, 'npm-dep-paths: EACCES: cannot clear\n')
   assert.equal(loaded, false)
+})
+
+test('--clear-cache alone clears the cache and exits 0 without a selector or project', async (t) => {
+  const cacheRoot = await isolatedCache(t)
+  await mkdir(cacheRoot, { recursive: true })
+  await writeFile(join(cacheRoot, 'stale.json'), '{}')
+  const out = capture()
+  const deps = { loadProject: () => assert.fail('must not load a project') }
+  assert.equal(await main(['--clear-cache'], out.io, deps), 0)
+  assert.equal(out.stdout, '')
+  assert.equal(out.stderr, '')
+  await assert.rejects(readdir(cacheRoot), { code: 'ENOENT' })
+  assert.equal(await main(['--clear-cache', '--format', 'json', '--no-cache'], capture().io, deps), 0)
+})
+
+test('without --clear-cache a missing selector is still an error', async () => {
+  const out = capture()
+  assert.equal(await main([], out.io), 1)
+  assert.match(out.stderr, /Expected a package selector/)
+})
+
+test('a failing clear in clear-only mode exits 1', async () => {
+  const out = capture()
+  const deps = { clearCache: async () => {
+    throw new Error('EACCES: cannot clear')
+  } }
+  assert.equal(await main(['--clear-cache'], out.io, deps), 1)
+  assert.equal(out.stderr, 'npm-dep-paths: EACCES: cannot clear\n')
 })

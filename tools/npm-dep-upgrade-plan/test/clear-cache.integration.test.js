@@ -78,9 +78,10 @@ else { process.stderr.write('unexpected npm arguments: ' + args.join(' ')); proc
     XDG_CACHE_HOME: cacheHome,
   }
   const run = (args = []) => spawnSync(process.execPath, [plannerBinPath, project, ...args, '--format', 'json'], { cwd: project, env, encoding: 'utf8', timeout: 60000 })
+  const runRaw = args => spawnSync(process.execPath, [plannerBinPath, ...args], { cwd: project, env, encoding: 'utf8', timeout: 60000 })
   const entries = tool => (existsSync(path.join(cacheHome, tool)) ? readdirSync(path.join(cacheHome, tool)) : [])
   const plant = tool => writeFileSync(path.join(cacheHome, tool, 'stale-sentinel'), 'stale')
-  return { run, entries, plant }
+  return { run, runRaw, entries, plant }
 }
 
 test('--clear-cache clears planner, audit, paths and versions caches; --no-cache leaves them', { skip: !enabled }, (t) => {
@@ -111,5 +112,15 @@ test('--clear-cache with --no-cache clears every cache and writes none', { skip:
   for (const tool of cacheTools) fixture.plant(tool)
   const result = fixture.run(['--clear-cache', '--no-cache'])
   assert.equal(result.status, 0, result.stderr)
+  for (const tool of cacheTools) assert.deepEqual(fixture.entries(tool), [], `${tool} cache empty`)
+})
+
+test('--clear-cache with no project clears the whole chain and analyzes nothing', { skip: !enabled }, (t) => {
+  const fixture = createFixture(t)
+  assert.equal(fixture.run().status, 0)
+  for (const tool of cacheTools) assert.ok(fixture.entries(tool).length > 0)
+  const result = fixture.runRaw(['--clear-cache'])
+  assert.equal(result.status, 0, result.stderr)
+  assert.equal(result.stdout, '')
   for (const tool of cacheTools) assert.deepEqual(fixture.entries(tool), [], `${tool} cache empty`)
 })

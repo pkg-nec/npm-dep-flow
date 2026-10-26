@@ -55,3 +55,14 @@ test('planner adapter forwards a clear request and keeps planner failures fatal'
     ['npm-dep-upgrade-plan', ['.', '--format', 'json']],
   ])
 })
+
+test('clear-only adapter asks the planner to clear and reports failures', async () => {
+  const { clearPlannerCache } = await import('../src/planner.js')
+  const calls = []
+  await clearPlannerCache('/project', async (command, args, options) => {
+    calls.push([command, args, options])
+    return { code: 0, stderr: '', stdout: '' }
+  })
+  assert.deepEqual(calls, [['npm-dep-upgrade-plan', ['--clear-cache'], { cwd: '/project' }]])
+  await assert.rejects(clearPlannerCache('/project', async () => ({ code: 1, stderr: 'cannot clear cache', stdout: '' })), /npm-dep-upgrade-plan --clear-cache failed: cannot clear cache/)
+})

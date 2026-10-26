@@ -133,9 +133,10 @@ The upgrader keeps no cache of its own, but it reads the planner's cached plan. 
 
 ```sh
 npm-dep-upgrade /path/to/project <item-id> --clear-cache
+npm-dep-upgrade --clear-cache
 ```
 
-The flag is forwarded to `npm-dep-upgrade-plan`, which deletes its whole cache directory and clears audit, paths and versions caches through the chain, then plans normally and writes fresh entries. Running the planner with `--no-cache` cannot repair a bad entry because it neither reads nor replaces cached data. A cache that cannot be cleared is an error and no upgrade starts. The option is a command-line flag only; it has no configuration-file key.
+The flag is forwarded to `npm-dep-upgrade-plan`, which deletes its whole cache directory and clears audit, paths and versions caches through the chain, then plans normally and writes fresh entries. Running the planner with `--no-cache` cannot repair a bad entry because it neither reads nor replaces cached data. With `--clear-cache` the item ID is optional: `npm-dep-upgrade --clear-cache` only asks the planner to clear its chain (`npm-dep-upgrade-plan --clear-cache`, clear-only) and exits 0 without touching Git or the project. A cache that cannot be cleared is an error and no upgrade starts. The option is a command-line flag only; it has no configuration-file key.
 
 ## Debug logging
 

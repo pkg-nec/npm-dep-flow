@@ -69,3 +69,15 @@ export async function runNpmDepVersions(projectRoot, packageName, spawnImpl = sp
   const rows = [...report.rows].sort((a, b) => semver.compare(a.version, b.version) || (a.version < b.version ? -1 : a.version > b.version ? 1 : 0))
   return { versions: rows.map(row => row.version), releaseTimes: new Map(rows.filter(row => row.releasedAt !== null).map(row => [row.version, row.releasedAt])), fetchedAt: report.fetchedAt }
 }
+
+// Clear-only request: versions deletes its cache (and its own sibling caches) without analyzing anything.
+export async function clearNpmDepVersionsCache(cwd = process.cwd(), spawnImpl = spawn, platform = process.platform) {
+  let result
+  try {
+    result = await runProcess('npm-dep-versions', ['--clear-cache'], cwd, spawnImpl, platform)
+  }
+  catch (error) {
+    throw new Error(error?.code === 'ENOENT' ? 'npm-dep-versions is not available on PATH; install it as a standalone CLI' : 'Cannot start npm-dep-versions', { cause: error })
+  }
+  if (result.code !== 0) throw new Error(`npm-dep-versions --clear-cache failed with exit code ${result.code}: ${(result.stderr || result.stdout).trim()}`)
+}

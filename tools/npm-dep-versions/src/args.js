@@ -43,6 +43,7 @@ export function parseArgs(argv, cwd = process.cwd()) {
     if (options.packageName !== null) throw new Error('Only one package name is allowed')
     options.packageName = arg
   }
+  if (!options.packageName && options.clearCache) return { ...options, clearOnly: true }
   if (!options.packageName || !packageNamePattern.test(options.packageName)) throw new Error('A valid package name is required; version specs are not supported')
   return options
 }

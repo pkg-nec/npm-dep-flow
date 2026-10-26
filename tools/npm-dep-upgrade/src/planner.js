@@ -57,3 +57,9 @@ export async function readPlanner(root, run = runProcess, { clearCache = false }
   catch { fail('INVALID_PLAN', 'planner', 'Planner returned invalid JSON') }
   return validatePlanner(report)
 }
+
+// Clear-only request: the planner clears its own and its sibling caches without planning anything.
+export async function clearPlannerCache(root, run = runProcess) {
+  const r = await run('npm-dep-upgrade-plan', ['--clear-cache'], { cwd: root })
+  if (r.code) fail('PLANNER_FAILED', 'planner', `npm-dep-upgrade-plan --clear-cache failed: ${r.stderr.trim()}`)
+}

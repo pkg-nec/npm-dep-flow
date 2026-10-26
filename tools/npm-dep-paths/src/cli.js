@@ -33,7 +33,7 @@ Options:
   --from package@version          Focus upstream detail on one top-level package
                                   Requires --upstream-of
   --no-cache                      Bypass result cache reads and writes
-  --clear-cache                   Delete this tool's cache before running
+  --clear-cache                   Delete this tool's cache; with no selector, only clear
   --debug                         Log external actions and cache decisions to stderr
   --version                       Show version and tool directory
   --help                          Show this help
@@ -75,6 +75,7 @@ function parseArgs(argv) {
       positional.push(arg)
     }
   }
+  if (positional.length === 0 && clearCache) return { clearOnly: true, clearCache, noCache }
   if (positional.length < 1 || positional.length > 2) throw new Error('Expected a package selector and optional project directory')
   const [path, selectorText] = positional.length === 1 ? [process.cwd(), positional[0]] : positional
   return { path, selectorText, format, upstreamOf, from, noCache, clearCache }
@@ -103,6 +104,10 @@ async function mainWithDebug(argv, io = process, overrides = defaults) {
   }
   try {
     const options = parseArgs(argv)
+    if (options.clearOnly) {
+      await deps.clearCache({ tool: packageJson.name })
+      return 0
+    }
     const selector = deps.parseSelector(options.selectorText)
     if (options.from && !options.upstreamOf) throw new Error('--from requires --upstream-of')
     if (options.upstreamOf && selector.kind !== 'exact') throw new Error('--upstream-of requires an exact target version')

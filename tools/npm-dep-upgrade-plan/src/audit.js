@@ -114,3 +114,15 @@ export async function runNpmDepAudit(projectRoot, spawnImpl = spawn, platform = 
   }
   return validateAuditReport(report)
 }
+
+// Clear-only request: audit deletes its cache (and its own sibling caches) without analyzing anything.
+export async function clearNpmDepAuditCache(cwd = process.cwd(), spawnImpl = spawn, platform = process.platform) {
+  let result
+  try {
+    result = await runProcess('npm-dep-audit', ['--clear-cache'], cwd, spawnImpl, platform)
+  }
+  catch (error) {
+    throw new Error(error?.code === 'ENOENT' ? 'npm-dep-audit is not available on PATH; install it as a standalone CLI' : 'Cannot start npm-dep-audit', { cause: error })
+  }
+  if (result.code !== 0) throw new Error(`npm-dep-audit --clear-cache failed with exit code ${result.code}: ${(result.stderr || result.stdout).trim()}`)
+}

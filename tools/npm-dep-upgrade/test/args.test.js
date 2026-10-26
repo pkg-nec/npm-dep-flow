@@ -46,3 +46,12 @@ test('--clear-cache is a switch recorded only when supplied and rejected when re
   assert.ok(options.provided.includes('clearCache'))
   assert.throws(() => parseArgs(['abcdef0', '--clear-cache', '--clear-cache']), /Repeated/)
 })
+test('--clear-cache without an item ID is clear-only; without it the ID stays required', () => {
+  const only = parseArgs(['--clear-cache'])
+  assert.equal(only.clearOnly, true)
+  assert.equal(only.action, 'upgrade')
+  assert.equal(only.selector, null)
+  assert.throws(() => parseArgs([]), /item ID/)
+  assert.throws(() => parseArgs(['--clear-cache', 'not-an-id']), /hexadecimal/)
+  assert.equal(parseArgs(['abcdef0', '--clear-cache']).clearOnly, undefined)
+})
