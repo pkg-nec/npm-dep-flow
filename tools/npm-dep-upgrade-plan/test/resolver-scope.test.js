@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import semver from 'semver'
-import { verifyResolution } from '../src/resolver-worker.js'
+import { matchesSelectedScope, verifyResolution } from '../src/resolver-worker.js'
 test('rejects changing another root installation even when the new closure reaches it', () => {
   const before = { nodes: [
     { location: '', name: 'app', version: '1.0.0' },
@@ -17,4 +17,34 @@ test('rejects changing another root installation even when the new closure reach
   const item = { package: 'a', targetLocation: 'node_modules/c/node_modules/a' }
   const choices = [{ targetVersion: '6.0.12', affectedConsumers: [{ location: 'node_modules/c', requestedName: 'a', type: 'dependencies' }] }]
   assert.throws(() => verifyResolution(before, after, item, choices, semver), /Another target installation changed/)
+})
+
+test('scope matching ignores peer-edge metadata changes outside the target installation', () => {
+  const selected = { location: 'node_modules/jsdom', requestedName: 'undici', type: 'dependencies' }
+  const before = { edges: [
+    { from: 'node_modules/jest-preset-angular', to: 'node_modules/jsdom', requestedName: 'jsdom', type: 'peerDependencies', effectiveSpec: '*' },
+    { from: 'node_modules/jsdom', to: 'node_modules/undici', requestedName: 'undici', type: 'dependencies', effectiveSpec: '^7.25.0' },
+    { from: 'node_modules/@angular/build', to: 'node_modules/undici', requestedName: 'undici', type: 'dependencies', effectiveSpec: '7.29.1' },
+  ] }
+  const probe = { edges: [
+    { ...before.edges[0], effectiveSpec: '29.1.1' },
+    { ...before.edges[1], effectiveSpec: '7.30.1' },
+    before.edges[2],
+  ] }
+
+  assert.equal(matchesSelectedScope(before, probe, 'node_modules/undici', [selected]), true)
+})
+
+test('scope matching rejects changes to an unselected consumer of the target installation', () => {
+  const selected = { location: 'node_modules/jsdom', requestedName: 'undici', type: 'dependencies' }
+  const before = { edges: [
+    { from: 'node_modules/jsdom', to: 'node_modules/undici', requestedName: 'undici', type: 'dependencies', effectiveSpec: '^7.25.0' },
+    { from: 'node_modules/@angular/build', to: 'node_modules/undici', requestedName: 'undici', type: 'dependencies', effectiveSpec: '7.29.1' },
+  ] }
+  const probe = { edges: [
+    { ...before.edges[0], effectiveSpec: '7.30.1' },
+    { ...before.edges[1], effectiveSpec: '7.30.1' },
+  ] }
+
+  assert.equal(matchesSelectedScope(before, probe, 'node_modules/undici', [selected]), false)
 })

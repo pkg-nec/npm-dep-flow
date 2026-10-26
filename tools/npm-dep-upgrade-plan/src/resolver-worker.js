@@ -53,6 +53,19 @@ export function verifyResolution(before, after, item, choices, semver) {
   for (const n of [...before.nodes, ...after.nodes]) if (n.location && !equal(oldNodes.get(n.location), nodes.get(n.location)) && !allowed.has(n.location)) throw new Error('Unrelated installation changed')
   for (const e of after.edges) if (e.to === null ? !e.optional : e.valid === false) throw new Error('Invalid dependency graph after resolution')
 }
+export function matchesSelectedScope(before, probe, targetLocation, affectedConsumers) {
+  const selected = new Set(affectedConsumers.map(key))
+  const targetConsumers = before.edges.filter(e => e.to === targetLocation)
+  const oldByKey = new Map(targetConsumers.map(e => [key(e), e]))
+  const probeByKey = new Map(probe.edges.map(e => [key(e), e]))
+  if (!selected.size || [...selected].some(consumerKey => !oldByKey.has(consumerKey))) return false
+  return targetConsumers.every((old) => {
+    const current = probeByKey.get(key(old))
+    if (!current || current.to !== targetLocation) return false
+    const changed = current.effectiveSpec !== old.effectiveSpec
+    return selected.has(key(old)) ? changed : !changed
+  })
+}
 function mergeRule(base, route, name, version, nodes, rootEdges, semver) {
   const location = route[0], n = nodes.get(location), selector = `${n.name}@${n.version}`
   const old = base[selector]
@@ -92,7 +105,7 @@ export async function resolveRequest(request) {
     choiceIndex < request.choices.length;
     choiceIndex++) {
     const choice = request.choices[choiceIndex], startFiles = await Promise.all(['package.json', 'package-lock.json'].map(n => readFile(path.join(request.root, n))))
-    const manifest = JSON.parse(startFiles[0]), selected = new Set(choice.affectedConsumers.map(key))
+    const manifest = JSON.parse(startFiles[0])
     let finalManifest = startFiles[0], mutation
     if (choice.affectedConsumers.some(e => e.location === '')) {
       for (const e of choice.affectedConsumers.filter(e => e.location === '')) {
@@ -123,11 +136,7 @@ export async function resolveRequest(request) {
         attempted.add(signature)
         await writeFile(path.join(request.root, 'package.json'), JSON.stringify(mutation))
         const probe = await load()
-        const affected = probe.edges.filter((e) => {
-          const old = before.edges.find(x => key(x) === key(e))
-          return old && e.effectiveSpec !== old.effectiveSpec
-        })
-        if (affected.length && affected.every(e => selected.has(key(e))) && choice.affectedConsumers.every(e => affected.some(x => key(x) === key(e)))) {
+        if (matchesSelectedScope(before, probe, request.item.targetLocation, choice.affectedConsumers)) {
           matched = true
           break
         }
