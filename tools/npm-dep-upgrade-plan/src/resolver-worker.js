@@ -61,9 +61,9 @@ export function matchesSelectedScope(before, probe, targetLocation, affectedCons
   if (!selected.size || [...selected].some(consumerKey => !oldByKey.has(consumerKey))) return false
   return targetConsumers.every((old) => {
     const current = probeByKey.get(key(old))
-    if (!current || current.to !== targetLocation) return false
-    const changed = current.effectiveSpec !== old.effectiveSpec
-    return selected.has(key(old)) ? changed : !changed
+    if (!current) return false
+    const changed = current.to !== old.to || current.effectiveSpec !== old.effectiveSpec
+    return selected.has(key(old)) ? changed : current.to === old.to && current.effectiveSpec === old.effectiveSpec
   })
 }
 function mergeRule(base, route, name, version, nodes, rootEdges, semver) {
@@ -105,6 +105,7 @@ export async function resolveRequest(request) {
     choiceIndex < request.choices.length;
     choiceIndex++) {
     const choice = request.choices[choiceIndex], startFiles = await Promise.all(['package.json', 'package-lock.json'].map(n => readFile(path.join(request.root, n))))
+    const scopeBefore = await load()
     const manifest = JSON.parse(startFiles[0])
     let finalManifest = startFiles[0], mutation
     if (choice.affectedConsumers.some(e => e.location === '')) {
@@ -136,7 +137,7 @@ export async function resolveRequest(request) {
         attempted.add(signature)
         await writeFile(path.join(request.root, 'package.json'), JSON.stringify(mutation))
         const probe = await load()
-        if (matchesSelectedScope(before, probe, request.item.targetLocation, choice.affectedConsumers)) {
+        if (matchesSelectedScope(scopeBefore, probe, request.item.targetLocation, choice.affectedConsumers)) {
           matched = true
           break
         }

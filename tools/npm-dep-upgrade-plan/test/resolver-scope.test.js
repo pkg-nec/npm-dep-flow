@@ -48,3 +48,31 @@ test('scope matching rejects changes to an unselected consumer of the target ins
 
   assert.equal(matchesSelectedScope(before, probe, 'node_modules/undici', [selected]), false)
 })
+
+test('scope matching permits a selected consumer to split into a new target installation', () => {
+  const selected = { location: 'node_modules/e2e-parent-b', requestedName: 'e2e-target', type: 'dependencies' }
+  const before = { edges: [
+    { from: 'node_modules/e2e-parent-a', to: 'node_modules/e2e-target', requestedName: 'e2e-target', type: 'dependencies', effectiveSpec: '^6.0.8' },
+    { from: 'node_modules/e2e-parent-b', to: 'node_modules/e2e-target', requestedName: 'e2e-target', type: 'dependencies', effectiveSpec: '6.0.9 || ^7.0.0' },
+  ] }
+  const probe = { edges: [
+    before.edges[0],
+    { ...before.edges[1], to: 'node_modules/e2e-parent-b/node_modules/e2e-target', effectiveSpec: '7.0.5' },
+  ] }
+
+  assert.equal(matchesSelectedScope(before, probe, 'node_modules/e2e-target', [selected]), true)
+})
+
+test('scope matching rejects relocating an unselected consumer', () => {
+  const selected = { location: 'node_modules/e2e-parent-a', requestedName: 'e2e-target', type: 'dependencies' }
+  const before = { edges: [
+    { from: 'node_modules/e2e-parent-a', to: 'node_modules/e2e-target', requestedName: 'e2e-target', type: 'dependencies', effectiveSpec: '^6.0.8' },
+    { from: 'node_modules/e2e-parent-b', to: 'node_modules/e2e-target', requestedName: 'e2e-target', type: 'dependencies', effectiveSpec: '6.0.9 || ^7.0.0' },
+  ] }
+  const probe = { edges: [
+    { ...before.edges[0], effectiveSpec: '6.0.10' },
+    { ...before.edges[1], to: 'node_modules/e2e-parent-b/node_modules/e2e-target' },
+  ] }
+
+  assert.equal(matchesSelectedScope(before, probe, 'node_modules/e2e-target', [selected]), false)
+})
