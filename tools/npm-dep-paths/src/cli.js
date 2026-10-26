@@ -4,13 +4,14 @@ import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { loadProject } from './project.js'
 import { cachedResult } from './result-cache.js'
+import { clearCache } from './cache-clear.js'
 import { buildGraph } from './graph.js'
 import { parseSelector } from './selector.js'
 import { collectSummaryResults } from './summary.js'
 import { collectUpstream } from './upstream.js'
 import { renderSummaryText, renderSummaryJson, renderUpstreamText } from './report.js'
 
-const defaults = { loadProject, buildGraph, parseSelector, collectSummaryResults, collectUpstream, renderSummaryText, renderSummaryJson, renderUpstreamText }
+const defaults = { clearCache, loadProject, buildGraph, parseSelector, collectSummaryResults, collectUpstream, renderSummaryText, renderSummaryJson, renderUpstreamText }
 const packageDir = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const packageJson = JSON.parse(readFileSync(resolve(packageDir, 'package.json'), 'utf8'))
 const versionOutput = `${packageJson.name} v${packageJson.version}\nLocation: ${packageDir}\n`
@@ -32,6 +33,7 @@ Options:
   --from package@version          Focus upstream detail on one top-level package
                                   Requires --upstream-of
   --no-cache                      Bypass result cache reads and writes
+  --clear-cache                   Delete this tool's cache before running
   --debug                         Log external actions and cache decisions to stderr
   --version                       Show version and tool directory
   --help                          Show this help
@@ -41,6 +43,7 @@ function parseArgs(argv) {
   const positional = []
   let format = 'markdown'
   let noCache = false
+  let clearCache = false
   let upstreamOf
   let from
   for (let i = 0; i < argv.length; i++) {
@@ -48,6 +51,9 @@ function parseArgs(argv) {
     if (arg === '--debug') continue
     if (arg === '--no-cache') {
       noCache = true
+    }
+    else if (arg === '--clear-cache') {
+      clearCache = true
     }
     else if (arg === '--format') {
       const value = argv[++i]
@@ -71,7 +77,7 @@ function parseArgs(argv) {
   }
   if (positional.length < 1 || positional.length > 2) throw new Error('Expected a package selector and optional project directory')
   const [path, selectorText] = positional.length === 1 ? [process.cwd(), positional[0]] : positional
-  return { path, selectorText, format, upstreamOf, from, noCache }
+  return { path, selectorText, format, upstreamOf, from, noCache, clearCache }
 }
 
 function fencedText(text) {
@@ -85,7 +91,8 @@ export async function main(argv, io = process, deps = defaults) {
   return runDebug(argv.includes('--debug'), io, () => mainWithDebug(argv, io, deps))
 }
 
-async function mainWithDebug(argv, io = process, deps = defaults) {
+async function mainWithDebug(argv, io = process, overrides = defaults) {
+  const deps = { ...defaults, ...overrides }
   if (argv.includes('--help')) {
     io.stdout.write(help)
     return 0
@@ -103,6 +110,7 @@ async function mainWithDebug(argv, io = process, deps = defaults) {
     const from = options.from ? deps.parseSelector(options.from) : undefined
     if (dependent && dependent.kind !== 'exact') throw new Error('--upstream-of requires an exact dependent version')
     if (from && from.kind !== 'exact') throw new Error('--from requires an exact top-level package version')
+    if (options.clearCache) await deps.clearCache({ tool: packageJson.name })
     const project = await deps.loadProject(options.path)
     const { results, upstream } = await cachedResult({
       tool: packageJson.name, version: packageJson.version, project,
