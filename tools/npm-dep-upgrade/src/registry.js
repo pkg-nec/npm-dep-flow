@@ -34,33 +34,45 @@ export async function readCatalog(root, name, context, run = runProcess) {
   return { versions: [...new Set(list.filter(stableVersion))], releaseTimes, minAgeDays: context.minAgeDays, cutoffMs: context.cutoffMs }
 }
 export async function readCandidateAdvisories(packageVersions, context, fetchImpl = npmFetch) {
-  const result = new Map([...packageVersions.keys()].map(name => [name, []]))
   const finish = debugAction('http', { method: 'POST', url: `${(context.auditRegistry || context.registry || '').replace(/\/$/, '')}/-/npm/v1/security/advisories/bulk` })
-  try {
-    const response = await fetchImpl('/-/npm/v1/security/advisories/bulk', { ...context.requestOptions, registry: context.auditRegistry || context.registry, method: 'POST', gzip: true, body: Object.fromEntries(packageVersions), preferOnline: true, retry: { retries: 0 } })
-    let bytes = 0
-    const chunks = []
-    for await (const chunk of response.body) {
-      const b = Buffer.from(chunk)
-      bytes += b.length
-      if (bytes > 32 * 1024 * 1024) throw new Error('limit')
-      chunks.push(b)
+  const requestOptions = { ...context.requestOptions, registry: context.auditRegistry || context.registry, method: 'POST', gzip: true, body: Object.fromEntries(packageVersions), preferOnline: true, retry: { retries: 0 } }
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const response = await fetchImpl('/-/npm/v1/security/advisories/bulk', requestOptions)
+      const result = new Map([...packageVersions.keys()].map(name => [name, []]))
+      let bytes = 0
+      const chunks = []
+      for await (const chunk of response.body) {
+        const b = Buffer.from(chunk)
+        bytes += b.length
+        if (bytes > 32 * 1024 * 1024) throw new Error('limit')
+        chunks.push(b)
+      }
+      const data = JSON.parse(Buffer.concat(chunks).toString('utf8'))
+      if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error('shape')
+      for (const [name, entries] of Object.entries(data)) {
+        if (!result.has(name) || !Array.isArray(entries)) throw new Error('entries')
+        result.set(name, entries.map((a) => {
+          const range = a?.vulnerable_versions ?? a?.range
+          if (!a || !semver.validRange(range) || (a.name !== undefined && a.name !== name) || !['string', 'number'].includes(typeof a.id)) throw new Error('advisory')
+          return { id: a.id, range }
+        }))
+      }
+      finish(`status=${response.status ?? response.statusCode ?? 'success'}`)
+      return result
     }
-    const data = JSON.parse(Buffer.concat(chunks).toString('utf8'))
-    if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error('shape')
-    for (const [name, entries] of Object.entries(data)) {
-      if (!result.has(name) || !Array.isArray(entries)) throw new Error('entries')
-      result.set(name, entries.map((a) => {
-        const range = a?.vulnerable_versions ?? a?.range
-        if (!a || !semver.validRange(range) || (a.name !== undefined && a.name !== name) || !['string', 'number'].includes(typeof a.id)) throw new Error('advisory')
-        return { id: a.id, range }
-      }))
+    catch (error) {
+      if (attempt === 0 && retryableAdvisoryError(error)) {
+        await new Promise(resolve => setTimeout(resolve, 100))
+        continue
+      }
+      finish('error=request-failed')
+      fail('SECURITY_FAILED', 'security', 'Candidate advisory security request failed or returned invalid advisory data')
     }
-    finish(`status=${response.status ?? response.statusCode ?? 'success'}`)
-    return result
   }
-  catch {
-    finish('error=request-failed')
-    fail('SECURITY_FAILED', 'security', 'Candidate advisory security request failed or returned invalid advisory data')
-  }
+}
+
+function retryableAdvisoryError(error) {
+  const status = error?.statusCode ?? error?.status
+  return status === 408 || status === 429 || status >= 500 || ['ECONNABORTED', 'ECONNREFUSED', 'ECONNRESET', 'EPIPE', 'ETIMEDOUT'].includes(error?.code)
 }

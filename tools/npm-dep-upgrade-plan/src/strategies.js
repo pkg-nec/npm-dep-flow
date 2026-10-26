@@ -9,7 +9,7 @@ function strictStableVersion(value) {
   return `${parsed.format()}${buildMetadata}` === value
 }
 
-function declaredRange(row, declaredRequirement) {
+export function declaredRange(row, declaredRequirement) {
   if (typeof declaredRequirement !== 'string') return null
 
   let range = declaredRequirement
@@ -24,7 +24,7 @@ function declaredRange(row, declaredRequirement) {
   return range
 }
 
-function safeStableVersions(row, stableVersions) {
+export function safeStableVersions(row, stableVersions) {
   const installedVersion = semver.valid(row.version)
   const vulnerableRanges = row.advisories.map(advisory => semver.validRange(advisory.range))
   if (!installedVersion || vulnerableRanges.length === 0 || vulnerableRanges.some(range => range === null)) {

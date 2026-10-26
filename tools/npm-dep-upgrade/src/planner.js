@@ -13,18 +13,28 @@ export function itemId(name, location) {
   return createHash('sha256').update(`${name}__${location}`, 'utf8').digest('hex')
 }
 export function validatePlanner(report) {
-  if (!report || report.schemaVersion !== 2 || !Array.isArray(report.rows) || !Number.isFinite(Date.parse(report.auditedAt))) fail('INVALID_PLAN', 'planner', 'Invalid planner schema version 2 report')
+  if (!report || report.schemaVersion !== 3 || !Array.isArray(report.rows) || !Number.isFinite(Date.parse(report.auditedAt))) fail('INVALID_PLAN', 'planner', 'Invalid planner schema version 3 report')
   const ids = new Set()
   for (const row of report.rows) {
-    if (!row || !namePattern.test(row.package) || !semver.valid(row.version) || !['eligible', 'ineligible'].includes(row.status)) fail('INVALID_PLAN', 'planner', 'Invalid planner row')
+    if (!row || !namePattern.test(row.package) || !semver.valid(row.version) || !['none', 'partial', 'complete'].includes(row.resolution) || !Array.isArray(row.choices)) fail('INVALID_PLAN', 'planner', 'Invalid planner row')
     canonicalLocation(row.targetLocation)
     if (row.id !== itemId(row.package, row.targetLocation)) fail('INVALID_PLAN', 'planner', 'Planner item ID does not match package/location')
     if (ids.has(row.id)) fail('INVALID_PLAN', 'planner', 'Duplicate full item ID in planner report')
     ids.add(row.id)
     if (row.minimumSafeVersion !== null && !semver.valid(row.minimumSafeVersion)) fail('INVALID_PLAN', 'planner', 'Invalid minimum safe version')
     if (row.minimumSafeVersionReleasedAt !== null && !Number.isFinite(Date.parse(row.minimumSafeVersionReleasedAt))) fail('INVALID_PLAN', 'planner', 'Invalid release timestamp')
-    if (row.status === 'eligible' && (!row.minimumSafeVersion || !row.strategy || row.strategy.targetPackage !== row.package || row.strategy.currentVersion !== row.version || !semver.valid(row.strategy.targetVersion))) fail('INVALID_PLAN', 'planner', 'Invalid eligible strategy')
-    if (row.status === 'ineligible' && row.strategy !== null) fail('INVALID_PLAN', 'planner', 'Invalid ineligible strategy')
+    if ((row.resolution === 'none') !== (row.choices.length === 0)) fail('INVALID_PLAN', 'planner', 'Invalid resolution/action set')
+    const consumers = new Set()
+    for (const choice of row.choices) {
+      if (!choice || choice.strategy !== STRATEGY || choice.targetPackage !== row.package || choice.targetLocation !== row.targetLocation || choice.currentVersion !== row.version || !semver.valid(choice.targetVersion) || !semver.gt(choice.targetVersion, row.version) || !Array.isArray(choice.affectedConsumers) || !choice.affectedConsumers.length) fail('INVALID_PLAN', 'planner', 'Invalid or unsupported planner choice')
+      for (const consumer of choice.affectedConsumers) {
+        if (!consumer || typeof consumer.location !== 'string' || !namePattern.test(consumer.requestedName) || !['dependencies', 'devDependencies', 'optionalDependencies', 'peerDependencies'].includes(consumer.type)) fail('INVALID_PLAN', 'planner', 'Invalid choice consumer')
+        if (consumer.location) canonicalLocation(consumer.location)
+        const key = JSON.stringify([consumer.location, consumer.requestedName, consumer.type])
+        if (consumers.has(key)) fail('INVALID_PLAN', 'planner', 'Duplicate choice consumer')
+        consumers.add(key)
+      }
+    }
   }
   return report
 }
@@ -33,8 +43,8 @@ export function selectItem(report, selector, packageName = null) {
   if (!found.length) fail('TARGET_NOT_FOUND', 'selection', 'Target not found in the current planner report')
   if (found.length !== 1) fail('AMBIGUOUS_TARGET', 'selection', `Ambiguous target; use a longer ID or --package:\n${found.map(r => `${r.id} ${r.package}@${r.version} ${r.targetLocation}`).join('\n')}`)
   const row = found[0]
-  if (row.status !== 'eligible') fail('INELIGIBLE_TARGET', 'selection', 'Selected target is ineligible')
-  if (row.strategy?.id !== STRATEGY) fail('UNSUPPORTED_STRATEGY', 'selection', 'Selected strategy is unsupported')
+  if (row.resolution === 'none') fail('INELIGIBLE_TARGET', 'selection', 'Selected target is ineligible')
+  if (!Array.isArray(row.choices) || row.choices.some(choice => choice.strategy !== STRATEGY)) fail('UNSUPPORTED_STRATEGY', 'selection', 'Selected strategy is unsupported')
   return row
 }
 export async function readPlanner(root, run = runProcess) {

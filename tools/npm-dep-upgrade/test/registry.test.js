@@ -13,8 +13,29 @@ test('candidate security adapter includes candidate-only ranges and rejects bad 
   }
   const result = await readCandidateAdvisories(versions, context, fetch)
   assert.equal(result.get('e2e-target')[0].range, '6.0.12')
-  await assert.rejects(readCandidateAdvisories(versions, context, async () => ({ body: Readable.from(['{"e2e-target":"bad"}']) })), /security|advisory/i)
+  let malformedRequests = 0
+  await assert.rejects(readCandidateAdvisories(versions, context, async () => {
+    malformedRequests++
+    return { body: Readable.from(['{"e2e-target":"bad"}']) }
+  }), /security|advisory/i)
+  assert.equal(malformedRequests, 1)
   assert.equal(normalizeTimestamp('2026-02-31T00:00:00Z'), null)
+})
+
+test('candidate security request retries a transient registry response', async () => {
+  const versions = new Map([['e2e-target', ['6.0.12']]])
+  for (const error of [
+    Object.assign(new Error('temporary registry failure'), { statusCode: 503 }),
+    Object.assign(new Error('connection reset'), { code: 'ECONNRESET' }),
+  ]) {
+    let requests = 0
+    const result = await readCandidateAdvisories(versions, { registry: 'https://registry.example/', requestOptions: {} }, async () => {
+      if (++requests === 1) throw error
+      return { body: Readable.from(['{}']), status: 200 }
+    })
+    assert.deepEqual(result.get('e2e-target'), [])
+    assert.equal(requests, 2)
+  }
 })
 
 test('catalog accepts npm 12 singleton-array time output', async () => {

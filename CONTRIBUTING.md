@@ -34,7 +34,7 @@ From each affected `tools/<name>/` directory, run `npm ci --ignore-scripts` and 
 
 The environment assignment examples use POSIX shell syntax. In PowerShell, set the corresponding `$env:NPM_DEP_PATHS_INTEGRATION` or `$env:NPM_DEP_AUDIT_INTEGRATION` to `'1'` before running `npm test`. See each tool's README for installation and integration details.
 
-Preserve documented CLI behavior, exit codes, Markdown output, and schema version 2 JSON contracts. Keep necessary correctness changes separate from mechanical formatting commits and explain them in the pull request. Follow the versioning and commit sequencing policy in [AGENTS.md](AGENTS.md).
+Preserve documented CLI behavior, exit codes, Markdown output, and JSON contracts (schema 3 for upgrade-plan/upgrade; schema 2 for audit/paths/versions). Keep necessary correctness changes separate from mechanical formatting commits and explain them in the pull request. Follow the versioning and commit sequencing policy in [AGENTS.md](AGENTS.md).
 
 ## Commit messages and pull request titles
 

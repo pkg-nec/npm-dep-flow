@@ -9,6 +9,7 @@ The committed catalog and its final addendum define the inputs and expected beha
 | D03, D04 | `ineligible.test.js`: exact/shared-exact refusal; `direct.test.js`: compatible duplicate declarations |
 | T01 | `transitive.test.js`: all four parent sections × child caret/tilde, original manifest bytes |
 | T02, T03 | `transitive.test.js`: transitive parent and two parent versions |
+| Scoped override metadata regression | `transitive.test.js`: a compatible nested child upgrades when npm reports selector metadata on the incoming parent edge; the parent version remains unchanged |
 | T04 | `transitive.test.js`: asserts repeated-parent topology and eligible versus pinned shared consumer; narrow scope or safe refusal |
 | T05 | `transitive.test.js`: one shared installation, caret/tilde incoming consumers |
 | T06, T08 | `ineligible.test.js`: shared exact pin / sole exact pin refusal |
@@ -47,3 +48,9 @@ Independent-review regressions are in `review.test.js`: concurrent top-level loc
 `test/scopes.test.js` exercises the real paths CLI and Arborist scope probe. It covers the compact ancestry regression, same-version location filtering, repeated parent versions requiring ancestor scopes, multiple physical heads sharing one selector, cyclic ancestry refusal, and incomplete/conflicting direct-dependent evidence.
 
 Explicit JSON configuration: `config.test.js` exercises nested-project selection from another caller directory through the real sibling CLI chain, config-driven debug propagation, custom commit subjects, and `--no-verify` with rejecting user hooks. Unit Git tests cover prepare-commit-msg guards under `--no-verify`.
+
+## Partial remediation (schema 3)
+
+`partial.test.js` runs on both configured npm runtimes. One and four exact/caret consumer pairs verify one grouped safe action, preserved pins, unchanged final manifest bytes, a remaining `none` finding, and clean-ci reproduction. Disjoint safe ranges verify two actions and two ordered commits for one original installation. `commit-sequence.test.js` verifies per-snapshot commit contents and preservation of an earlier commit when a later hook rejects.
+
+Planner and upgrade output use schema version 3; audit/paths/versions remain version 2. T06 is now a partial success rather than an all-consumer eligibility failure.
