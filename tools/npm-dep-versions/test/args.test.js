@@ -24,3 +24,8 @@ test('rejects invalid and repeated value arguments before subprocess work', () =
   assert.equal(parseArgs(['--help']).help, true)
   assert.equal(parseArgs(['--version']).version, true)
 })
+test('--clear-cache is a switch that defaults to false', () => {
+  assert.equal(parseArgs(['pkg']).clearCache, false)
+  assert.equal(parseArgs(['pkg', '--clear-cache']).clearCache, true)
+  assert.equal(parseArgs(['--clear-cache', 'pkg', '--no-cache']).noCache, true)
+})
