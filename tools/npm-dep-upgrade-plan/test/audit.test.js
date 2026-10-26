@@ -162,3 +162,14 @@ test('planner forwards TTL and bypass to audit on Unix and Windows', async () =>
     assert.deepEqual(argv, ['.', '--min-severity', 'info', '--format', 'json', '--cache-ttl', '1800s', '--no-cache'])
   }
 })
+
+test('planner forwards a clear request to audit on Unix and Windows', async () => {
+  for (const platform of ['linux', 'win32']) {
+    for (const [controls, expected] of [[{ clearCache: true }, ['--clear-cache']], [{ noCache: true, clearCache: true }, ['--no-cache', '--clear-cache']], [{}, []]]) {
+      const calls = []
+      await runNpmDepAudit('/project', fakeSpawn({ stdout: JSON.stringify(auditReport()) }, calls), platform, controls)
+      const argv = platform === 'win32' ? calls[0].command.split(' ').slice(1) : calls[0].args
+      assert.deepEqual(argv, ['.', '--min-severity', 'info', '--format', 'json', ...expected])
+    }
+  }
+})

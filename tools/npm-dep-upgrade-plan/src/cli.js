@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { cachedResult } from './result-cache.js'
+import { clearCache } from './cache-clear.js'
 import { loadProject } from './project.js'
 import { readPlanningContext } from './context.js'
 import { parseArgs } from './args.js'
@@ -29,6 +30,7 @@ Options:
   --format markdown|json        Output format (default: markdown)
   --cache-ttl <duration>        Cache lifetime, e.g. 30m or 1h (default: 1h)
   --no-cache                    Bypass caches, including audit, paths, and versions
+  --clear-cache                 Delete this tool's and its sibling tools' caches before running
   --debug                       Log external actions and cache decisions to stderr
   --version                     Show version and tool directory
   --help                        Show this help
@@ -50,19 +52,21 @@ async function mainWithDebug(argv, io = process, deps = defaults) {
 
   try {
     const options = parseArgs(argv)
+    if (options.clearCache) await (deps.clearCache ?? clearCache)({ tool: packageJson.name })
+    const clearControl = options.clearCache ? { clearCache: true } : {}
     const project = await deps.loadProject(options.projectPath)
     const identity = options.noCache ? null : await deps.readPlanningContext(project.root)
     const report = await cachedResult({
       tool: packageJson.name, version: packageJson.version, project, identity,
       ttlMs: options.ttlMs, noCache: options.noCache,
     }, async () => {
-      const auditReport = await deps.runNpmDepAudit(project.root, undefined, undefined, { noCache: options.noCache, ttlMs: options.ttlMs })
+      const auditReport = await deps.runNpmDepAudit(project.root, undefined, undefined, { noCache: options.noCache, ttlMs: options.ttlMs, ...clearControl })
       auditReport.rows = withRootDeclarations(auditReport.rows, JSON.parse(project.manifestBytes?.toString() || '{}'))
       const versionsByPackage = new Map()
       const packageNames = [...new Set(auditReport.rows.map(row => row.package))]
       let freshAt = Date.parse(auditReport.auditedAt)
       for (const packageName of packageNames) {
-        const catalog = await deps.runNpmDepVersions(project.root, packageName, undefined, undefined, { noCache: options.noCache, ttlMs: options.ttlMs })
+        const catalog = await deps.runNpmDepVersions(project.root, packageName, undefined, undefined, { noCache: options.noCache, ttlMs: options.ttlMs, ...clearControl })
         versionsByPackage.set(packageName, { versions: catalog.versions, releaseTimes: catalog.releaseTimes })
         freshAt = Math.min(freshAt, Date.parse(catalog.fetchedAt))
       }

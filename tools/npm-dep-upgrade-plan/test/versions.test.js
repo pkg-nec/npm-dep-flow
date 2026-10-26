@@ -45,3 +45,14 @@ test('catalog adapter never leaks command bodies or credential-bearing stderr', 
   await assert.rejects(runNpmDepVersions('/p', '@scope/pkg', spawnFixture({ error: Object.assign(new Error('private'), { code: 'ENOENT' }) })), /npm-dep-versions.*PATH/)
   await assert.rejects(runNpmDepVersions('/p', 'bad&name', () => assert.fail('unsafe spawn')), /package/i)
 })
+
+test('catalog adapter forwards a clear request on Unix and Windows', async () => {
+  for (const platform of ['linux', 'win32']) {
+    for (const [controls, expected] of [[{ clearCache: true }, ['--clear-cache']], [{ noCache: true, clearCache: true }, ['--no-cache', '--clear-cache']], [{}, []]]) {
+      const calls = []
+      await runNpmDepVersions('/project', '@scope/pkg', spawnFixture({ stdout: JSON.stringify(report) }, calls), platform, { ttlMs: 3600000, now, ...controls })
+      const argv = platform === 'win32' ? calls[0].command.split(' ').slice(1) : calls[0].args
+      assert.deepEqual(argv, ['@scope/pkg', '--format', 'json', '--cache-ttl', '3600s', ...expected])
+    }
+  }
+})

@@ -9,6 +9,7 @@ test('argument parser defaults to the current directory and Markdown', () => {
     format: 'markdown',
     help: false,
     noCache: false,
+    clearCache: false,
     ttlMs: 3600000,
   })
 })
@@ -19,6 +20,7 @@ test('argument parser accepts a project path and JSON format', () => {
     format: 'json',
     help: false,
     noCache: false,
+    clearCache: false,
     ttlMs: 3600000,
   })
 })
@@ -60,6 +62,7 @@ test('argument parser accepts flags first with an omitted or explicit project pa
       format: 'json',
       help: false,
       noCache: false,
+      clearCache: false,
       ttlMs: 3600000,
     })
   }
@@ -71,4 +74,11 @@ test('cache controls accept durations and reject missing, zero, unsafe and malfo
   for (const value of [undefined, '0s', '-1m', '1', 'forever', '999999999999999999999d', '--no-cache']) {
     assert.throws(() => parseArgs(['--cache-ttl', ...value === undefined ? [] : [value]]), /Invalid cache TTL/)
   }
+})
+
+test('--clear-cache is a switch that defaults to false and combines with --no-cache', () => {
+  assert.equal(parseArgs(['--clear-cache'], '/workspace').clearCache, true)
+  assert.equal(parseArgs([], '/workspace').clearCache, false)
+  const both = parseArgs(['--no-cache', '--clear-cache'], '/workspace')
+  assert.equal(both.noCache && both.clearCache, true)
 })

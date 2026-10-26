@@ -37,12 +37,12 @@ function normalizeTimestamp(value) {
   return new Date(milliseconds).toISOString()
 }
 
-export async function runNpmDepVersions(projectRoot, packageName, spawnImpl = spawn, platform = process.platform, { noCache = false, ttlMs = 3600000, now = Date.now } = {}) {
+export async function runNpmDepVersions(projectRoot, packageName, spawnImpl = spawn, platform = process.platform, { noCache = false, ttlMs = 3600000, now = Date.now, clearCache = false } = {}) {
   if (typeof packageName !== 'string' || !packageNamePattern.test(packageName)) throw new Error('Invalid package name for npm-dep-versions')
   if (typeof projectRoot !== 'string' || !projectRoot) throw new Error('A project directory is required for npm-dep-versions')
   let result
   try {
-    result = await runProcess('npm-dep-versions', [packageName, '--format', 'json', '--cache-ttl', `${ttlMs / 1000}s`, ...(noCache ? ['--no-cache'] : [])], projectRoot, spawnImpl, platform)
+    result = await runProcess('npm-dep-versions', [packageName, '--format', 'json', '--cache-ttl', `${ttlMs / 1000}s`, ...(noCache ? ['--no-cache'] : []), ...(clearCache ? ['--clear-cache'] : [])], projectRoot, spawnImpl, platform)
   }
   catch (error) {
     throw new Error(error.code === 'ENOENT' ? 'npm-dep-versions is not available on PATH; install it as a standalone CLI' : 'Cannot start npm-dep-versions', { cause: error })

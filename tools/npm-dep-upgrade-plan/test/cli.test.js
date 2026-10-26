@@ -537,3 +537,88 @@ test('planner result expires at the oldest catalog boundary rather than its crea
   assert.equal(await main([], createIo().io, deps), 0)
   assert.equal(calls, 2)
 })
+
+function twoPackageReport() {
+  const report = { ...braceReport(), auditedAt: new Date().toISOString() }
+  report.rows.push(vulnerableRow('other-package', '1.0.0', 'high', [{ declaredRequirement: '1.0.0', directDependents: [dependent('app-parent', '1.0.0', 'node_modules/app-parent', 'node_modules/other-package')] }]))
+  return report
+}
+
+test('--clear-cache clears once before reading cache and forwards to audit and every versions call', async (t) => {
+  const root = mkdtempSync(path.join(tmpdir(), 'planner-clear-cache-'))
+  t.after(() => rmSync(root, { recursive: true, force: true }))
+  const events = []
+  const controlsSeen = []
+  const deps = injectedDeps(twoPackageReport(), new Map(), { renderJson })
+  deps.loadProject = async () => ({ root, manifestBytes: Buffer.from('{}'), lockBytes: Buffer.from('{}') })
+  deps.clearCache = async (options) => {
+    events.push(['clear', options.tool])
+  }
+  deps.readPlanningContext = async () => {
+    events.push(['context'])
+    return { fixture: true }
+  }
+  deps.runNpmDepAudit = async (_root, _spawn, _platform, controls) => {
+    controlsSeen.push(['audit', controls])
+    return twoPackageReport()
+  }
+  deps.runNpmDepVersions = async (_root, name, _spawn, _platform, controls) => {
+    controlsSeen.push([name, controls])
+    return { versions: [], releaseTimes: new Map(), fetchedAt: new Date().toISOString() }
+  }
+  const io = createIo()
+  assert.equal(await main(['--clear-cache', '--format', 'json'], io.io, deps), 0, io.stderr)
+  assert.deepEqual(events, [['clear', 'npm-dep-upgrade-plan'], ['context']])
+  assert.deepEqual(controlsSeen.map(([name]) => name).sort(), ['audit', 'brace-expansion', 'other-package'])
+  assert.ok(controlsSeen.every(([, controls]) => controls.clearCache === true))
+})
+
+test('no child call carries a clear request without --clear-cache', async () => {
+  const controlsSeen = []
+  const deps = injectedDeps(twoPackageReport(), new Map(), { renderJson })
+  deps.clearCache = () => assert.fail('must not clear')
+  deps.loadProject = async () => ({ root: path.join(scratchRoot, 'no-clear'), manifestBytes: Buffer.from('{}'), lockBytes: Buffer.from('{}') })
+  deps.runNpmDepAudit = async (_root, _spawn, _platform, controls) => {
+    controlsSeen.push(controls)
+    return twoPackageReport()
+  }
+  deps.runNpmDepVersions = async (_root, _name, _spawn, _platform, controls) => {
+    controlsSeen.push(controls)
+    return { versions: [], releaseTimes: new Map(), fetchedAt: new Date().toISOString() }
+  }
+  assert.equal(await main(['--no-cache', '--format', 'json'], createIo().io, deps), 0)
+  assert.equal(controlsSeen.length, 3)
+  assert.ok(controlsSeen.every(controls => !Object.hasOwn(controls, 'clearCache')))
+})
+
+test('--clear-cache does not delete anything for --help or --version', async () => {
+  const deps = { clearCache: () => assert.fail('must not clear') }
+  const help = createIo()
+  assert.equal(await main(['--clear-cache', '--help'], help.io, deps), 0)
+  assert.match(help.stdout, /^ {2}--clear-cache {2,}Delete this tool's and its sibling tools' caches before running$/m)
+  assert.equal(await main(['--clear-cache', '--version'], createIo().io, deps), 0)
+})
+
+test('a cache that cannot be cleared exits 1 before any child tool runs', async () => {
+  const deps = injectedDeps(twoPackageReport())
+  deps.clearCache = async () => {
+    throw new Error('EACCES: cannot clear')
+  }
+  deps.runNpmDepAudit = () => assert.fail('must not run audit')
+  const io = createIo()
+  assert.equal(await main(['--clear-cache'], io.io, deps), 1)
+  assert.equal(io.stdout, '')
+  assert.equal(io.stderr, 'npm-dep-upgrade-plan: EACCES: cannot clear\n')
+})
+
+test('a child failure while clearing is fatal and leaves stdout empty', async () => {
+  const deps = injectedDeps(twoPackageReport())
+  deps.clearCache = async () => {}
+  deps.runNpmDepAudit = async () => {
+    throw new Error('npm-dep-audit failed with exit code 1: cannot clear cache')
+  }
+  const io = createIo()
+  assert.equal(await main(['--clear-cache', '--no-cache'], io.io, deps), 1)
+  assert.equal(io.stdout, '')
+  assert.match(io.stderr, /npm-dep-upgrade-plan: npm-dep-audit failed with exit code 1: cannot clear cache/)
+})
