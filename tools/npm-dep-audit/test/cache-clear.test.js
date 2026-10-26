@@ -42,8 +42,7 @@ test('defaults to XDG_CACHE_HOME/<tool> and leaves other tools alone', async (t)
   assert.ok((await stat(join(xdg, 'other', 'x'))).isFile())
 })
 
-test('propagates removal errors other than a missing path', async (t) => {
-  const dir = await scratch(t)
-  await writeFile(join(dir, 'file'), '1')
-  await assert.rejects(clearCache({ tool: 'fixture', cacheRoot: join(dir, 'file', 'cache') }), { code: 'ENOTDIR' })
+test('propagates removal errors other than a missing path', async () => {
+  // A path with a NUL byte is rejected by the filesystem layer on every platform; a path below a regular file is not (Windows reports it as missing).
+  await assert.rejects(clearCache({ tool: 'fixture', cacheRoot: 'invalid\0cache' }), { code: 'ERR_INVALID_ARG_VALUE' })
 })
