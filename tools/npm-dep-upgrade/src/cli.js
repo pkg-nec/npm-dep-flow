@@ -56,6 +56,7 @@ Options:
   --commit-message-template <text>  Customize the commit subject using placeholders
   --git-commit-arg=<arg>            Add a supported Git commit argument (repeatable)
   --clear-git-commit-args           Replace configured Git arguments with an empty list
+  --clear-cache                     Delete analysis caches (planner, audit, paths, versions) before running
   --debug                           Log external actions and cache decisions to stderr
   --no-debug                        Disable debug logging, overriding configuration
   --version                         Show version and tool directory
@@ -70,7 +71,7 @@ Upgrade one partial or complete planner installation in the selected project and
     guard = await d.preflightGit(options.projectPath)
     const project = await d.loadProject(guard.root)
     stage = 'planner'
-    const item = selectItem(await d.readPlanner(project.root), options.selector, options.packageName)
+    const item = selectItem(await d.readPlanner(project.root, undefined, { clearCache: options.clearCache === true }), options.selector, options.packageName)
     stage = 'evidence'
     const evidence = await d.readEvidence(project, item)
     stage = 'configuration'

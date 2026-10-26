@@ -127,6 +127,16 @@ Completed reports exit 0 and use Markdown (default) or schema-version-3 JSON. Pa
 
 Errors exit 1 with stage-specific stderr and no partial success report on stdout. A failure before commits leaves no upgrade commits; a failure after a committed prefix preserves and identifies that prefix.
 
+## Clearing analysis caches
+
+The upgrader keeps no cache of its own, but it reads the planner's cached plan. If that plan is stale or was produced by outdated code, rerun with `--clear-cache`:
+
+```sh
+npm-dep-upgrade /path/to/project <item-id> --clear-cache
+```
+
+The flag is forwarded to `npm-dep-upgrade-plan`, which deletes its whole cache directory and clears audit, paths and versions caches through the chain, then plans normally and writes fresh entries. Running the planner with `--no-cache` cannot repair a bad entry because it neither reads nor replaces cached data. A cache that cannot be cleared is an error and no upgrade starts. The option is a command-line flag only; it has no configuration-file key.
+
 ## Debug logging
 
 Use `--debug` to write external-action diagnostics to stderr while keeping the report on stdout:

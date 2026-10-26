@@ -40,3 +40,18 @@ test('rejects legacy schemas and malformed or overlapping action scopes', () => 
   assert.throws(() => validatePlanner(report([{ ...row, choices: [row.choices[0], row.choices[0]] }])), /consumer|duplicate/i)
   assert.equal(selectItem(report([{ ...row, resolution: 'partial' }]), id).resolution, 'partial')
 })
+
+test('planner adapter forwards a clear request and keeps planner failures fatal', async () => {
+  const { readPlanner } = await import('../src/planner.js')
+  const calls = []
+  const run = async (command, args) => {
+    calls.push([command, args])
+    return { code: 1, stderr: 'cannot clear cache', stdout: '' }
+  }
+  await assert.rejects(readPlanner('/project', run, { clearCache: true }), /npm-dep-upgrade-plan failed: cannot clear cache/)
+  await assert.rejects(readPlanner('/project', run), /failed/)
+  assert.deepEqual(calls, [
+    ['npm-dep-upgrade-plan', ['.', '--format', 'json', '--clear-cache']],
+    ['npm-dep-upgrade-plan', ['.', '--format', 'json']],
+  ])
+})

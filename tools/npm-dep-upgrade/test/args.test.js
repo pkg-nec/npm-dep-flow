@@ -39,3 +39,10 @@ test('commit argument clearing cannot be mixed with supplied commit arguments in
 test('new options reject missing values and conflicting repeated settings', () => {
   for (const flags of [['--config'], ['--module'], ['--commit-message-template'], ['--git-commit-arg='], ['--config', 'a.json', '--config', 'b.json'], ['--module', 'api', '--module', 'webapp'], ['--debug', '--no-debug'], ['--clear-git-commit-args', '--clear-git-commit-args']]) assert.throws(() => parseArgs(['abcdef0', ...flags]))
 })
+test('--clear-cache is a switch recorded only when supplied and rejected when repeated', () => {
+  assert.equal(parseArgs(['abcdef0']).clearCache, undefined)
+  const options = parseArgs(['abcdef0', '--clear-cache'])
+  assert.equal(options.clearCache, true)
+  assert.ok(options.provided.includes('clearCache'))
+  assert.throws(() => parseArgs(['abcdef0', '--clear-cache', '--clear-cache']), /Repeated/)
+})

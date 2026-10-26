@@ -77,3 +77,23 @@ test('CLI passes the explicit resolved project to preflight without changing cwd
   assert.equal(process.cwd(), cwd)
   assert.equal(c.out(), '')
 })
+test('--clear-cache reaches the planner adapter only when supplied', async () => {
+  const seen = []
+  const deps = {
+    preflightGit: async () => ({ root: '/project' }),
+    loadProject: async () => ({ root: '/project' }),
+    readPlanner: async (root, run, options) => {
+      seen.push(options)
+      throw new Error('stop after planner')
+    },
+  }
+  assert.equal(await main(['abcdef0', '--clear-cache'], capture().io, deps), 1)
+  assert.equal(await main(['abcdef0'], capture().io, deps), 1)
+  assert.deepEqual(seen, [{ clearCache: true }, { clearCache: false }])
+})
+test('help lists --clear-cache aligned and --clear-cache never reaches git for help or version', async () => {
+  const c = capture()
+  assert.equal(await main(['--clear-cache', '--help'], c.io, { preflightGit: () => assert.fail('must not run') }), 0)
+  assert.match(c.out(), /^ {2}--clear-cache {2,}Delete analysis caches \(planner, audit, paths, versions\) before running$/m)
+  assert.equal(await main(['--clear-cache', '--version'], capture().io, { readPlanner: () => assert.fail('must not run') }), 0)
+})

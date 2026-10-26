@@ -17,6 +17,11 @@ export function parseArgs(argv, cwd = process.cwd()) {
       seen.add('debug')
       assign('debug', arg === '--debug')
     }
+    else if (arg === '--clear-cache') {
+      if (seen.has('clearCache')) fail('INVALID_ARGUMENT', 'arguments', 'Repeated --clear-cache option')
+      seen.add('clearCache')
+      assign('clearCache', true)
+    }
     else if (arg === '--clear-git-commit-args') {
       if (seen.has('gitCommitArgs') || result.gitCommitArgs) fail('INVALID_ARGUMENT', 'arguments', 'Cannot combine clear and commit arguments')
       seen.add('gitCommitArgs')
