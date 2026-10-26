@@ -37,10 +37,10 @@ function validateEnvelope(report, packageName) {
   return report
 }
 
-function command(projectRoot, packageName, spawnImpl, platform, noCache) {
+function command(projectRoot, packageName, spawnImpl, platform, { noCache, clearCache }) {
   return new Promise((resolve, reject) => {
     const windows = platform === 'win32'
-    const args = ['.', packageName, '--format', 'json', ...(noCache ? ['--no-cache'] : [])]
+    const args = ['.', packageName, '--format', 'json', ...(noCache ? ['--no-cache'] : []), ...(clearCache ? ['--clear-cache'] : [])]
     let child
     try {
       child = debugSpawn(spawnImpl,
@@ -100,10 +100,10 @@ function command(projectRoot, packageName, spawnImpl, platform, noCache) {
   })
 }
 
-export function runNpmDepPaths(projectRoot, packageName, spawnImpl = spawn, platform = process.platform, { noCache = false } = {}) {
+export function runNpmDepPaths(projectRoot, packageName, spawnImpl = spawn, platform = process.platform, { noCache = false, clearCache = false } = {}) {
   if (typeof projectRoot !== 'string' || !projectRoot) return Promise.reject(new Error('A project directory is required for npm-dep-paths'))
   if (typeof packageName !== 'string' || !packageNamePattern.test(packageName)) {
     return Promise.reject(new Error(`Invalid package name for npm-dep-paths: ${packageName}`))
   }
-  return command(projectRoot, packageName, spawnImpl, platform, noCache)
+  return command(projectRoot, packageName, spawnImpl, platform, { noCache, clearCache })
 }

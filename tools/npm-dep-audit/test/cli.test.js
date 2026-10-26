@@ -302,3 +302,67 @@ test('enriched reports reuse paths across severity filters and bypass without ov
   assert.equal(await main([], h.io, h.deps), 0, h.stderr)
   assert.deepEqual(h.pathCalls, ['dep', 'dep', 'dep'])
 })
+
+test('--clear-cache clears once before any cache read and forwards to every paths call', async () => {
+  const h = harness()
+  const otherAudit = { ...audit, vulnerabilities: { ...audit.vulnerabilities, other: { name: 'other', severity: 'high', via: [{ source: 2, title: 'Issue two', url: 'https://example.test/2', severity: 'high', range: '<2.0.0' }], nodes: ['node_modules/other'] } } }
+  h.summaries.other = summary('other', [['1.0.0', 'node_modules/other', '1.0.0']])
+  const events = []
+  const pathOptions = []
+  const deps = {
+    ...h.deps,
+    clearCache: async (options) => {
+      events.push(['clear', options.tool])
+    },
+    loadProject: async () => {
+      events.push(['load'])
+      return { root: '/project', manifestBytes: Buffer.from('{"other":1}'), lockBytes: Buffer.from('{"other":1}'), lock: { ...lock, packages: { ...lock.packages, 'node_modules/other': { version: '1.0.0' } } } }
+    },
+    getAudit: async () => ({ audit: otherAudit, auditedAt: '2026-10-09T00:00:00.000Z' }),
+    runNpmDepPaths: async (root, packageName, _spawn, _platform, options) => {
+      pathOptions.push([packageName, options])
+      return h.summaries[packageName]
+    },
+  }
+  assert.equal(await main(['--clear-cache', '--no-cache'], h.io, deps), 0, h.stderr)
+  assert.deepEqual(events, [['clear', 'npm-dep-audit'], ['load']])
+  assert.deepEqual(pathOptions.map(([name]) => name).sort(), ['dep', 'other'])
+  assert.ok(pathOptions.every(([, options]) => options.clearCache === true && options.noCache === true))
+})
+
+test('paths calls carry no clear request without --clear-cache', async () => {
+  const h = harness()
+  const pathOptions = []
+  const deps = {
+    ...h.deps,
+    clearCache: () => assert.fail('must not clear'),
+    runNpmDepPaths: async (root, packageName, _spawn, _platform, options) => {
+      pathOptions.push(options)
+      return h.summaries[packageName]
+    },
+  }
+  assert.equal(await main(['--no-cache'], h.io, deps), 0, h.stderr)
+  assert.ok(pathOptions.every(options => !options.clearCache))
+})
+
+test('--clear-cache does not delete anything for --help or --version', async () => {
+  const h = harness()
+  const deps = { ...h.deps, clearCache: () => assert.fail('must not clear') }
+  assert.equal(await main(['--clear-cache', '--help'], h.io, deps), 0)
+  assert.match(h.stdout, /^ {2}--clear-cache {2,}Delete this tool's and paths' caches before running$/m)
+  assert.equal(await main(['--clear-cache', '--version'], h.io, deps), 0)
+})
+
+test('a cache that cannot be cleared exits 1 before the project is loaded', async () => {
+  const h = harness()
+  const deps = {
+    ...h.deps,
+    clearCache: async () => {
+      throw new Error('EACCES: cannot clear')
+    },
+    loadProject: () => assert.fail('must not load'),
+  }
+  assert.equal(await main(['--clear-cache'], h.io, deps), 1)
+  assert.equal(h.stdout, '')
+  assert.equal(h.stderr, 'npm-dep-audit: EACCES: cannot clear\n')
+})

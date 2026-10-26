@@ -122,3 +122,14 @@ test('cache bypass reaches the paths CLI on Unix and Windows', async () => {
     assert.deepEqual(argv, ['.', 'brace-expansion', '--format', 'json', '--no-cache'])
   }
 })
+
+test('clear request reaches the paths CLI on Unix and Windows, alone or with bypass', async () => {
+  for (const platform of ['linux', 'win32']) {
+    for (const [options, expected] of [[{ clearCache: true }, ['--clear-cache']], [{ noCache: true, clearCache: true }, ['--no-cache', '--clear-cache']], [{}, []]]) {
+      const calls = []
+      await runNpmDepPaths('/project', 'brace-expansion', fakeSpawn([{ stdout: JSON.stringify(summary()) }], calls), platform, options)
+      const argv = platform === 'win32' ? calls[0].command.split(' ').slice(1) : calls[0].args
+      assert.deepEqual(argv, ['.', 'brace-expansion', '--format', 'json', ...expected])
+    }
+  }
+})
