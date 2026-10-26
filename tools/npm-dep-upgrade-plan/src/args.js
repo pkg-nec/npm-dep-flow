@@ -9,6 +9,7 @@ export function parseArgs(argv, cwd = process.cwd()) {
   let hasProjectPath = false
   let format = 'markdown'
   let noCache = false
+  let clearCache = false
   let ttlMs = 3600000
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -16,6 +17,10 @@ export function parseArgs(argv, cwd = process.cwd()) {
     if (argument === '--debug') continue
     if (argument === '--no-cache') {
       noCache = true
+      continue
+    }
+    if (argument === '--clear-cache') {
+      clearCache = true
       continue
     }
     if (argument === '--cache-ttl') {
@@ -50,5 +55,5 @@ export function parseArgs(argv, cwd = process.cwd()) {
     hasProjectPath = true
   }
 
-  return { projectPath, format, help: false, noCache, ttlMs }
+  return { projectPath, format, help: false, noCache, clearCache, clearOnly: clearCache && !hasProjectPath, ttlMs }
 }

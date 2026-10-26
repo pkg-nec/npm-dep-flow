@@ -3,14 +3,15 @@ import { readFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { cachedResult } from './result-cache.js'
+import { clearCache } from './cache-clear.js'
 import { loadProject } from './project.js'
 import { readPlanningContext } from './context.js'
 import { parseArgs } from './args.js'
-import { runNpmDepAudit } from './audit.js'
+import { clearNpmDepAuditCache, runNpmDepAudit } from './audit.js'
 import { withRootDeclarations } from './coverage.js'
 import { resolveChoices } from './resolver.js'
 import { evaluateFindings } from './evaluate.js'
-import { runNpmDepVersions } from './versions.js'
+import { clearNpmDepVersionsCache, runNpmDepVersions } from './versions.js'
 import { renderJson, renderMarkdown } from './report.js'
 
 const defaults = { loadProject, readPlanningContext, runNpmDepAudit, runNpmDepVersions, resolveChoices, renderJson, renderMarkdown }
@@ -29,6 +30,7 @@ Options:
   --format markdown|json        Output format (default: markdown)
   --cache-ttl <duration>        Cache lifetime, e.g. 30m or 1h (default: 1h)
   --no-cache                    Bypass caches, including audit, paths, and versions
+  --clear-cache                 Delete this tool's and its sibling tools' caches; with no project, only clear
   --debug                       Log external actions and cache decisions to stderr
   --version                     Show version and tool directory
   --help                        Show this help
@@ -50,19 +52,26 @@ async function mainWithDebug(argv, io = process, deps = defaults) {
 
   try {
     const options = parseArgs(argv)
+    if (options.clearCache) await (deps.clearCache ?? clearCache)({ tool: packageJson.name })
+    if (options.clearOnly) {
+      await (deps.clearNpmDepAuditCache ?? clearNpmDepAuditCache)(process.cwd())
+      await (deps.clearNpmDepVersionsCache ?? clearNpmDepVersionsCache)(process.cwd())
+      return 0
+    }
+    const clearControl = options.clearCache ? { clearCache: true } : {}
     const project = await deps.loadProject(options.projectPath)
     const identity = options.noCache ? null : await deps.readPlanningContext(project.root)
     const report = await cachedResult({
       tool: packageJson.name, version: packageJson.version, project, identity,
       ttlMs: options.ttlMs, noCache: options.noCache,
     }, async () => {
-      const auditReport = await deps.runNpmDepAudit(project.root, undefined, undefined, { noCache: options.noCache, ttlMs: options.ttlMs })
+      const auditReport = await deps.runNpmDepAudit(project.root, undefined, undefined, { noCache: options.noCache, ttlMs: options.ttlMs, ...clearControl })
       auditReport.rows = withRootDeclarations(auditReport.rows, JSON.parse(project.manifestBytes?.toString() || '{}'))
       const versionsByPackage = new Map()
       const packageNames = [...new Set(auditReport.rows.map(row => row.package))]
       let freshAt = Date.parse(auditReport.auditedAt)
       for (const packageName of packageNames) {
-        const catalog = await deps.runNpmDepVersions(project.root, packageName, undefined, undefined, { noCache: options.noCache, ttlMs: options.ttlMs })
+        const catalog = await deps.runNpmDepVersions(project.root, packageName, undefined, undefined, { noCache: options.noCache, ttlMs: options.ttlMs, ...clearControl })
         versionsByPackage.set(packageName, { versions: catalog.versions, releaseTimes: catalog.releaseTimes })
         freshAt = Math.min(freshAt, Date.parse(catalog.fetchedAt))
       }

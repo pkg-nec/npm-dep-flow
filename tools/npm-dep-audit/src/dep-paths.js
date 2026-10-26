@@ -37,10 +37,10 @@ function validateEnvelope(report, packageName) {
   return report
 }
 
-function command(projectRoot, packageName, spawnImpl, platform, noCache) {
+function command(projectRoot, packageName, spawnImpl, platform, { noCache, clearCache }) {
   return new Promise((resolve, reject) => {
     const windows = platform === 'win32'
-    const args = ['.', packageName, '--format', 'json', ...(noCache ? ['--no-cache'] : [])]
+    const args = ['.', packageName, '--format', 'json', ...(noCache ? ['--no-cache'] : []), ...(clearCache ? ['--clear-cache'] : [])]
     let child
     try {
       child = debugSpawn(spawnImpl,
@@ -100,10 +100,51 @@ function command(projectRoot, packageName, spawnImpl, platform, noCache) {
   })
 }
 
-export function runNpmDepPaths(projectRoot, packageName, spawnImpl = spawn, platform = process.platform, { noCache = false } = {}) {
+export function runNpmDepPaths(projectRoot, packageName, spawnImpl = spawn, platform = process.platform, { noCache = false, clearCache = false } = {}) {
   if (typeof projectRoot !== 'string' || !projectRoot) return Promise.reject(new Error('A project directory is required for npm-dep-paths'))
   if (typeof packageName !== 'string' || !packageNamePattern.test(packageName)) {
     return Promise.reject(new Error(`Invalid package name for npm-dep-paths: ${packageName}`))
   }
-  return command(projectRoot, packageName, spawnImpl, platform, noCache)
+  return command(projectRoot, packageName, spawnImpl, platform, { noCache, clearCache })
+}
+
+// Clear-only request: paths deletes its cache and exits without analyzing anything.
+export function clearNpmDepPathsCache(spawnImpl = spawn, platform = process.platform, cwd = process.cwd()) {
+  return new Promise((resolve, reject) => {
+    const windows = platform === 'win32'
+    let child
+    try {
+      child = debugSpawn(spawnImpl,
+        windows ? 'npm-dep-paths.cmd --clear-cache' : 'npm-dep-paths',
+        windows ? [] : ['--clear-cache'],
+        { cwd, shell: windows, stdio: ['ignore', 'pipe', 'pipe'] },
+      )
+    }
+    catch (error) {
+      reject(error)
+      return
+    }
+    let output = ''
+    let done = false
+    child.stdout.on('data', (chunk) => {
+      output += chunk.toString()
+    })
+    child.stderr.on('data', (chunk) => {
+      output += chunk.toString()
+    })
+    child.on('error', (error) => {
+      if (done) return
+      done = true
+      child.kill?.()
+      reject(new Error(error.code === 'ENOENT'
+        ? 'npm-dep-paths is not available on PATH; install it as a standalone CLI'
+        : `Cannot start npm-dep-paths: ${error.message}`, { cause: error }))
+    })
+    child.on('close', (code) => {
+      if (done) return
+      done = true
+      if (code === 0) resolve()
+      else reject(new Error(`npm-dep-paths --clear-cache failed with exit code ${code}: ${output.trim()}`))
+    })
+  })
 }

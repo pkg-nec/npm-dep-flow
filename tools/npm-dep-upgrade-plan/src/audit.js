@@ -75,7 +75,7 @@ function validateAuditReport(report) {
   return { schemaVersion: 2, auditedAt: report.auditedAt, rows }
 }
 
-export async function runNpmDepAudit(projectRoot, spawnImpl = spawn, platform = process.platform, { noCache = false, ttlMs = 3600000 } = {}) {
+export async function runNpmDepAudit(projectRoot, spawnImpl = spawn, platform = process.platform, { noCache = false, ttlMs = 3600000, clearCache = false } = {}) {
   if (typeof projectRoot !== 'string' || !projectRoot) {
     throw new Error('A project directory is required for npm-dep-audit')
   }
@@ -84,7 +84,7 @@ export async function runNpmDepAudit(projectRoot, spawnImpl = spawn, platform = 
   try {
     result = await runProcess(
       'npm-dep-audit',
-      ['.', '--min-severity', 'info', '--format', 'json', ...(ttlMs !== 3600000 ? ['--cache-ttl', `${ttlMs / 1000}s`] : []), ...(noCache ? ['--no-cache'] : [])],
+      ['.', '--min-severity', 'info', '--format', 'json', ...(ttlMs !== 3600000 ? ['--cache-ttl', `${ttlMs / 1000}s`] : []), ...(noCache ? ['--no-cache'] : []), ...(clearCache ? ['--clear-cache'] : [])],
       projectRoot,
       spawnImpl,
       platform,
@@ -113,4 +113,16 @@ export async function runNpmDepAudit(projectRoot, spawnImpl = spawn, platform = 
     throw new Error('npm-dep-audit returned invalid JSON')
   }
   return validateAuditReport(report)
+}
+
+// Clear-only request: audit deletes its cache (and its own sibling caches) without analyzing anything.
+export async function clearNpmDepAuditCache(cwd = process.cwd(), spawnImpl = spawn, platform = process.platform) {
+  let result
+  try {
+    result = await runProcess('npm-dep-audit', ['--clear-cache'], cwd, spawnImpl, platform)
+  }
+  catch (error) {
+    throw new Error(error?.code === 'ENOENT' ? 'npm-dep-audit is not available on PATH; install it as a standalone CLI' : 'Cannot start npm-dep-audit', { cause: error })
+  }
+  if (result.code !== 0) throw new Error(`npm-dep-audit --clear-cache failed with exit code ${result.code}: ${(result.stderr || result.stdout).trim()}`)
 }

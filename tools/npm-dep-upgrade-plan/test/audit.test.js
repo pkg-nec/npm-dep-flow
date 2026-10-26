@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { EventEmitter } from 'node:events'
 import { PassThrough } from 'node:stream'
 import test from 'node:test'
-import { runNpmDepAudit } from '../src/audit.js'
+import { clearNpmDepAuditCache, runNpmDepAudit } from '../src/audit.js'
 
 function auditReport() {
   return {
@@ -161,4 +161,27 @@ test('planner forwards TTL and bypass to audit on Unix and Windows', async () =>
     const argv = platform === 'win32' ? calls[0].command.split(' ').slice(1) : calls[0].args
     assert.deepEqual(argv, ['.', '--min-severity', 'info', '--format', 'json', '--cache-ttl', '1800s', '--no-cache'])
   }
+})
+
+test('planner forwards a clear request to audit on Unix and Windows', async () => {
+  for (const platform of ['linux', 'win32']) {
+    for (const [controls, expected] of [[{ clearCache: true }, ['--clear-cache']], [{ noCache: true, clearCache: true }, ['--no-cache', '--clear-cache']], [{}, []]]) {
+      const calls = []
+      await runNpmDepAudit('/project', fakeSpawn({ stdout: JSON.stringify(auditReport()) }, calls), platform, controls)
+      const argv = platform === 'win32' ? calls[0].command.split(' ').slice(1) : calls[0].args
+      assert.deepEqual(argv, ['.', '--min-severity', 'info', '--format', 'json', ...expected])
+    }
+  }
+})
+
+test('clear-only adapter runs npm-dep-audit --clear-cache on Unix and Windows and reports failures', async () => {
+  for (const platform of ['linux', 'win32']) {
+    const calls = []
+    await clearNpmDepAuditCache('/project', fakeSpawn({ stdout: '' }, calls), platform)
+    const argv = platform === 'win32' ? calls[0].command.split(' ').slice(1) : calls[0].args
+    assert.deepEqual(argv, ['--clear-cache'])
+  }
+  const error = Object.assign(new Error('spawn ENOENT'), { code: 'ENOENT' })
+  await assert.rejects(clearNpmDepAuditCache('/project', fakeSpawn({ error }, [])), /npm-dep-audit is not available on PATH/)
+  await assert.rejects(clearNpmDepAuditCache('/project', fakeSpawn({ code: 1, stderr: 'EACCES' }, [])), /npm-dep-audit --clear-cache failed with exit code 1: EACCES/)
 })

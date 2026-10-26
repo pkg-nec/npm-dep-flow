@@ -3,12 +3,12 @@ import semver from 'semver'
 import { packageNamePattern } from './model.js'
 
 export function parseArgs(argv, cwd = process.cwd()) {
-  const options = { packageName: null, projectPath: cwd, all: false, major: null, range: null, format: 'markdown', ttlMs: 3600000, noCache: false, debug: false, help: argv.includes('--help'), version: argv.includes('--version') }
+  const options = { packageName: null, projectPath: cwd, all: false, major: null, range: null, format: 'markdown', ttlMs: 3600000, noCache: false, clearCache: false, debug: false, help: argv.includes('--help'), version: argv.includes('--version') }
   if (options.help || options.version) return options
   const seen = new Set()
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i]
-    const switches = { '--all': 'all', '--no-cache': 'noCache', '--debug': 'debug' }
+    const switches = { '--all': 'all', '--no-cache': 'noCache', '--clear-cache': 'clearCache', '--debug': 'debug' }
     if (Object.hasOwn(switches, arg)) {
       options[switches[arg]] = true
       continue
@@ -43,6 +43,7 @@ export function parseArgs(argv, cwd = process.cwd()) {
     if (options.packageName !== null) throw new Error('Only one package name is allowed')
     options.packageName = arg
   }
+  if (!options.packageName && options.clearCache) return { ...options, clearOnly: true }
   if (!options.packageName || !packageNamePattern.test(options.packageName)) throw new Error('A valid package name is required; version specs are not supported')
   return options
 }

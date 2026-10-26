@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { EventEmitter } from 'node:events'
 import { PassThrough } from 'node:stream'
 
-import { runNpmDepPaths } from '../src/dep-paths.js'
+import { clearNpmDepPathsCache, runNpmDepPaths } from '../src/dep-paths.js'
 
 function summary(selector = 'brace-expansion') {
   return {
@@ -121,4 +121,31 @@ test('cache bypass reaches the paths CLI on Unix and Windows', async () => {
     const argv = platform === 'win32' ? calls[0].command.split(' ').slice(1) : calls[0].args
     assert.deepEqual(argv, ['.', 'brace-expansion', '--format', 'json', '--no-cache'])
   }
+})
+
+test('clear request reaches the paths CLI on Unix and Windows, alone or with bypass', async () => {
+  for (const platform of ['linux', 'win32']) {
+    for (const [options, expected] of [[{ clearCache: true }, ['--clear-cache']], [{ noCache: true, clearCache: true }, ['--no-cache', '--clear-cache']], [{}, []]]) {
+      const calls = []
+      await runNpmDepPaths('/project', 'brace-expansion', fakeSpawn([{ stdout: JSON.stringify(summary()) }], calls), platform, options)
+      const argv = platform === 'win32' ? calls[0].command.split(' ').slice(1) : calls[0].args
+      assert.deepEqual(argv, ['.', 'brace-expansion', '--format', 'json', ...expected])
+    }
+  }
+})
+
+test('clear-only adapter runs npm-dep-paths --clear-cache on Unix and Windows', async () => {
+  for (const platform of ['linux', 'win32']) {
+    const calls = []
+    await clearNpmDepPathsCache(fakeSpawn([{ stdout: '' }], calls), platform)
+    const argv = platform === 'win32' ? calls[0].command.split(' ').slice(1) : calls[0].args
+    assert.deepEqual(argv, ['--clear-cache'])
+    assert.equal(platform === 'win32' ? calls[0].command.split(' ')[0] : calls[0].command, platform === 'win32' ? 'npm-dep-paths.cmd' : 'npm-dep-paths')
+  }
+})
+
+test('clear-only adapter reports a missing executable and a failing clear', async () => {
+  const error = Object.assign(new Error('spawn npm-dep-paths ENOENT'), { code: 'ENOENT' })
+  await assert.rejects(clearNpmDepPathsCache(fakeSpawn([{ error }], [])), /npm-dep-paths is not available on PATH/)
+  await assert.rejects(clearNpmDepPathsCache(fakeSpawn([{ code: 1, stderr: 'EACCES' }], [])), /npm-dep-paths --clear-cache failed with exit code 1: EACCES/)
 })

@@ -47,8 +47,8 @@ export function selectItem(report, selector, packageName = null) {
   if (!Array.isArray(row.choices) || row.choices.some(choice => choice.strategy !== STRATEGY)) fail('UNSUPPORTED_STRATEGY', 'selection', 'Selected strategy is unsupported')
   return row
 }
-export async function readPlanner(root, run = runProcess) {
-  const r = await run('npm-dep-upgrade-plan', ['.', '--format', 'json'], { cwd: root })
+export async function readPlanner(root, run = runProcess, { clearCache = false } = {}) {
+  const r = await run('npm-dep-upgrade-plan', ['.', '--format', 'json', ...(clearCache ? ['--clear-cache'] : [])], { cwd: root })
   if (r.code) fail('PLANNER_FAILED', 'planner', `npm-dep-upgrade-plan failed: ${r.stderr.trim()}`)
   let report
   try {
@@ -56,4 +56,10 @@ export async function readPlanner(root, run = runProcess) {
   }
   catch { fail('INVALID_PLAN', 'planner', 'Planner returned invalid JSON') }
   return validatePlanner(report)
+}
+
+// Clear-only request: the planner clears its own and its sibling caches without planning anything.
+export async function clearPlannerCache(root, run = runProcess) {
+  const r = await run('npm-dep-upgrade-plan', ['--clear-cache'], { cwd: root })
+  if (r.code) fail('PLANNER_FAILED', 'planner', `npm-dep-upgrade-plan --clear-cache failed: ${r.stderr.trim()}`)
 }

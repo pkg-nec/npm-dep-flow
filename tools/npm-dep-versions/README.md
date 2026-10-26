@@ -19,7 +19,7 @@ Markdown is the default. `--format json` returns schema version 2 with `package`
 
 ## Catalog cache
 
-The full catalog, including prereleases, is cached before filtering for one hour by default under `XDG_CACHE_HOME/npm-dep-versions` or `~/.cache/npm-dep-versions`. Formats and filters share the same data. `--cache-ttl 30m` selects a positive duration in seconds (`s`), minutes (`m`), hours (`h`), or days (`d`); freshness always starts at the original fetch time. `--no-cache` bypasses both reads and writes without replacing previous entries.
+The full catalog, including prereleases, is cached before filtering for one hour by default under `XDG_CACHE_HOME/npm-dep-versions` or `~/.cache/npm-dep-versions`. Formats and filters share the same data. `--cache-ttl 30m` selects a positive duration in seconds (`s`), minutes (`m`), hours (`h`), or days (`d`); freshness always starts at the original fetch time. `--no-cache` bypasses both reads and writes without replacing previous entries. `--clear-cache` deletes the whole cache directory above and then runs normally, repairing entries that `--no-cache` leaves in place. With `--clear-cache` the package name is optional: `npm-dep-versions --clear-cache` only clears the cache and exits 0; a directory that cannot be removed is an error.
 
 Cache identity includes package name, canonical context directory, npm version, tool version and a digest of effective npm configuration, including scoped registries. The installation-only moving `before` cutoff is excluded. Configuration values and credentials are not stored. Local npm context queries still run on cache hits. Invalid/unavailable cache entries are misses; storage failures are nonfatal, and failed refreshes never serve expired data.
 

@@ -6,6 +6,7 @@ import { fetchCatalog } from './registry.js'
 import { filterRows } from './filter.js'
 import { renderJson, renderMarkdown } from './report.js'
 import { cachedCatalog } from './cache.js'
+import { clearCache } from './cache-clear.js'
 import { readContext } from './context.js'
 import { runDebug } from './debug.js'
 
@@ -27,6 +28,7 @@ Options:
   --format markdown|json        Output format (default: markdown)
   --cache-ttl <duration>        Cache lifetime, e.g. 30m or 1h (default: 1h)
   --no-cache                    Bypass cache reads and writes
+  --clear-cache                 Delete this tool's cache; with no package, only clear
   --debug                       Log external actions and cache decisions to stderr
   --version                     Show version and tool directory
   --help                        Show this help
@@ -40,6 +42,8 @@ export async function main(argv, io = process, deps = {}) {
         io.stdout.write(options.help ? help : versionOutput)
         return 0
       }
+      if (options.clearCache) await (deps.clearCache || clearCache)({ tool: metadata.name, cacheRoot: deps.cacheRoot })
+      if (options.clearOnly) return 0
       let root
       try {
         root = await realpath(options.projectPath)

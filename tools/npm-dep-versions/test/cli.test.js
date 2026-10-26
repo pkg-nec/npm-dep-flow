@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { readdir, realpath, writeFile } from 'node:fs/promises'
+import { mkdir, readdir, readFile, realpath, stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { main } from '../src/cli.js'
@@ -68,4 +68,92 @@ test('catalog is reused across filters and formats; bypass skips cache context a
   assert.equal(await main(['pkg', '--project', root, '--no-cache'], capture(), deps), 0)
   assert.equal(fetches, 2)
   assert.equal(contexts, 5)
+})
+
+const catalogFor = name => ({ schemaVersion: 2, package: name, fetchedAt: new Date().toISOString(), rows: [{ version: '1.0.0', releasedAt: null }] })
+
+test('--clear-cache clears once, then fetches fresh data and rewrites the entry', async (t) => {
+  const root = await scratch(t)
+  const cacheRoot = join(await scratch(t), 'cache')
+  const events = []
+  const deps = {
+    cacheRoot, readContext: async () => 'identity',
+    clearCache: async (options) => {
+      events.push(['clear', options.tool, options.cacheRoot])
+      return (await import('../src/cache-clear.js')).clearCache(options)
+    },
+    fetchCatalog: async (cwd, name) => {
+      events.push(['fetch'])
+      return catalogFor(name)
+    },
+  }
+  assert.equal(await main(['pkg', '--project', root, '--format', 'json'], capture(), deps), 0)
+  const [entryName] = await readdir(cacheRoot)
+  await writeFile(join(cacheRoot, entryName), 'poisoned')
+  events.length = 0
+  const io = capture()
+  assert.equal(await main(['pkg', '--project', root, '--format', 'json', '--clear-cache'], io, deps), 0, io.output().stderr)
+  assert.deepEqual(events, [['clear', 'npm-dep-versions', cacheRoot], ['fetch']])
+  assert.notEqual(await readFile(join(cacheRoot, entryName), 'utf8'), 'poisoned')
+})
+
+test('--no-cache alone leaves a poisoned entry in place', async (t) => {
+  const root = await scratch(t)
+  const cacheRoot = join(await scratch(t), 'cache')
+  await mkdir(cacheRoot)
+  await writeFile(join(cacheRoot, 'catalog-x.json'), 'poisoned')
+  assert.equal(await main(['pkg', '--project', root, '--no-cache'], capture(), { cacheRoot, fetchCatalog: async (cwd, name) => catalogFor(name) }), 0)
+  assert.equal(await readFile(join(cacheRoot, 'catalog-x.json'), 'utf8'), 'poisoned')
+})
+
+test('--clear-cache with --no-cache clears and writes nothing; a missing directory is fine', async (t) => {
+  const root = await scratch(t)
+  const cacheRoot = join(await scratch(t), 'cache')
+  await mkdir(cacheRoot)
+  await writeFile(join(cacheRoot, 'catalog-x.json'), 'stale')
+  const deps = { cacheRoot, fetchCatalog: async (cwd, name) => catalogFor(name) }
+  assert.equal(await main(['pkg', '--project', root, '--clear-cache', '--no-cache'], capture(), deps), 0)
+  await assert.rejects(stat(cacheRoot), { code: 'ENOENT' })
+  assert.equal(await main(['pkg', '--project', root, '--clear-cache', '--no-cache'], capture(), deps), 0)
+})
+
+test('--clear-cache does not delete anything for --help or --version', async () => {
+  const deps = { clearCache: () => assert.fail('must not clear') }
+  const help = capture()
+  assert.equal(await main(['--clear-cache', '--help'], help, deps), 0)
+  assert.match(help.output().stdout, /^ {2}--clear-cache {2,}Delete this tool's cache; with no package, only clear$/m)
+  assert.equal(await main(['--clear-cache', '--version'], capture(), deps), 0)
+})
+
+test('a cache that cannot be cleared exits 1 before any context or registry work', async (t) => {
+  const root = await scratch(t)
+  const io = capture()
+  const deps = {
+    clearCache: async () => {
+      throw new Error('EACCES: cannot clear')
+    },
+    readContext: () => assert.fail('must not read context'),
+    fetchCatalog: () => assert.fail('must not fetch'),
+  }
+  assert.equal(await main(['pkg', '--project', root, '--clear-cache'], io, deps), 1)
+  assert.equal(io.output().stdout, '')
+  assert.equal(io.output().stderr, 'npm-dep-versions: EACCES: cannot clear\n')
+})
+
+test('--clear-cache alone clears the cache and exits 0 without a package name', async (t) => {
+  const cacheRoot = join(await scratch(t), 'cache')
+  await mkdir(cacheRoot)
+  await writeFile(join(cacheRoot, 'catalog-x.json'), 'stale')
+  const io = capture()
+  const deps = { cacheRoot, readContext: () => assert.fail('must not read context'), fetchCatalog: () => assert.fail('must not fetch') }
+  assert.equal(await main(['--clear-cache'], io, deps), 0)
+  assert.deepEqual(io.output(), { stdout: '', stderr: '' })
+  await assert.rejects(stat(cacheRoot), { code: 'ENOENT' })
+})
+
+test('without --clear-cache a missing package name is still an error, and a bad one stays an error with it', async () => {
+  const io = capture()
+  assert.equal(await main([], io, {}), 1)
+  assert.match(io.output().stderr, /valid package name is required/)
+  assert.equal(await main(['a;echo', '--clear-cache'], capture(), { clearCache: () => assert.fail('must not clear') }), 1)
 })

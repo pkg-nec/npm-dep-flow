@@ -1,11 +1,12 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtemp, writeFile, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { basename, join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { spawn, spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { main } from '../src/cli.js'
+import { loadProject } from '../src/project.js'
 
 const tempRoot = process.env.NPM_DEP_PATHS_TEST_TMPDIR || tmpdir()
 
@@ -287,4 +288,121 @@ test('debug paths reports cache decisions on stderr while preserving JSON and Ma
   assert.match(fresh.stdout, /^# npm-dep-paths/)
   assert.match(fresh.stderr, /cache bypass/)
   assert.doesNotMatch(fresh.stdout, /\[npm-dep-paths debug\]/)
+})
+
+async function isolatedCache(t) {
+  const xdg = await mkdtemp(join(tempRoot, 'npm-dep-paths-xdg-'))
+  const previous = process.env.XDG_CACHE_HOME
+  process.env.XDG_CACHE_HOME = xdg
+  t.after(async () => {
+    if (previous === undefined) delete process.env.XDG_CACHE_HOME
+    else process.env.XDG_CACHE_HOME = previous
+    await rm(xdg, { recursive: true, force: true })
+  })
+  return join(xdg, 'npm-dep-paths')
+}
+
+test('--clear-cache clears once before the project is loaded, then reports normally', async (t) => {
+  await isolatedCache(t)
+  const dir = await fixture(t)
+  const events = []
+  const deps = {
+    clearCache: async (options) => {
+      events.push(['clear', options.tool])
+    },
+    loadProject: async (path) => {
+      events.push(['load'])
+      return loadProject(path)
+    },
+  }
+  const out = capture()
+  assert.equal(await main([dir, 'dep@5.0.9', '--format', 'json', '--clear-cache'], out.io, deps), 0)
+  assert.deepEqual(events, [['clear', 'npm-dep-paths'], ['load']])
+  assert.equal(JSON.parse(out.stdout).result.version, '5.0.9')
+})
+
+test('--clear-cache replaces a poisoned entry that --no-cache would leave in place', async (t) => {
+  const cacheRoot = await isolatedCache(t)
+  const dir = await fixture(t)
+  assert.equal(await main([dir, 'dep@5.0.9', '--format', 'json'], capture().io), 0)
+  const [entryName] = await readdir(cacheRoot)
+  const entryFile = join(cacheRoot, entryName)
+  await writeFile(entryFile, 'poisoned')
+  assert.equal(await main([dir, 'dep@5.0.9', '--format', 'json', '--no-cache'], capture().io), 0)
+  assert.equal(await readFile(entryFile, 'utf8'), 'poisoned')
+  assert.equal(await main([dir, 'dep@5.0.9', '--format', 'json', '--clear-cache'], capture().io), 0)
+  assert.notEqual(await readFile(entryFile, 'utf8'), 'poisoned')
+})
+
+test('--clear-cache with --no-cache clears and writes nothing', async (t) => {
+  const cacheRoot = await isolatedCache(t)
+  const dir = await fixture(t)
+  await mkdir(cacheRoot, { recursive: true })
+  await writeFile(join(cacheRoot, 'stale.json'), '{}')
+  assert.equal(await main([dir, 'dep@5.0.9', '--format', 'json', '--clear-cache', '--no-cache'], capture().io), 0)
+  await assert.rejects(readdir(cacheRoot), { code: 'ENOENT' })
+})
+
+test('--clear-cache succeeds when no cache directory exists', async (t) => {
+  await isolatedCache(t)
+  const dir = await fixture(t)
+  assert.equal(await main([dir, 'dep@5.0.9', '--format', 'json', '--clear-cache'], capture().io), 0)
+})
+
+test('--clear-cache does not delete anything for --help or --version', async (t) => {
+  const cacheRoot = await isolatedCache(t)
+  await mkdir(cacheRoot, { recursive: true })
+  await writeFile(join(cacheRoot, 'keep.json'), '{}')
+  const help = capture()
+  assert.equal(await main(['--clear-cache', '--help'], help.io), 0)
+  assert.match(help.stdout, /^ {2}--clear-cache {2,}Delete this tool's cache; with no selector, only clear$/m)
+  assert.equal(await main(['--clear-cache', '--version'], capture().io), 0)
+  assert.ok((await stat(join(cacheRoot, 'keep.json'))).isFile())
+})
+
+test('a cache that cannot be cleared exits 1 before the project is loaded', async (t) => {
+  const dir = await fixture(t)
+  let loaded = false
+  const deps = {
+    clearCache: async () => {
+      throw new Error('EACCES: cannot clear')
+    },
+    loadProject: async (path) => {
+      loaded = true
+      return loadProject(path)
+    },
+  }
+  const out = capture()
+  assert.equal(await main([dir, 'dep@5.0.9', '--clear-cache'], out.io, deps), 1)
+  assert.equal(out.stdout, '')
+  assert.equal(out.stderr, 'npm-dep-paths: EACCES: cannot clear\n')
+  assert.equal(loaded, false)
+})
+
+test('--clear-cache alone clears the cache and exits 0 without a selector or project', async (t) => {
+  const cacheRoot = await isolatedCache(t)
+  await mkdir(cacheRoot, { recursive: true })
+  await writeFile(join(cacheRoot, 'stale.json'), '{}')
+  const out = capture()
+  const deps = { loadProject: () => assert.fail('must not load a project') }
+  assert.equal(await main(['--clear-cache'], out.io, deps), 0)
+  assert.equal(out.stdout, '')
+  assert.equal(out.stderr, '')
+  await assert.rejects(readdir(cacheRoot), { code: 'ENOENT' })
+  assert.equal(await main(['--clear-cache', '--format', 'json', '--no-cache'], capture().io, deps), 0)
+})
+
+test('without --clear-cache a missing selector is still an error', async () => {
+  const out = capture()
+  assert.equal(await main([], out.io), 1)
+  assert.match(out.stderr, /Expected a package selector/)
+})
+
+test('a failing clear in clear-only mode exits 1', async () => {
+  const out = capture()
+  const deps = { clearCache: async () => {
+    throw new Error('EACCES: cannot clear')
+  } }
+  assert.equal(await main(['--clear-cache'], out.io, deps), 1)
+  assert.equal(out.stderr, 'npm-dep-paths: EACCES: cannot clear\n')
 })

@@ -7,8 +7,9 @@ import { readNpmContext } from './npm-audit.js'
 import { cachedResult } from './result-cache.js'
 import { readPathsIdentity } from './identity.js'
 import { getAudit } from './cache.js'
+import { clearCache } from './cache-clear.js'
 import { buildRows, selectRows } from './rows.js'
-import { runNpmDepPaths } from './dep-paths.js'
+import { clearNpmDepPathsCache, runNpmDepPaths } from './dep-paths.js'
 import { attachRequirements } from './requirements.js'
 import { renderMarkdown, renderJson } from './render.js'
 
@@ -32,19 +33,24 @@ Options:
                                   Values: info, low, moderate, high, critical
   --cache-ttl <duration>          Cache lifetime, e.g. 30m or 1h (default: 1h)
   --no-cache                      Bypass caches, including nested paths calls
+  --clear-cache                   Delete this tool's and paths' caches; with no project, only clear
   --debug                         Log external actions and cache decisions to stderr
   --version                       Show version and tool directory
   --help                          Show this help
 `
 
 function parse(argv) {
-  const options = { path: process.cwd(), format: 'markdown', minSeverity: 'info', ttlMs: 3600000, noCache: false }
+  const options = { path: process.cwd(), format: 'markdown', minSeverity: 'info', ttlMs: 3600000, noCache: false, clearCache: false, clearOnly: false }
   let hasPath = false
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i]
     if (arg === '--debug') continue
     if (arg === '--no-cache') {
       options.noCache = true
+      continue
+    }
+    if (arg === '--clear-cache') {
+      options.clearCache = true
       continue
     }
     if (arg === '--format' || arg === '--min-severity' || arg === '--cache-ttl') {
@@ -72,6 +78,7 @@ function parse(argv) {
     options.path = arg
     hasPath = true
   }
+  options.clearOnly = options.clearCache && !hasPath
   return options
 }
 
@@ -90,6 +97,11 @@ async function mainWithDebug(argv, io = process, deps = defaults) {
   }
   try {
     const options = parse(argv)
+    if (options.clearCache) await (deps.clearCache ?? clearCache)({ tool: packageJson.name })
+    if (options.clearOnly) {
+      await (deps.clearNpmDepPathsCache ?? clearNpmDepPathsCache)()
+      return 0
+    }
     const project = await deps.loadProject(options.path)
     const context = await deps.readNpmContext(project.root)
     const { audit, auditedAt } = await deps.getAudit(project, context, { ttlMs: options.ttlMs, noCache: options.noCache })
@@ -101,7 +113,7 @@ async function mainWithDebug(argv, io = process, deps = defaults) {
     }, async () => {
       const summariesByPackage = new Map()
       for (const packageName of new Set(rows.map(row => row.package))) {
-        summariesByPackage.set(packageName, await deps.runNpmDepPaths(project.root, packageName, undefined, undefined, { noCache: options.noCache }))
+        summariesByPackage.set(packageName, await deps.runNpmDepPaths(project.root, packageName, undefined, undefined, { noCache: options.noCache, clearCache: options.clearCache }))
       }
       return { value: attachRequirements(rows, summariesByPackage), freshAt: Date.parse(auditedAt), expiresAt: Date.parse(auditedAt) + options.ttlMs }
     })

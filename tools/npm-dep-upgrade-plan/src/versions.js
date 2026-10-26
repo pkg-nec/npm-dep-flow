@@ -37,12 +37,12 @@ function normalizeTimestamp(value) {
   return new Date(milliseconds).toISOString()
 }
 
-export async function runNpmDepVersions(projectRoot, packageName, spawnImpl = spawn, platform = process.platform, { noCache = false, ttlMs = 3600000, now = Date.now } = {}) {
+export async function runNpmDepVersions(projectRoot, packageName, spawnImpl = spawn, platform = process.platform, { noCache = false, ttlMs = 3600000, now = Date.now, clearCache = false } = {}) {
   if (typeof packageName !== 'string' || !packageNamePattern.test(packageName)) throw new Error('Invalid package name for npm-dep-versions')
   if (typeof projectRoot !== 'string' || !projectRoot) throw new Error('A project directory is required for npm-dep-versions')
   let result
   try {
-    result = await runProcess('npm-dep-versions', [packageName, '--format', 'json', '--cache-ttl', `${ttlMs / 1000}s`, ...(noCache ? ['--no-cache'] : [])], projectRoot, spawnImpl, platform)
+    result = await runProcess('npm-dep-versions', [packageName, '--format', 'json', '--cache-ttl', `${ttlMs / 1000}s`, ...(noCache ? ['--no-cache'] : []), ...(clearCache ? ['--clear-cache'] : [])], projectRoot, spawnImpl, platform)
   }
   catch (error) {
     throw new Error(error.code === 'ENOENT' ? 'npm-dep-versions is not available on PATH; install it as a standalone CLI' : 'Cannot start npm-dep-versions', { cause: error })
@@ -68,4 +68,16 @@ export async function runNpmDepVersions(projectRoot, packageName, spawnImpl = sp
   }
   const rows = [...report.rows].sort((a, b) => semver.compare(a.version, b.version) || (a.version < b.version ? -1 : a.version > b.version ? 1 : 0))
   return { versions: rows.map(row => row.version), releaseTimes: new Map(rows.filter(row => row.releasedAt !== null).map(row => [row.version, row.releasedAt])), fetchedAt: report.fetchedAt }
+}
+
+// Clear-only request: versions deletes its cache (and its own sibling caches) without analyzing anything.
+export async function clearNpmDepVersionsCache(cwd = process.cwd(), spawnImpl = spawn, platform = process.platform) {
+  let result
+  try {
+    result = await runProcess('npm-dep-versions', ['--clear-cache'], cwd, spawnImpl, platform)
+  }
+  catch (error) {
+    throw new Error(error?.code === 'ENOENT' ? 'npm-dep-versions is not available on PATH; install it as a standalone CLI' : 'Cannot start npm-dep-versions', { cause: error })
+  }
+  if (result.code !== 0) throw new Error(`npm-dep-versions --clear-cache failed with exit code ${result.code}: ${(result.stderr || result.stdout).trim()}`)
 }

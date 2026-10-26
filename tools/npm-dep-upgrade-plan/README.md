@@ -42,6 +42,8 @@ npm-dep-upgrade-plan /path/to/project
 npm-dep-upgrade-plan /path/to/project --format json
 npm-dep-upgrade-plan --cache-ttl 30m
 npm-dep-upgrade-plan --no-cache
+npm-dep-upgrade-plan /path/to/project --clear-cache
+npm-dep-upgrade-plan --clear-cache
 npm-dep-upgrade-plan --help
 npm-dep-upgrade-plan --version
 ```
@@ -74,7 +76,7 @@ Structured planner findings are cached for one hour by default under `XDG_CACHE_
 
 Each invocation first validates the project and checks its canonical directory, exact manifest/lockfile contents, planner/cache version, npm version, effective npm analysis configuration (including scoped registries), and audit/paths/versions tool versions and installed locations. npm configuration is represented only by a digest; configuration values and credentials are not saved in the planner cache. Catalog reuse retains its original `fetchedAt`; refreshing a planner report never extends old registry evidence. Context discovery uses local npm configuration and sibling `--version` calls even on a hit. The installation-only `before` cutoff is excluded: npm 11 can derive a new timestamp from `min-release-age` on every invocation, while the planner reads complete version/release-time metadata. Upgrade independently enforces the current release-age and `before` policies before applying a change.
 
-`--cache-ttl <duration>` accepts a positive integer followed by `s`, `m`, `h`, or `d`, and forwards that lifetime to audit and versions. A cached plan retains its original `auditedAt` and expires no later than that oldest source timestamp (audit or catalog fetch) plus the requested lifetime. Repeated hits do not extend freshness. `--no-cache` bypasses planner reads/writes, forces fresh audit data and forwards bypass through audit to paths and directly to versions. A bypass does not replace existing cached entries.
+`--cache-ttl <duration>` accepts a positive integer followed by `s`, `m`, `h`, or `d`, and forwards that lifetime to audit and versions. A cached plan retains its original `auditedAt` and expires no later than that oldest source timestamp (audit or catalog fetch) plus the requested lifetime. Repeated hits do not extend freshness. `--no-cache` bypasses planner reads/writes, forces fresh audit data and forwards bypass through audit to paths and directly to versions. A bypass does not replace existing cached entries. `--clear-cache` deletes the planner's whole cache directory (`XDG_CACHE_HOME/npm-dep-upgrade-plan` or `~/.cache/npm-dep-upgrade-plan`), forwards `--clear-cache` to audit (which forwards it to paths) and to every versions call, then continues normally and writes fresh entries. Without an explicit project argument, `--clear-cache` only clears: the planner runs `npm-dep-audit --clear-cache` and `npm-dep-versions --clear-cache` (both clear-only; audit forwards to paths) and exits 0 without planning. Use it to repair stale entries that `--no-cache` cannot; a directory that cannot be removed, or a failing child, is an error.
 
 Malformed or inaccessible cache entries are misses, and writes replace entries atomically. Cache-storage failure does not prevent a valid report. A failed refresh exits with an error and never serves expired findings.
 

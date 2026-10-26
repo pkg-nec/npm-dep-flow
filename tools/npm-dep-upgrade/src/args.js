@@ -17,6 +17,11 @@ export function parseArgs(argv, cwd = process.cwd()) {
       seen.add('debug')
       assign('debug', arg === '--debug')
     }
+    else if (arg === '--clear-cache') {
+      if (seen.has('clearCache')) fail('INVALID_ARGUMENT', 'arguments', 'Repeated --clear-cache option')
+      seen.add('clearCache')
+      assign('clearCache', true)
+    }
     else if (arg === '--clear-git-commit-args') {
       if (seen.has('gitCommitArgs') || result.gitCommitArgs) fail('INVALID_ARGUMENT', 'arguments', 'Cannot combine clear and commit arguments')
       seen.add('gitCommitArgs')
@@ -40,6 +45,10 @@ export function parseArgs(argv, cwd = process.cwd()) {
     }
     else if (arg.startsWith('-')) fail('INVALID_ARGUMENT', 'arguments', `Unknown option: ${arg}`)
     else positional.push(arg)
+  }
+  if (positional.length === 0 && result.clearCache) {
+    assign('clearOnly', true)
+    return result
   }
   if (positional.length < 1 || positional.length > 2) fail('INVALID_ARGUMENT', 'arguments', 'Expected an item ID and optional project directory')
   result.selector = positional.at(-1)
