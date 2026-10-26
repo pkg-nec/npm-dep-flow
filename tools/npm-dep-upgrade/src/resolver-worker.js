@@ -87,7 +87,9 @@ export function computeCoverage(before, after, item, semver) {
       ? [e.from]
       : after.nodes.filter(n => n.location && holder && n.name === holder.name && oldNodes.get(n.location)?.name !== holder.name).map(n => n.location)
     const known = closure({ edges: before.edges.filter(x => x !== e) }, [e.from])
-    const reachable = closure(after, holders)
+    // Another original consumer's edge into the target is that consumer's own branch, not a route of this one.
+    const others = new Set(before.edges.filter(x => x.to === item.targetLocation && x.from !== e.from).map(key))
+    const reachable = closure({ edges: after.edges.filter(x => !others.has(key(x))) }, holders)
     const affected = [...reachable].some((location) => {
       const n = nodes.get(location)
       return n?.name === item.package && !safe(n) && !(location !== item.targetLocation && known.has(location) && equal(oldNodes.get(location), n))

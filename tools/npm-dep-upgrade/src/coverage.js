@@ -34,7 +34,9 @@ export function verifyCoverage(evidence, currentGraph) {
       ? [original.from]
       : [...currentGraph.nodes].filter(([location, node]) => location && node.name === holder.name && evidence.graph.nodes.get(location)?.name !== holder.name).map(([location]) => location)
     const known = closure(evidence.graph.edges.filter(e => e !== original), [original.from])
-    const affected = [...closure(currentGraph.edges, holders)].some((location) => {
+    // Another original consumer's edge into the target is that consumer's own branch, not a route of this one.
+    const others = new Set(evidence.incoming.filter(x => x.from !== original.from).map(consumerKey))
+    const affected = [...closure(currentGraph.edges.filter(x => !others.has(consumerKey(x))), holders)].some((location) => {
       const node = currentGraph.nodes.get(location)
       return node?.name === evidence.item.package && !safe(node) && !(location !== evidence.item.targetLocation && known.has(location) && sameInstall(evidence.graph.nodes.get(location), node))
     })

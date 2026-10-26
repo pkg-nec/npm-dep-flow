@@ -149,3 +149,20 @@ test('discovery and resolver failures are errors, not evidence of no solution', 
   } } })
   await assert.rejects(planParentChoices({ ...base, finding: finding(), row, adapters: resolver.adapters }), /resolver failed/)
 })
+
+test('parent actions are resolved in the executor order: ancestor level first, then location', async () => {
+  const twoLevels = {
+    ...row,
+    requirements: [{ declaredRequirement: '1.2.3', directDependents: [dependent('z-parent', '1.0.1', 'node_modules/z-parent'), dependent('b2', '1.0.0', 'node_modules/b2')] }],
+  }
+  const level1 = parent('z-parent', '1.1.0', 'node_modules/z-parent', [consumer('node_modules/z-parent')])
+  const level2 = parent('a-grand', '2.1.0', 'node_modules/a-grand', [consumer('node_modules/b2')])
+  const { adapters: a, calls } = adapters({ found: [level2, level1] })
+  const f = finding([], 'none')
+  await planParentChoices({ ...base, finding: f, row: twoLevels, adapters: a })
+  assert.deepEqual(calls.resolves.at(-1).choices.map(c => c.targetPackage), ['z-parent', 'a-grand'])
+  for (const call of calls.resolves) {
+    const names = call.choices.map(c => c.targetPackage)
+    assert.ok(names.indexOf('z-parent') < names.indexOf('a-grand') || !names.includes('a-grand') || !names.includes('z-parent'))
+  }
+})

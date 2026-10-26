@@ -61,3 +61,11 @@ test('the planned parent release is used only while it is still eligible', () =>
     ['after the configured cutoff', parent('b', '1.1.0', '1.0.1'), ['^1.0.0'], catalog({ cutoffMs: Date.parse('2026-08-01T00:00:00.000Z') }), [], /age/i],
   ]) assert.throws(() => selectParentRelease(choice, ranges, cat, advisories, now), pattern, label)
 })
+
+test('a planned release that is no longer eligible falls forward to the lowest newer eligible release', () => {
+  const rich = catalog({ versions: ['1.0.1', '1.1.0', '1.2.0', '1.3.0'], releaseTimes: new Map([['1.1.0', '2026-09-01T00:00:00.000Z'], ['1.2.0', '2026-09-02T00:00:00.000Z'], ['1.3.0', '2026-10-20T00:00:00.000Z']]) })
+  const vulnerable = [{ id: 1, range: '>=1.1.0 <1.2.0' }]
+  assert.deepEqual(selectParentRelease(parent('b', '1.1.0', '1.0.1'), ['^1.0.0'], rich, vulnerable, now), { version: '1.2.0', releasedAt: '2026-09-02T00:00:00.000Z' })
+  assert.throws(() => selectParentRelease(parent('b', '1.1.0', '1.0.1'), ['^1.0.0'], rich, [{ id: 1, range: '>=1.1.0 <1.3.0' }], now), /vulnerable|age/i)
+  assert.throws(() => selectParentRelease(parent('b', '1.1.0', '1.0.1'), ['>=1.0.0 <1.2.0'], rich, vulnerable, now), /vulnerable|requirement|eligible/i)
+})

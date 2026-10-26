@@ -99,6 +99,8 @@ async function mainWithDebug(argv, io = process, deps = defaults) {
         const parents = await planParentChoices({ finding, row, project, options, controls: { noCache: options.noCache, ...clearControl }, adapters })
         freshAt = Math.min(freshAt, parents.freshAt)
       }
+      // `none` means no action clears a branch, so it never carries choices (the executor rejects the mismatch).
+      for (const finding of findings) if (finding.resolution === 'none') finding.choices = []
       return {
         value: { findings, auditedAt: auditReport.auditedAt },
         freshAt,

@@ -40,7 +40,11 @@ export async function planParentChoices({ finding, row, project, options, contro
   }
   const item = { ...row, targetLocation: finding.targetLocation }
   // Parent actions execute first, as in the executor.
-  const ordered = choices => [...choices.filter(isParent), ...choices.filter(choice => !isParent(choice))]
+  // Sequential named updates are order dependent, so the order must match the executor: level, then location, name, version.
+  const consumerLocations = new Set(unresolved.map(entry => entry.consumer.location))
+  const levelOf = choice => (consumerLocations.has(choice.targetLocation) ? 1 : 2)
+  const byExecution = (a, b) => levelOf(a) - levelOf(b) || compareText(a.targetLocation, b.targetLocation) || compareText(a.targetPackage, b.targetPackage) || compareText(a.targetVersion, b.targetVersion)
+  const ordered = choices => [...choices.filter(isParent).sort(byExecution), ...choices.filter(choice => !isParent(choice))]
   const resolve = choices => adapters.resolveChoices(project, item, ordered(choices), { ...options, releaseTimes })
   const evaluate = async (choices) => {
     const verified = await resolve(choices)

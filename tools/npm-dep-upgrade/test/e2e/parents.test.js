@@ -224,6 +224,37 @@ for (const npmCli of runtimes) {
     await unchanged(f)
   })
 
+  test(`a root consumer with a caret range and a pinned sibling stays a partial, executable finding (${npmCli})`, async (t) => {
+    const s = parents({ pcSpec: '6.0.9' })
+    s.manifest.dependencies = { [target]: '^6.0.8', [pb]: '^1.0.0' }
+    delete s.packages[pc]
+    s.packages[pb]['1.0.1'].manifest.dependencies = { [target]: '6.0.9' }
+    delete s.packages[pb]['1.1.0']
+    const f = await createProject(s, { npmCli }, t)
+    const rows = await plan(f)
+    const row = finding(rows)
+    assert.equal(row.resolution, 'partial')
+    assert.ok(row.choices.length > 0)
+    for (const other of rows) assert.ok((other.resolution === 'none') === (other.choices.length === 0))
+    const result = await runUpgrade(f, [row.id, '--format', 'json'])
+    assert.equal(result.code, 0, result.stderr)
+  })
+
+  test(`a planned parent release that became vulnerable falls forward to the next eligible release (${npmCli})`, async (t) => {
+    const s = parents()
+    s.packages[pb]['1.2.0'] = { manifest: { name: pb, version: '1.2.0', main: 'index.js', dependencies: { [target]: '6.0.12' } }, releasedAt: new Date(Date.now() - 25 * 86400000).toISOString(), seed: false }
+    const original = s.advisories
+    s.advisories = phase => (phase === 'stale' ? [...original, { name: pb, range: '1.1.0', id: 10003 }] : original)
+    const f = await createProject(s, { npmCli }, t)
+    const row = finding(await plan(f))
+    assert.ok(row.choices.some(c => c.targetPackage === pb && c.targetVersion === '1.1.0'))
+    f.registry.setPhase('stale')
+    const result = await runUpgrade(f, [row.id, '--format', 'json'])
+    assert.equal(result.code, 0, result.stderr)
+    assert.deepEqual(await subjects(f), [`deps: bump ${pb} from 1.0.1 to 1.2.0`])
+    await assertResolved(f, `node_modules/${pb}`, target, '6.0.12')
+  })
+
   test(`a parent release that is no longer old enough is refused before any commit (${npmCli})`, async (t) => {
     const s = parents()
     const f = await createProject(s, { npmCli }, t)

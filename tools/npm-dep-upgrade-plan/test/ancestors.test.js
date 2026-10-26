@@ -17,13 +17,14 @@ function chain(extraNodes = [], extraEdges = []) {
   )
 }
 
-function harness({ catalogs = {}, clears = () => false } = {}) {
+function harness({ catalogs = {}, clears = () => false, releases = {} } = {}) {
   const catalogLookups = [], evaluations = []
   return {
     catalogLookups, evaluations,
     readCatalog: async (name) => {
       catalogLookups.push(name)
-      return { versions: catalogs[name] ?? [], releaseTimes: new Map() }
+      const versions = catalogs[name] ?? []
+      return { versions, releaseTimes: new Map(versions.map(version => [version, releases[`${name}@${version}`] ?? '2020-01-01T00:00:00.000Z'])) }
     },
     // evaluate(choices) -> keys of the original consumers the whole action set clears
     evaluate: async (choices) => {
@@ -177,4 +178,21 @@ test('a failing catalog or evaluation is an error, not evidence of no solution',
   await assert.rejects(find(failing, { evaluate: async () => {
     throw new Error('resolver failed')
   } }), /resolver failed/)
+})
+
+test('candidates younger than the release-age floor, or without a release time, are never evaluated', async () => {
+  const now = Date.parse('2026-10-26T00:00:00.000Z')
+  const h = harness({
+    catalogs: { b: ['1.1.0', '1.2.0', '1.3.0'] },
+    releases: { 'b@1.1.0': '2026-10-24T00:00:00.000Z', 'b@1.2.0': '2026-10-10T00:00:00.000Z' },
+    clears: clearsWhen(c => c.targetPackage === 'b'),
+  })
+  const noTime = { ...h, readCatalog: async () => ({ versions: ['1.1.0', '1.2.0', '1.3.0'], releaseTimes: new Map([['1.2.0', '2026-10-10T00:00:00.000Z'], ['1.3.0', 'not a date']]) }) }
+  const choices = await find(h, { now })
+  assert.equal(choices[0].targetVersion, '1.2.0')
+  assert.deepEqual(h.evaluations, [['b@1.2.0']])
+  const second = harness({ clears: clearsWhen(c => c.targetPackage === 'b') })
+  const result = await find(second, { readCatalog: noTime.readCatalog, now })
+  assert.equal(result[0].targetVersion, '1.2.0')
+  assert.deepEqual(second.evaluations, [['b@1.2.0']])
 })

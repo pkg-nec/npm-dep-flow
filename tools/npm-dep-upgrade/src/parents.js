@@ -38,16 +38,25 @@ export function orderChoices(item, evidence) {
   return entries.sort((a, b) => (rank(a) === rank(b) ? (a.level === 0 ? a.index - b.index : compareText(a.choice.targetLocation, b.choice.targetLocation) || compareText(a.choice.targetPackage, b.choice.targetPackage) || semver.compare(a.choice.targetVersion, b.choice.targetVersion)) : rank(a) < rank(b) ? -1 : 1))
 }
 
-// The executor never substitutes another ancestor release: the planned one must still be eligible or the plan is stale.
+// The planned release is used while it is eligible. If it no longer is (a fresh advisory, an incoming declaration
+// that changed), the lowest newer eligible release is used instead; resolution then has to land on it and still
+// produce the planned coverage, otherwise the plan is stale. Nothing lower than the planned release is ever chosen.
 export function selectParentRelease(choice, ranges, catalog, advisories, nowMs) {
-  const version = choice.targetVersion
-  if (!catalog.versions.includes(version) || !stableVersion(version)) fail('NO_CANDIDATE', 'selection', 'Planned parent release is not in the registry catalog')
-  const releasedAt = normalizeTimestamp(catalog.releaseTimes.get(version))
-  if (!releasedAt) fail('RELEASE_AGE', 'selection', 'Planned parent release has an unverifiable release age')
+  const planned = choice.targetVersion
+  if (!catalog.versions.includes(planned) || !stableVersion(planned)) fail('NO_CANDIDATE', 'selection', 'Planned parent release is not in the registry catalog')
   const ageCutoff = nowMs - (catalog.minAgeDays || 7) * DAY_MS
   const cutoff = catalog.cutoffMs == null ? ageCutoff : Math.min(ageCutoff, catalog.cutoffMs)
-  if (Date.parse(releasedAt) > cutoff) fail('RELEASE_AGE', 'selection', 'Planned parent release has insufficient release age')
-  if (!ranges.every(range => semver.satisfies(version, range))) fail('UNSUPPORTED_REQUIREMENT', 'selection', 'Planned parent release violates an incoming requirement on the ancestor')
-  if (advisories.some(advisory => semver.satisfies(version, advisory.range, { includePrerelease: true }))) fail('STALE_RECOMMENDATION', 'selection', 'Planned parent release is now vulnerable; run planning again')
-  return { version, releasedAt }
+  const problem = (version) => {
+    const releasedAt = normalizeTimestamp(catalog.releaseTimes.get(version))
+    if (!releasedAt) return ['RELEASE_AGE', 'Planned parent release has an unverifiable release age']
+    if (Date.parse(releasedAt) > cutoff) return ['RELEASE_AGE', 'Planned parent release has insufficient release age']
+    if (!ranges.every(range => semver.satisfies(version, range))) return ['UNSUPPORTED_REQUIREMENT', 'Planned parent release violates an incoming requirement on the ancestor']
+    if (advisories.some(advisory => semver.satisfies(version, advisory.range, { includePrerelease: true }))) return ['STALE_RECOMMENDATION', 'Planned parent release is now vulnerable; run planning again']
+    return null
+  }
+  const first = problem(planned)
+  if (!first) return { version: planned, releasedAt: normalizeTimestamp(catalog.releaseTimes.get(planned)) }
+  const newer = [...new Set(catalog.versions)].filter(version => stableVersion(version) && semver.gt(version, planned)).sort(semver.compare).find(version => !problem(version))
+  if (!newer) fail(first[0], 'selection', first[1])
+  return { version: newer, releasedAt: normalizeTimestamp(catalog.releaseTimes.get(newer)) }
 }

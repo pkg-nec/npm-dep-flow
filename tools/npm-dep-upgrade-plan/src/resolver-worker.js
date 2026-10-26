@@ -87,7 +87,9 @@ export function computeCoverage(before, after, item, semver) {
       ? [e.from]
       : after.nodes.filter(n => n.location && holder && n.name === holder.name && oldNodes.get(n.location)?.name !== holder.name).map(n => n.location)
     const known = closure({ edges: before.edges.filter(x => x !== e) }, [e.from])
-    const reachable = closure(after, holders)
+    // Another original consumer's edge into the target is that consumer's own branch, not a route of this one.
+    const others = new Set(before.edges.filter(x => x.to === item.targetLocation && x.from !== e.from).map(key))
+    const reachable = closure({ edges: after.edges.filter(x => !others.has(key(x))) }, holders)
     const affected = [...reachable].some((location) => {
       const n = nodes.get(location)
       return n?.name === item.package && !safe(n) && !(location !== item.targetLocation && known.has(location) && equal(oldNodes.get(location), n))
@@ -174,10 +176,12 @@ export async function resolveRequest(request) {
         if (request.strict) throw new Error('Ancestor release time is unavailable')
         continue
       }
-      const tree = await new Arborist({ ...opts, before: new Date(releasedAt) }).buildIdealTree({ update: { names: [choice.targetPackage] } })
-      await tree.meta.save()
-      const after = graph(tree)
+      let after
       try {
+        // A release npm cannot resolve (peer conflict, missing dependency release) is unsuitable, not a failed run.
+        const tree = await new Arborist({ ...opts, before: new Date(releasedAt) }).buildIdealTree({ update: { names: [choice.targetPackage] } })
+        await tree.meta.save()
+        after = graph(tree)
         if (!(await readFile(path.join(request.root, 'package.json'))).equals(startFiles[0])) throw new Error('Ancestor update changed the manifest')
         verifyResolution(before, after, request.item, [...accepted, choice], semver)
       }

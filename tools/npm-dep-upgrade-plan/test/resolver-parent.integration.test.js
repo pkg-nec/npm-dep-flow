@@ -94,6 +94,14 @@ for (const npmCli of [process.env.NPM_DEP_UPGRADE_E2E_NPM_CLI, process.env.NPM_D
     assert.equal(result.coverage.resolution, 'none')
   })
 
+  test(`a candidate npm cannot resolve is unsuitable instead of failing the run: ${npmCli}`, async (t) => {
+    const conflicting = { manifest: { ...leaf('b', '1.1.0', { a: '1.2.5' }), peerDependencies: { 'e2e-peer': '^2.0.0' } }, releasedAt: ago(40), seed: false }
+    const packages = scenario({ '1.1.0': conflicting }, { 'e2e-peer': { '1.0.0': entry('e2e-peer', '1.0.0', {}, 90) } }, { 'b': '^1.0.0', 'c': '^1.0.0', 'e2e-peer': '1.0.0' })
+    const { result } = await run(t, packages, [parentChoice('b', '1.1.0', '1.0.1')], { 'b@1.1.0': conflicting.releasedAt })
+    assert.deepEqual(result.choices, [])
+    assert.equal(result.coverage.resolution, 'none')
+  })
+
   test(`a grandparent upgrade can clear a branch through its resolved closure: ${npmCli}`, async (t) => {
     const g = { '1.0.0': entry('g', '1.0.0', { b: '1.0.1' }, 90), '1.1.0': entry('g', '1.1.0', { b: '^1.1.0' }, 30, false) }
     const packages = scenario({ '1.1.0': b110 }, { g }, { g: '^1.0.0', c: '^1.0.0' }, '1.2.3')

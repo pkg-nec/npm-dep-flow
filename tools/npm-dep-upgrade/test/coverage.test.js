@@ -63,3 +63,13 @@ test('another route to the original vulnerable installation keeps the branch unc
   const graph = { nodes, edges }
   assert.equal(verifyCoverage({ item, graph, incoming: edges, auditRows: evidence.auditRows }, graph).resolution, 'none')
 })
+test('a root consumer is cleared by its own edge even though a sibling consumer keeps the vulnerable copy', () => {
+  const edge = (from, to, requestedName, rawSpec) => ({ from, to, requestedName, type: 'dependencies', rawSpec, effectiveSpec: rawSpec, valid: true })
+  const startNodes = new Map([['', { name: 'app', version: '1.0.0' }], ['node_modules/a', { name: 'a', version: '1.2.3' }], ['node_modules/b', { name: 'b', version: '1.0.1' }]])
+  const startEdges = [edge('', 'node_modules/a', 'a', '^1.2.0'), edge('', 'node_modules/b', 'b', '^1.0.0'), edge('node_modules/b', 'node_modules/a', 'a', '1.2.3')]
+  const start = { nodes: startNodes, edges: startEdges }
+  const split = { nodes: new Map([['', { name: 'app', version: '1.0.0' }], ['node_modules/a', { name: 'a', version: '1.2.5' }], ['node_modules/b', { name: 'b', version: '1.0.1' }], ['node_modules/b/node_modules/a', { name: 'a', version: '1.2.3' }]]), edges: [startEdges[0], startEdges[1], edge('node_modules/b', 'node_modules/b/node_modules/a', 'a', '1.2.3')] }
+  const coverage = verifyCoverage({ item, graph: start, incoming: [startEdges[0], startEdges[2]], auditRows: evidence.auditRows }, split)
+  assert.deepEqual(coverage.clearedConsumers.map(c => c.location), [''])
+  assert.deepEqual(coverage.remainingConsumers.map(c => c.location), ['node_modules/b'])
+})

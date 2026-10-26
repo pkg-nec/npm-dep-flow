@@ -137,3 +137,19 @@ test('another route to the original vulnerable installation keeps the branch unc
   assert.deepEqual(computeCoverage(twice, twice, item, semver).clearedConsumers, [])
   assert.equal(computeCoverage(twice, twice, item, semver).resolution, 'none')
 })
+
+test('a root consumer is cleared by its own edge even though a sibling consumer keeps the vulnerable copy', () => {
+  // root declares a ^1.2.0 and also depends on b, which pins a@1.2.3. After the split the pinned copy lives at b/a.
+  const start = {
+    nodes: [node('', 'app', '1.0.0'), node('node_modules/a', 'a', '1.2.3'), node('node_modules/b', 'b', '1.0.1')],
+    edges: [edge('', 'node_modules/a', 'a', '^1.2.0'), edge('', 'node_modules/b', 'b', '^1.0.0'), edge('node_modules/b', 'node_modules/a', 'a', '1.2.3')],
+  }
+  const split = {
+    nodes: [node('', 'app', '1.0.0'), node('node_modules/a', 'a', '1.2.5'), node('node_modules/b', 'b', '1.0.1'), node('node_modules/b/node_modules/a', 'a', '1.2.3')],
+    edges: [edge('', 'node_modules/a', 'a', '^1.2.0'), edge('', 'node_modules/b', 'b', '^1.0.0'), edge('node_modules/b', 'node_modules/b/node_modules/a', 'a', '1.2.3')],
+  }
+  const coverage = computeCoverage(start, split, item, semver)
+  assert.deepEqual(coverage.clearedConsumers, [consumerOf('')])
+  assert.deepEqual(coverage.remainingConsumers, [consumerOf('node_modules/b')])
+  assert.equal(coverage.resolution, 'partial')
+})

@@ -10,11 +10,21 @@ function rangeOf(spec) {
   return semver.validRange(range)
 }
 
-function candidateVersions(ancestor, catalog, incoming) {
+const DAY_MS = 86_400_000
+export const MIN_RELEASE_AGE_DAYS = 7
+
+function releasedAt(catalog, version) {
+  const time = catalog.releaseTimes instanceof Map ? catalog.releaseTimes.get(version) : catalog.releaseTimes?.[version]
+  return typeof time === 'string' ? Date.parse(time) : NaN
+}
+
+// The planner cannot pin a release it has no publication time for, and the executor refuses releases younger than
+// the seven-day floor, so neither is offered as a candidate.
+function candidateVersions(ancestor, catalog, incoming, cutoff) {
   const ranges = incoming.map(edge => rangeOf(edge.spec))
   if (!incoming.length || ranges.includes(null)) return []
   return [...new Set(catalog.versions)]
-    .filter(version => semver.valid(version) && !semver.prerelease(version) && semver.gt(version, ancestor.version) && ranges.every(range => semver.satisfies(version, range)))
+    .filter(version => semver.valid(version) && !semver.prerelease(version) && semver.gt(version, ancestor.version) && ranges.every(range => semver.satisfies(version, range)) && releasedAt(catalog, version) <= cutoff)
     .sort(semver.compare)
 }
 
@@ -30,7 +40,8 @@ function reverseIndex(graph) {
 // Bounded breadth-first ancestor search for the consumer branches that within-range actions did not cover.
 // `evaluate(choices)` returns the keys of the original consumers a complete action set clears; it is the
 // only authority on suitability, so a candidate counts only when the resolved closure clears its branch.
-export async function findParentChoices({ unresolvedConsumers, graph, readCatalog, evaluate, accepted = [] }) {
+export async function findParentChoices({ unresolvedConsumers, graph, readCatalog, evaluate, accepted = [], now = Date.now() }) {
+  const cutoff = now - MIN_RELEASE_AGE_DAYS * DAY_MS
   const parentsOf = reverseIndex(graph)
   const catalogs = new Map()
   const catalogFor = (name) => {
@@ -52,7 +63,7 @@ export async function findParentChoices({ unresolvedConsumers, graph, readCatalo
       for (const ancestor of level) {
         const incoming = graph.edges.filter(edge => edge.to === ancestor.location)
         const catalog = await catalogFor(ancestor.name)
-        for (const version of candidateVersions(ancestor, catalog, incoming)) {
+        for (const version of candidateVersions(ancestor, catalog, incoming, cutoff)) {
           const candidate = { strategy: PARENT_STRATEGY, targetPackage: ancestor.name, targetLocation: ancestor.location, currentVersion: ancestor.version, targetVersion: version, affectedConsumers: [] }
           const result = await evaluate([...accepted, ...choices, candidate])
           if (!result.has(consumerKey(branch)) || [...cleared].some(key => !result.has(key))) continue
