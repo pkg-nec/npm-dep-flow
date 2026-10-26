@@ -29,7 +29,7 @@ export async function resolveChoices(project, item, choices, options = {}) {
     const runtime = await (options.readRuntime || readResolverRuntime)(project.root, { env: options.env })
     await Promise.all(['package.json', 'package-lock.json'].map(async n => writeFile(path.join(root, n), await readFile(path.join(project.root, n)))))
     const request = path.join(root, 'request.json')
-    await writeFile(request, JSON.stringify({ root, projectRoot: project.root, npmPath: runtime.npmPath, item, choices, startedAt: Date.now() }), { mode: 0o600 })
+    await writeFile(request, JSON.stringify({ root, projectRoot: project.root, npmPath: runtime.npmPath, item, choices, releaseTimes: options.releaseTimes || {}, startedAt: Date.now() }), { mode: 0o600 })
     const response = await (options.run || runWorker)([fileURLToPath(new URL('./resolver-worker.js', import.meta.url)), request], options)
     if (response.code) throw new Error('Dependency resolver failed')
     let result
