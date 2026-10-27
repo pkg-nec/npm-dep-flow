@@ -57,3 +57,11 @@ test('a finding whose jointly resolved coverage is none never carries choices', 
   assert.equal(result.resolution, 'none')
   assert.deepEqual(result.choices, [])
 })
+
+test('a toolchain choice for a root consumer serializes under schema version 3', () => {
+  const choice = { strategy: 'upgrade-angular-toolchain', targetPackage: '@angular/cli', targetLocation: 'node_modules/@angular/cli', currentVersion: '21.2.26', targetVersion: '21.2.27', affectedConsumers: [{ location: '', requestedName: '@angular/build', type: 'devDependencies' }] }
+  const finding = { package: '@angular/build', version: '21.2.26', targetLocation: 'node_modules/@angular/build', severity: 'high', minimumSafeVersion: '21.2.27', minimumSafeVersionReleasedAt: null, resolution: 'complete', choices: [choice] }
+  const report = JSON.parse(renderJson([finding], '2026-10-27T00:00:00.000Z'))
+  assert.equal(report.schemaVersion, 3)
+  assert.deepEqual(report.rows[0].choices, [choice])
+})
