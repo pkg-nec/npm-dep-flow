@@ -98,3 +98,14 @@ export function bringsIn() {
     },
   })
 }
+
+// pb@1.0.1 pins a helper that already has an advisory; pb@1.1.0 swaps it for another release carrying the same advisory.
+export function swapsAffectedHelper(extraAdvisories = []) {
+  const s = parents({
+    pbNext: { [target]: '6.0.12', [helperName]: '2.0.5' },
+    extra: { [helperName]: releases(helperName, { '2.0.4': [null, 60], '2.0.5': [null, 35, false] }) },
+  })
+  s.packages[pb]['1.0.1'].manifest.dependencies[helperName] = '2.0.4'
+  s.advisories = [...s.advisories, { name: helperName, range: '>=2.0.4 <2.0.7', id: 20001 }, ...extraAdvisories]
+  return s
+}

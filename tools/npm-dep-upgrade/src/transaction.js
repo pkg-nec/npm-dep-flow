@@ -58,6 +58,11 @@ export async function executeActions(project, item, evidence, context, adapters)
     // The action's own installation is not a supporting change: the vulnerable package for within-range actions, the ancestor for parents.
     const own = (location, node) => (parentAction ? location === choice.targetLocation : node.name === item.package)
     const changedVersions = new Map([[choice.targetPackage, [choice.targetVersion]]]), supportingChanges = []
+    // Versions this snapshot replaced or removed, so a changed version is judged against what it replaces.
+    const replacedVersions = new Map()
+    for (const [location, node] of previous.nodes) {
+      if (location && !equal(node, current.nodes.get(location))) replacedVersions.set(node.name, [...new Set([...(replacedVersions.get(node.name) || []), node.version])])
+    }
     for (const [location, node] of current.nodes) {
       if (!location || equal(previous.nodes.get(location), node)) continue
       if (node.name === item.package && node.version === item.version && [...before.nodes.values()].some(old => equal(old, node))) continue
@@ -69,7 +74,7 @@ export async function executeActions(project, item, evidence, context, adapters)
     }
     const coverage = verifyCoverage(evidence, current)
     if (coverage.resolution === 'none') fail('NO_CHANGES', 'verification', 'Upgrade did not clear any vulnerable consumer')
-    snapshots.push({ choiceIndex, files, graph: current, changedVersions, supportingChanges, candidate: candidates[choiceIndex] })
+    snapshots.push({ choiceIndex, files, graph: current, changedVersions, replacedVersions, supportingChanges, candidate: candidates[choiceIndex] })
     const targetLocations = parentAction ? [choice.targetLocation] : [...new Set(choice.affectedConsumers.map(c => current.edges.find(e => consumerKey(e) === consumerKey(c))?.to))]
     actions[choiceIndex] = { ...choice, outcome: 'applied', targetLocations, releasedAt: candidates[choiceIndex].releasedAt, supportingChanges }
     previous = current
