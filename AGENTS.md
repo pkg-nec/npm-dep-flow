@@ -58,6 +58,7 @@
 
 - Entry point: `bin/npm-dep-upgrade-plan.js`. `src/cli.js` coordinates the audit adapter, registry lookups, strategy evaluation, and rendering.
 - Uses the separately installed audit CLI (which uses paths) and versions CLI for cached stable registry catalogs. Preserve per-target-location identity, compatible-consumer actions, and none/partial/complete resolution. Verify new splits and multi-action sets with read-only resolution. Planner caches must include effective npm configuration and sibling versions/locations, retain upstream advisory expiry, and forward TTL/bypass controls to audit and versions, and preserve the earliest audit/catalog source freshness.
+- Strategy `upgrade-angular-toolchain` runs third, only for branches the other two strategies left uncovered; it bumps exact-pinned `@angular/cli`/`@angular/build` as one same-major unit, with no release-age filter in the planner.
 - Set `NPM_DEP_AUDIT_INTEGRATION=1` to test the real audit CLI boundary with fixture npm/paths responses. See the [planner guide](tools/npm-dep-upgrade-plan/README.md).
 
 For test scratch directories, `NPM_DEP_FLOW_TEST_TMPDIR` overrides checkout-local audit/planner integration and planner executable scratch roots; `NPM_DEP_PATHS_TEST_TMPDIR` overrides paths fixture roots. Other temporary fixtures follow the operating system temporary directory (`TMPDIR` on Unix-like systems).
@@ -66,6 +67,7 @@ For test scratch directories, `NPM_DEP_FLOW_TEST_TMPDIR` overrides checkout-loca
 
 - Entry point: `bin/npm-dep-upgrade.js`; independent package with public planner/audit/paths subprocess boundaries. Never import sibling private modules.
 - CLI: `npm-dep-upgrade [project] <id-or-prefix> [--package <name>] [--format markdown|json]`. The project defaults to the caller's current directory. One selector identifies one current installation by SHA-256 prefix, optionally filtered by exact package name. Only update-within-declared-range is supported.
+- Execution order is toolchain (`upgrade-angular-toolchain`: `nx migrate` in the real clean project, own commit, allowlisted `package.json` changes, 7-day age on `@angular/cli`), then parent, then within-range.
 - Preserve direct ^/~ operators. Use reversible scoped overrides for transitive targets. Execute every planned action for the selected finding, preserving incompatible incoming pins. Verify consumer identities through splits/relocations; never leave an unnecessary override or upgrade unrelated target copies. Verify all snapshots before committing and create one commit per actual upgrade, preserving any committed prefix on a later commit failure. Supporting closure changes are permitted after validation.
 - All installs must ignore scripts and enforce at least seven days of release age. Fresh candidate-version and final advisory checks are mandatory.
 - Require clean tracked dependency files and an empty repository-wide index; preserve unrelated unstaged work. Stage only verified dependency files and use the documented default or explicitly configured dependency commit subject. Never reset HEAD or overwrite concurrent work during recovery.

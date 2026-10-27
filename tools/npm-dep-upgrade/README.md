@@ -32,7 +32,7 @@ With two positional arguments, the first is always the project directory and the
 
 The selector is a lowercase hexadecimal prefix of 7–64 characters. Planner JSON contains the full SHA-256 of `package + "__" + targetLocation`; Markdown shows seven characters. IDs identify package/location, independent of the installed version and absolute project path. A short prefix can collide. `--package` filters by exact package name before uniqueness checking; two locations of the same package may still need a longer prefix. Automation should use full IDs plus package names.
 
-Each invocation reruns the schema-version-3 planner and executes all planned actions of one partial or complete finding: `upgrade-via-parent-dependency` actions first (ancestor level ascending, then location, name and version), then `update-within-declared-range` actions. Each action is reassessed against the tree left by the previous one and is skipped (`already-satisfied`, no commit) when its consumers are already cleared. A `none` finding is rejected. There is no choice-selection flag, plan-file input, or `--to`. A complete finding normally disappears; a partial finding leaves the incompatible vulnerable consumers in the next report, potentially at a different location/ID. Re-executing a remaining `none` finding changes nothing.
+Each invocation reruns the schema-version-3 planner and executes all planned actions of one partial or complete finding: `upgrade-via-parent-dependency` actions first (ancestor level ascending, then location, name and version), then `update-within-declared-range` actions. When a finding also has an `upgrade-angular-toolchain` action, it runs first, before the parent and within-range actions. Each action is reassessed against the tree left by the previous one and is skipped (`already-satisfied`, no commit) when its consumers are already cleared. A `none` finding is rejected. There is no choice-selection flag, plan-file input, or `--to`. A complete finding normally disappears; a partial finding leaves the incompatible vulnerable consumers in the next report, potentially at a different location/ID. Re-executing a remaining `none` finding changes nothing.
 
 ## Per-invocation configuration
 
@@ -82,12 +82,12 @@ The default template is `deps: {description}` without a module, or `deps({module
 | Placeholder | Value |
 | --- | --- |
 | `{module}` | Explicit module name; required if referenced |
-| `{description}` | Strategy-supplied action, currently `bump <package> from <oldVersion> to <newVersion>` |
+| `{description}` | Strategy-supplied action: `bump <package> from <oldVersion> to <newVersion>`, or `migrate Angular toolchain to <newVersion>` for the toolchain |
 | `{package}` | Selected package name |
 | `{oldVersion}` / `{newVersion}` | Installed / chosen version |
-| `{strategy}` | `update-within-declared-range` or `upgrade-via-parent-dependency` |
+| `{strategy}` | `update-within-declared-range`, `upgrade-via-parent-dependency` or `upgrade-angular-toolchain` |
 
-Descriptions are supplied separately from the formatter, allowing a future strategy to provide wording such as `migrate Angular toolchain from …`. Parent upgrades use the same placeholders. Placeholder values are literal text, never executable code or nested templates. Unknown placeholders or unmatched braces are rejected. Templates and rendered subjects must be nonempty single lines without control characters or surrounding whitespace. Module names must be nonempty, without control characters, braces, parentheses, or surrounding whitespace. The actual rendered subject is protected by the commit guards and returned in the report's ordered `commits[].subject` fields.
+Descriptions are supplied separately from the formatter, allowing each strategy to provide its own wording. Parent upgrades and the Angular toolchain use the same placeholders. Placeholder values are literal text, never executable code or nested templates. Unknown placeholders or unmatched braces are rejected. Templates and rendered subjects must be nonempty single lines without control characters or surrounding whitespace. Module names must be nonempty, without control characters, braces, parentheses, or surrounding whitespace. The actual rendered subject is protected by the commit guards and returned in the report's ordered `commits[].subject` fields.
 
 ### Git commit arguments
 
@@ -116,6 +116,27 @@ All actions are resolved and their intermediate snapshots checked before committ
 A planner finding can contain `upgrade-via-parent-dependency` actions next to within-range actions. The executor validates each parent action against fresh evidence: the ancestor installation must be unchanged, within two levels of the selected installation, the covered consumers must be real consumers of it, and the planned release must still exist, be stable, be old enough (the seven-day floor and any configured cutoff), satisfy every incoming declaration on the ancestor, and not be affected by a fresh advisory. If the planned release is no longer eligible, the lowest newer eligible release is used instead; resolution must land on it and still produce the planned coverage, otherwise the plan is stale. A lower release is never chosen.
 
 Parent actions run first, ordered by ancestor level, then original location, name and version; within-range actions follow. Each parent action is applied through npm's named update (no overrides, no hand-edited lockfile): the ancestor lands exactly on the planned release, and a root `^`/`~` declaration of it is then raised to that release (the lockfile is re-saved by npm, and the installed tree must not change), and the installations that release brings in are then resolved again under the release-age policy from npm configuration (`min-release-age`, never fewer than seven days, bounded by `before`), so nothing newly installed is younger than the policy and no older release is used than the policy allows. Within-range actions keep their scoped overrides. Every action is verified in private staging; after each one the tree is reloaded and the remaining actions are reassessed. With ancestor and within-range actions in one finding, execution has two rounds. The ancestors run first. Then each within-range candidate is chosen from the declarations the tree carries after them (an ancestor release may have turned an exact pin into a caret) using the usual age, advisory and range rules, and the within-range actions run on top. A within-range action whose consumers are already safe after the ancestors, or whose dependency was removed, is skipped. An ancestor that only enables a follow-up action clears nothing on its own, so the 'no vulnerable consumer cleared' check applies to the final result there. An action whose consumers were already cleared (for example when the parent's safe pin let npm dedupe the shared installation) is reported with outcome `already-satisfied` and creates no commit. A parent that removes the dependency clears its branch, but the residual consumer is still upgraded in its own second commit. Nothing is committed until the whole combined result, expected resolution, fresh advisories, release ages and a scripts-disabled installed tree, has been verified. Each actual upgrade then gets its own commit with the configured template and hooks; if a later commit fails, earlier commits are preserved and reported.
+
+## Angular toolchain
+
+A planner finding can contain an `upgrade-angular-toolchain` choice for a project that pins `@angular/cli` (and `@angular/build`) exactly. It always executes first, as its own commit, then parent and within-range actions run as described above; consumers the migration already moved off the target are trimmed from the later actions. Only patch-level (rarely minor) migrations within one major are supported, and the Angular runtime line is out of scope.
+
+Release selection is fresh: the executor reads the `@angular/cli` catalog and candidate advisories and takes the lowest same-major version that clears the finding. That version must be at least seven days old, judged on `@angular/cli`'s own publication time (the other members share the version), and must satisfy the configured `before`. If none qualifies, the run fails without changing anything.
+
+Because `nx migrate` needs the workspace, the migration runs in the real project rather than in staging:
+
+1. Require a completely clean working tree, including no staged, unstaged or untracked changes (ignored `node_modules` is not inspected).
+2. Run `npm ci --ignore-scripts` and verify `package.json` and `package-lock.json` are still in sync.
+3. Run `npx --no nx migrate @angular/cli@<version>`. If it generates `migrations.json`, abort and migrate manually.
+4. Check the `package.json` change against the allowlist.
+5. Set the `@angular-devkit/core` override to `<version>`, only if the project already has that override.
+6. Run `npm install --ignore-scripts`. If it fails, retry with `-f`, then run the plain install again, which must succeed.
+7. Run a fresh audit: the finding's branches must be cleared and no new advisory may appear.
+8. Stage `package.json` and `package-lock.json` only and commit with the description `migrate Angular toolchain to <version>`. With `--module webapp` the default subject is `deps(webapp): migrate Angular toolchain to <version>`; without a module it is `deps: migrate Angular toolchain to <version>`. A configured template is honored.
+
+The allowlist limits what `nx migrate` may change in `package.json`: only `@angular/cli`, `@angular/build`, `@angular-devkit/core`, `@angular-devkit/schematics`, `@schematics/angular` and `@angular-devkit/architect`. Every one of them that changes must equal the target version, except `@angular-devkit/architect`, whose version is not checked because its numbering scheme may differ. Any other package or version aborts the run.
+
+On any failure the tracked dependency files are restored, files the run created (including `migrations.json`) are deleted, a stderr diagnostic is printed, the command exits 1 and no partial report is written. `node_modules` is not touched and keeps whatever the installs left there. A failure in a later action keeps the committed toolchain commit. The report lists the toolchain action first.
 
 ## Fresh security checks on changed versions
 
