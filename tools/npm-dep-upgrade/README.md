@@ -127,7 +127,7 @@ Because `nx migrate` needs the workspace, the migration runs in the real project
 
 1. Require a completely clean working tree, including no staged, unstaged or untracked changes (ignored `node_modules` is not inspected).
 2. Run `npm ci --ignore-scripts` and verify `package.json` and `package-lock.json` are still in sync.
-3. Run `npx --no nx migrate @angular/cli@<version>`. If it generates `migrations.json`, abort and migrate manually.
+3. Run `npx --no nx migrate @angular/cli@<version>` with lifecycle scripts disabled (`npm_config_ignore_scripts=true`). If it generates `migrations.json`, abort and migrate manually.
 4. Check the `package.json` change against the allowlist.
 5. Set the `@angular-devkit/core` override to `<version>`, only if the project already has that override.
 6. Run `npm install --ignore-scripts`. If it fails, retry with `-f`, then run the plain install again, which must succeed.
@@ -136,7 +136,7 @@ Because `nx migrate` needs the workspace, the migration runs in the real project
 
 The allowlist limits what `nx migrate` may change in `package.json`: only `@angular/cli`, `@angular/build`, `@angular-devkit/core`, `@angular-devkit/schematics`, `@schematics/angular` and `@angular-devkit/architect`. Every one of them that changes must equal the target version, except `@angular-devkit/architect`, whose version is not checked because its numbering scheme may differ. Any other package or version aborts the run.
 
-On any failure the run restores every change it made, tracked and untracked paths that `git status` reports (including a generated `migrations.json`), a stderr diagnostic is printed, the command exits 1 and no partial report is written. `node_modules` is not touched and keeps whatever the installs left there. A failure in a later action keeps the committed toolchain commit. The report lists the toolchain action first.
+On any failure, with HEAD and the branch unchanged, the run restores `package.json` and `package-lock.json` only while they still hold the bytes the run last wrote or observed, and deletes a generated `migrations.json`. It touches nothing else: any other changed path (for example a file `nx` or `npm` created, or your own edit made during the run), and a dependency file changed by something else, is left in place and named in the diagnostic so you can clean it up. A stderr diagnostic is printed, the command exits 1 and no partial report is written. `node_modules` is not touched and keeps whatever the installs left there; the diagnostic says it may have changed. A failure in a later action keeps the committed toolchain commit. The report lists the toolchain action first.
 
 ## Fresh security checks on changed versions
 

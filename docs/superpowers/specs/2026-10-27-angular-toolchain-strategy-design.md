@@ -67,9 +67,10 @@ Agreed with the user:
   change must equal `<v>`; architect's version is **not checked** (its scheme may change). Any other package or
   version aborts and reverts.
 - One commit per action as today; the toolchain commit is first, followed by commits for the other actions.
-- Failure at any step: restore tracked files, delete untracked files the run created (including `migrations.json`),
-  print stderr diagnostics, exit 1, no partial report. `node_modules` stays (ignored). A later failure keeps
-  earlier committed actions.
+- Failure at any step: with HEAD and branch unchanged, restore `package.json` and `package-lock.json` (only if they
+  are still as the run left them), delete `migrations.json`, and leave and name any other changed path (including a
+  dependency file changed by something else); print stderr diagnostics, exit 1, no partial report. `node_modules`
+  stays (ignored). A later failure keeps earlier committed actions.
 
 ## Testing
 
