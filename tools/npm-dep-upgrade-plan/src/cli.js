@@ -13,6 +13,10 @@ import { resolveChoices } from './resolver.js'
 import { evaluateFindings } from './evaluate.js'
 import { clearNpmDepVersionsCache, runNpmDepVersions } from './versions.js'
 import { renderJson, renderMarkdown } from './report.js'
+import { readUpstream } from './paths.js'
+import { readReleasePolicy } from './policy.js'
+import { findParentChoices } from './ancestors.js'
+import { planParentChoices } from './parent-planning.js'
 
 const defaults = { loadProject, readPlanningContext, runNpmDepAudit, runNpmDepVersions, resolveChoices, renderJson, renderMarkdown }
 const packageDir = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -68,10 +72,15 @@ async function mainWithDebug(argv, io = process, deps = defaults) {
       const auditReport = await deps.runNpmDepAudit(project.root, undefined, undefined, { noCache: options.noCache, ttlMs: options.ttlMs, ...clearControl })
       auditReport.rows = withRootDeclarations(auditReport.rows, JSON.parse(project.manifestBytes?.toString() || '{}'))
       const versionsByPackage = new Map()
+      const catalogs = new Map()
+      const readCatalog = (name) => {
+        if (!catalogs.has(name)) catalogs.set(name, deps.runNpmDepVersions(project.root, name, undefined, undefined, { noCache: options.noCache, ttlMs: options.ttlMs, ...clearControl }))
+        return catalogs.get(name)
+      }
       const packageNames = [...new Set(auditReport.rows.map(row => row.package))]
       let freshAt = Date.parse(auditReport.auditedAt)
       for (const packageName of packageNames) {
-        const catalog = await deps.runNpmDepVersions(project.root, packageName, undefined, undefined, { noCache: options.noCache, ttlMs: options.ttlMs, ...clearControl })
+        const catalog = await readCatalog(packageName)
         versionsByPackage.set(packageName, { versions: catalog.versions, releaseTimes: catalog.releaseTimes })
         freshAt = Math.min(freshAt, Date.parse(catalog.fetchedAt))
       }
@@ -84,6 +93,15 @@ async function mainWithDebug(argv, io = process, deps = defaults) {
         finding.resolution = verified.coverage.resolution
         freshAt = Math.min(freshAt, verified.freshAt)
       }
+      const adapters = { readCatalog, readUpstream: deps.readUpstream ?? readUpstream, findParentChoices: deps.findParentChoices ?? findParentChoices, resolveChoices: deps.resolveChoices, readReleasePolicy: deps.readReleasePolicy ?? readReleasePolicy }
+      for (const finding of findings) {
+        if (finding.resolution === 'complete') continue
+        const row = auditReport.rows.find(candidate => candidate.package === finding.package && candidate.version === finding.version)
+        const parents = await planParentChoices({ finding, row, project, options, controls: { noCache: options.noCache, ...clearControl }, adapters })
+        freshAt = Math.min(freshAt, parents.freshAt)
+      }
+      // `none` means no action clears a branch, so it never carries choices (the executor rejects the mismatch).
+      for (const finding of findings) if (finding.resolution === 'none') finding.choices = []
       return {
         value: { findings, auditedAt: auditReport.auditedAt },
         freshAt,

@@ -54,3 +54,28 @@ Explicit JSON configuration: `config.test.js` exercises nested-project selection
 `partial.test.js` runs on both configured npm runtimes. One and four exact/caret consumer pairs verify one grouped safe action, preserved pins, unchanged final manifest bytes, a remaining `none` finding, and clean-ci reproduction. Disjoint safe ranges verify two actions and two ordered commits for one original installation. `commit-sequence.test.js` verifies per-snapshot commit contents and preservation of an earlier commit when a later hook rejects.
 
 Planner and upgrade output use schema version 3; audit/paths/versions remain version 2. T06 is now a partial success rather than an all-consumer eligibility failure.
+
+## Parent upgrades
+
+`parents.test.js` runs on both configured npm runtimes against real planner, paths, audit, versions and upgrade executables:
+
+| Behavior | Case |
+| --- | --- |
+| Parent pins the safe version; other consumer pinned | one parent commit, `partial`, no override or declaration edit |
+| Parent pins the safe version; npm dedupes upward | plan lists within-range and parent actions, executor skips the child (`already-satisfied`), one commit, `complete` |
+| Parent removes the dependency | residual consumer upgraded in a second commit; each commit independently `npm ci` clean; or one commit when the other consumer is pinned (`partial`) |
+| Immediate parent succeeds | planner debug log shows no grandparent catalog request |
+| Grandparent fallback | immediate parent pinned by the grandparent; grandparent upgrade clears the branch |
+| Level three | a safe release three levels up is never evaluated: `none`, no third-level request, executor refuses |
+| No solution | no safe release anywhere: `none` |
+| Shared grandparent | two children freed by one grandparent release become one action and one commit |
+| Indirect reintroduction | a descendant bringing the affected version back is not claimed safe |
+| Incoming declaration | another consumer's declaration excludes the parent release |
+| Scope conflict | a named update that would also move another copy of the ancestor is rejected |
+| Second-commit hook failure | first commit kept, hash and remaining state reported, outside edit preserved |
+| Fresh security | a candidate that became vulnerable, or too young, after planning is refused before any commit; a vulnerable planned release falls forward to the next eligible one |
+| Loosened pin | an ancestor that turns an exact pin into a caret is followed by a within-range action on the new declaration: two commits, `complete`, no overrides; an ancestor that keeps the pin offers nothing |
+| Supporting advisories | replacing an affected supporting version with one carrying the same advisories is accepted; gaining an advisory is refused before any commit |
+| Release-age policy | what a parent release brings in resolves to the newest release old enough under a 7-day and a 30-day `min-release-age`; a parent release younger than the policy is never planned |
+
+Resolver-level cases (removal, reintroduction, exact-version landing, dedupe, grandparent) also run against real npm in the planner's `resolver-parent.integration.test.js`.

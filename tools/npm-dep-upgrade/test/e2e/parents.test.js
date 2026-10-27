@@ -1,0 +1,335 @@
+import assert from 'node:assert/strict'
+import test from 'node:test'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import path from 'node:path'
+import { createProject } from './helpers/project.js'
+import { plan, runUpgrade, assertResolved } from './helpers/runner.js'
+import { checked, command } from './helpers/commands.js'
+import { target } from './fixtures/catalog.js'
+import { loosensPin, bringsIn, chain, swapsAffectedHelper, constrained, grandName, helperName, hName, parents, pb, pc, reintroduced, sharedGrand, twoAncestorCopies } from './fixtures/parents.js'
+
+const runtimes = [process.env.NPM_DEP_UPGRADE_E2E_NPM_CLI, process.env.NPM_DEP_UPGRADE_E2E_COMPAT_NPM_CLI].filter(Boolean)
+const subjects = async f => (await checked(f, 'git', ['log', '--format=%s', `${f.initialHead}..HEAD`])).split('\n').filter(Boolean).reverse()
+const finding = rows => rows.find(row => row.package === target)
+
+for (const npmCli of runtimes) {
+  test(`parent pins the safe version and the other consumer is pinned: one parent commit, partial (${npmCli})`, async (t) => {
+    const f = await createProject(parents({ pcSpec: '6.0.9' }), { npmCli }, t)
+    const row = finding(await plan(f))
+    assert.equal(row.resolution, 'partial')
+    assert.deepEqual(row.choices.map(c => `${c.strategy}:${c.targetPackage}@${c.targetVersion}`), [`upgrade-via-parent-dependency:${pb}@1.1.0`])
+    const result = await runUpgrade(f, [row.id, '--format', 'json'])
+    assert.equal(result.code, 0, result.stderr)
+    const output = JSON.parse(result.stdout)
+    assert.equal(output.resolution, 'partial')
+    assert.deepEqual(output.actions.map(a => [a.targetPackage, a.outcome]), [[pb, 'applied']])
+    assert.deepEqual(await subjects(f), [`deps: bump ${pb} from 1.0.1 to 1.1.0`])
+    assert.deepEqual(JSON.parse(await readFile(path.join(f.root, 'package.json'), 'utf8')), JSON.parse(f.initialFiles['package.json']), 'no override or declaration edit')
+    await assertResolved(f, `node_modules/${pb}`, target, '6.0.12')
+    await assertResolved(f, `node_modules/${pc}`, target, '6.0.9')
+  })
+}
+
+for (const npmCli of runtimes) {
+  test(`parent pins the safe version and npm dedupes upward: the child action is skipped, one commit, complete (${npmCli})`, async (t) => {
+    const f = await createProject(parents(), { npmCli }, t)
+    const row = finding(await plan(f))
+    assert.equal(row.resolution, 'complete')
+    assert.deepEqual(row.choices.map(c => c.strategy), ['update-within-declared-range', 'upgrade-via-parent-dependency'])
+    const result = await runUpgrade(f, [row.id, '--format', 'json'])
+    assert.equal(result.code, 0, result.stderr)
+    const output = JSON.parse(result.stdout)
+    assert.equal(output.resolution, 'complete')
+    assert.deepEqual(output.actions.map(a => [a.targetPackage, a.outcome]), [[pb, 'applied'], [target, 'already-satisfied']])
+    assert.equal(output.commits.length, 1)
+    assert.deepEqual(await subjects(f), [`deps: bump ${pb} from 1.0.1 to 1.1.0`])
+    await assertResolved(f, `node_modules/${pb}`, target, '6.0.12')
+    await assertResolved(f, `node_modules/${pc}`, target, '6.0.12')
+    assert.equal((await plan(f)).filter(r => r.package === target).length, 0)
+  })
+
+  test(`parent removes the dependency and the residual consumer is upgraded in a second commit (${npmCli})`, async (t) => {
+    const f = await createProject(parents({ pbNext: null }), { npmCli }, t)
+    const row = finding(await plan(f))
+    assert.equal(row.resolution, 'complete')
+    assert.deepEqual(row.choices.map(c => c.strategy), ['update-within-declared-range', 'upgrade-via-parent-dependency'])
+    const result = await runUpgrade(f, [row.id, '--format', 'json'])
+    assert.equal(result.code, 0, result.stderr)
+    const output = JSON.parse(result.stdout)
+    assert.deepEqual(output.actions.map(a => [a.targetPackage, a.outcome]), [[pb, 'applied'], [target, 'applied']])
+    assert.equal(output.commits.length, 2)
+    assert.deepEqual(await subjects(f), [`deps: bump ${pb} from 1.0.1 to 1.1.0`, `deps: bump ${target} from 6.0.9 to 6.0.12`])
+    await assertResolved(f, `node_modules/${pc}`, target, '6.0.12')
+  })
+
+  test(`parent removes the dependency while the other consumer is pinned: partial with one commit (${npmCli})`, async (t) => {
+    const f = await createProject(parents({ pcSpec: '6.0.9', pbNext: null }), { npmCli }, t)
+    const row = finding(await plan(f))
+    assert.equal(row.resolution, 'partial')
+    const result = await runUpgrade(f, [row.id, '--format', 'json'])
+    assert.equal(result.code, 0, result.stderr)
+    assert.equal(JSON.parse(result.stdout).commits.length, 1)
+    assert.deepEqual(await subjects(f), [`deps: bump ${pb} from 1.0.1 to 1.1.0`])
+    await assertResolved(f, `node_modules/${pc}`, target, '6.0.9')
+  })
+}
+
+// The planner's debug log records every sibling CLI it starts, which shows which catalogs it actually asked for.
+const planDebug = async (f) => {
+  const result = await command(f, 'npm-dep-upgrade-plan', ['.', '--format', 'json', '--debug'])
+  assert.equal(result.code, 0, result.stderr)
+  return { rows: JSON.parse(result.stdout).rows, catalogs: new Set([...result.stderr.matchAll(/npm-dep-versions[^\n]*?(e2e-[a-z0-9]+)/g)].map(m => m[1])) }
+}
+const unchanged = async (f) => {
+  assert.equal(await checked(f, 'git', ['rev-parse', 'HEAD']), f.initialHead)
+  assert.deepEqual(JSON.parse(await readFile(path.join(f.root, 'package.json'), 'utf8')), JSON.parse(f.initialFiles['package.json']))
+}
+const choicesOf = row => row.choices.map(c => `${c.strategy === 'upgrade-via-parent-dependency' ? 'parent' : 'within'}:${c.targetPackage}@${c.targetVersion}`)
+
+for (const npmCli of runtimes) {
+  test(`an immediate parent that clears the branch stops the search: no grandparent lookup (${npmCli})`, async (t) => {
+    const f = await createProject(chain(), { npmCli }, t)
+    const { rows, catalogs } = await planDebug(f)
+    const row = finding(rows)
+    assert.deepEqual(choicesOf(row), ['within:e2e-target@6.0.12', `parent:${pb}@1.1.0`])
+    assert.ok(catalogs.has(pb))
+    assert.ok(!catalogs.has(grandName), 'the newer grandparent release was never looked up')
+    const result = await runUpgrade(f, [row.id, '--format', 'json'])
+    assert.equal(result.code, 0, result.stderr)
+    assert.deepEqual(await subjects(f), [`deps: bump ${pb} from 1.0.1 to 1.1.0`])
+  })
+
+  test(`a grandparent clears the branch when the immediate parent is pinned by it (${npmCli})`, async (t) => {
+    const f = await createProject(chain({ grandPin: true }), { npmCli }, t)
+    const row = finding(await plan(f))
+    assert.equal(row.resolution, 'complete')
+    assert.ok(row.choices.some(c => c.strategy === 'upgrade-via-parent-dependency' && c.targetPackage === grandName && c.targetVersion === '1.1.0'))
+    assert.ok(!row.choices.some(c => c.targetPackage === pb))
+    const result = await runUpgrade(f, [row.id, '--format', 'json'])
+    assert.equal(result.code, 0, result.stderr)
+    assert.deepEqual(await subjects(f), [`deps: bump ${grandName} from 1.0.0 to 1.1.0`])
+    await assertResolved(f, `node_modules/${pb}`, target, '6.0.12')
+    assert.deepEqual(JSON.parse(await readFile(path.join(f.root, 'package.json'), 'utf8')), JSON.parse(f.initialFiles['package.json']), 'no override or declaration edit')
+  })
+
+  test(`a safe release only three levels up is never searched: no solution within two levels (${npmCli})`, async (t) => {
+    const f = await createProject(chain({ grandPin: true, hPin: true, withH: true, pcSpec: '6.0.9' }), { npmCli }, t)
+    const { rows, catalogs } = await planDebug(f)
+    const row = finding(rows)
+    assert.equal(row.resolution, 'none')
+    assert.deepEqual(row.choices, [])
+    assert.ok(catalogs.has(grandName) && catalogs.has(pb))
+    assert.ok(!catalogs.has(hName), 'the third level is never evaluated')
+    const result = await runUpgrade(f, [row.id])
+    assert.equal(result.code, 1)
+    assert.match(result.stderr, /ineligible/i)
+    await unchanged(f)
+  })
+
+  test(`no safe release anywhere leaves the finding without parent choices (${npmCli})`, async (t) => {
+    const s = parents({ pcSpec: '6.0.9' })
+    delete s.packages[pb]['1.1.0']
+    const f = await createProject(s, { npmCli }, t)
+    const row = finding(await plan(f))
+    assert.equal(row.resolution, 'none')
+    assert.deepEqual(row.choices, [])
+  })
+
+  test(`siblings freed by one grandparent become one deduplicated action (${npmCli})`, async (t) => {
+    const f = await createProject(sharedGrand(), { npmCli }, t)
+    const rows = (await plan(f)).filter(r => r.package === target)
+    const row = rows[0]
+    const parentChoices = row.choices.filter(c => c.strategy === 'upgrade-via-parent-dependency')
+    assert.equal(parentChoices.length, 1)
+    assert.equal(parentChoices[0].targetPackage, grandName)
+    assert.equal(parentChoices[0].affectedConsumers.length, 2)
+    const result = await runUpgrade(f, [row.id, '--format', 'json'])
+    assert.equal(result.code, 0, result.stderr)
+    assert.deepEqual(await subjects(f), [`deps: bump ${grandName} from 1.0.0 to 1.1.0`])
+  })
+
+  test(`a descendant that reintroduces the vulnerable version is not reported as safe (${npmCli})`, async (t) => {
+    const f = await createProject(reintroduced(), { npmCli }, t)
+    const row = finding(await plan(f))
+    assert.deepEqual(choicesOf(row), ['within:e2e-target@6.0.12'])
+    assert.equal(row.resolution, 'partial')
+  })
+
+  test(`a named update that would also move another copy of the ancestor is rejected (${npmCli})`, async (t) => {
+    const f = await createProject(twoAncestorCopies(), { npmCli }, t)
+    const row = finding(await plan(f))
+    assert.deepEqual(choicesOf(row), ['within:e2e-target@6.0.12'])
+    assert.equal(row.resolution, 'partial')
+  })
+
+  test(`an incoming declaration from another consumer excludes the parent release (${npmCli})`, async (t) => {
+    const f = await createProject(constrained(), { npmCli }, t)
+    const row = finding(await plan(f))
+    assert.deepEqual(choicesOf(row), ['within:e2e-target@6.0.12'])
+    assert.equal(row.resolution, 'partial')
+  })
+}
+
+const snapshotAt = async (f, hash, name) => {
+  const dir = path.join(f.scratch, `snapshot-${name}`)
+  await mkdir(dir)
+  for (const file of ['package.json', 'package-lock.json']) await writeFile(path.join(dir, file), await checked(f, 'git', ['show', `${hash}:${file}`]) + '\n')
+  await writeFile(path.join(dir, '.npmrc'), await readFile(path.join(f.root, '.npmrc')))
+  await checked(f, 'npm', ['ci', '--ignore-scripts', '--no-audit'], dir)
+  return dir
+}
+
+for (const npmCli of runtimes) {
+  test(`each commit of a parent-then-child upgrade installs cleanly and resolves as recorded (${npmCli})`, async (t) => {
+    const f = await createProject(parents({ pbNext: null }), { npmCli }, t)
+    const row = finding(await plan(f))
+    const output = JSON.parse((await runUpgrade(f, [row.id, '--format', 'json'])).stdout)
+    assert.equal(output.commits.length, 2)
+    const first = await snapshotAt(f, output.commits[0].hash, 'parent')
+    await assertResolved(f, `node_modules/${pc}`, target, '6.0.9', first)
+    assert.deepEqual(JSON.parse(await readFile(path.join(first, 'package.json'), 'utf8')).overrides, undefined)
+    const second = await snapshotAt(f, output.commits[1].hash, 'child')
+    await assertResolved(f, `node_modules/${pc}`, target, '6.0.12', second)
+    assert.deepEqual(JSON.parse(await readFile(path.join(second, 'package.json'), 'utf8')), JSON.parse(f.initialFiles['package.json']))
+  })
+
+  test(`a hook rejecting the second commit keeps the first commit and every outside edit (${npmCli})`, async (t) => {
+    const f = await createProject(parents({ pbNext: null }), { npmCli }, t)
+    const row = finding(await plan(f))
+    await writeFile(path.join(f.scratch, 'hooks', 'commit-msg'), `#!/bin/sh\ngrep -q "bump ${target}" "$1" && exit 7\nexit 0\n`, { mode: 0o755 })
+    await writeFile(path.join(f.root, 'notes.txt'), 'outside edit\n')
+    const result = await runUpgrade(f, [row.id, '--format', 'json'])
+    assert.equal(result.code, 1)
+    assert.equal(result.stdout, '')
+    const first = (await checked(f, 'git', ['rev-parse', 'HEAD']))
+    assert.notEqual(first, f.initialHead)
+    assert.equal(await checked(f, 'git', ['rev-list', '--count', `${f.initialHead}..HEAD`]), '1')
+    assert.equal(await checked(f, 'git', ['log', '-1', '--format=%s']), `deps: bump ${pb} from 1.0.1 to 1.1.0`)
+    assert.match(result.stderr, new RegExp(`completed commits: ${first}`))
+    assert.match(result.stderr, /uncommitted|inspect/i)
+    assert.equal(await readFile(path.join(f.root, 'notes.txt'), 'utf8'), 'outside edit\n')
+  })
+
+  test(`a candidate that became vulnerable after planning is refused before any commit (${npmCli})`, async (t) => {
+    const s = parents()
+    const original = s.advisories
+    s.advisories = phase => (phase === 'stale' ? [...original, { name: pb, range: '1.1.0', id: 10003 }] : original)
+    const f = await createProject(s, { npmCli }, t)
+    const row = finding(await plan(f))
+    f.registry.setPhase('stale')
+    const result = await runUpgrade(f, [row.id])
+    assert.equal(result.code, 1)
+    assert.equal(result.stdout, '')
+    assert.match(result.stderr, /vulnerable|stale/i)
+    await unchanged(f)
+  })
+
+  test(`a root consumer with a caret range and a pinned sibling stays a partial, executable finding (${npmCli})`, async (t) => {
+    const s = parents({ pcSpec: '6.0.9' })
+    s.manifest.dependencies = { [target]: '^6.0.8', [pb]: '^1.0.0' }
+    delete s.packages[pc]
+    s.packages[pb]['1.0.1'].manifest.dependencies = { [target]: '6.0.9' }
+    delete s.packages[pb]['1.1.0']
+    const f = await createProject(s, { npmCli }, t)
+    const rows = await plan(f)
+    const row = finding(rows)
+    assert.equal(row.resolution, 'partial')
+    assert.ok(row.choices.length > 0)
+    for (const other of rows) assert.ok((other.resolution === 'none') === (other.choices.length === 0))
+    const result = await runUpgrade(f, [row.id, '--format', 'json'])
+    assert.equal(result.code, 0, result.stderr)
+  })
+
+  test(`a planned parent release that became vulnerable falls forward to the next eligible release (${npmCli})`, async (t) => {
+    const s = parents()
+    s.packages[pb]['1.2.0'] = { manifest: { name: pb, version: '1.2.0', main: 'index.js', dependencies: { [target]: '6.0.12' } }, releasedAt: new Date(Date.now() - 25 * 86400000).toISOString(), seed: false }
+    const original = s.advisories
+    s.advisories = phase => (phase === 'stale' ? [...original, { name: pb, range: '1.1.0', id: 10003 }] : original)
+    const f = await createProject(s, { npmCli }, t)
+    const row = finding(await plan(f))
+    assert.ok(row.choices.some(c => c.targetPackage === pb && c.targetVersion === '1.1.0'))
+    f.registry.setPhase('stale')
+    const result = await runUpgrade(f, [row.id, '--format', 'json'])
+    assert.equal(result.code, 0, result.stderr)
+    assert.deepEqual(await subjects(f), [`deps: bump ${pb} from 1.0.1 to 1.2.0`])
+    await assertResolved(f, `node_modules/${pb}`, target, '6.0.12')
+  })
+
+  for (const [minAge, expected] of [[7, '2.0.6'], [30, '2.0.5']]) {
+    test(`what a parent release brings in resolves to the newest release old enough under a ${minAge}-day policy (${npmCli})`, async (t) => {
+      const f = await createProject(bringsIn(), { npmCli }, t)
+      f.env = { ...f.env, npm_config_min_release_age: String(minAge) }
+      const row = finding(await plan(f))
+      assert.equal(row.resolution, 'complete')
+      const result = await runUpgrade(f, [row.id, '--format', 'json'])
+      assert.equal(result.code, 0, result.stderr)
+      const lock = JSON.parse(await checked(f, 'git', ['show', 'HEAD:package-lock.json']))
+      assert.equal(lock.packages[`node_modules/${helperName}`].version, expected)
+      assert.equal(lock.packages[`node_modules/${pb}`].version, '1.1.0')
+      assert.equal(JSON.parse(await checked(f, 'git', ['show', 'HEAD:package.json'])).overrides, undefined)
+      await assertResolved(f, `node_modules/${pb}`, helperName, expected)
+    })
+  }
+
+  test(`replacing an affected supporting version with one that has the same advisories is accepted (${npmCli})`, async (t) => {
+    const f = await createProject(swapsAffectedHelper(), { npmCli }, t)
+    const row = finding(await plan(f))
+    assert.ok(row.choices.some(c => c.strategy === 'upgrade-via-parent-dependency'))
+    const result = await runUpgrade(f, [row.id, '--format', 'json'])
+    assert.equal(result.code, 0, result.stderr)
+    assert.deepEqual(await subjects(f), [`deps: bump ${pb} from 1.0.1 to 1.1.0`])
+    const lock = JSON.parse(await checked(f, 'git', ['show', 'HEAD:package-lock.json']))
+    assert.equal(lock.packages[`node_modules/${helperName}`].version, '2.0.5')
+  })
+
+  test(`a supporting version that gains an advisory the replaced one did not have is refused (${npmCli})`, async (t) => {
+    const f = await createProject(swapsAffectedHelper([{ name: helperName, range: '2.0.5', id: 20002 }]), { npmCli }, t)
+    const row = finding(await plan(f))
+    const result = await runUpgrade(f, [row.id])
+    assert.equal(result.code, 1)
+    assert.equal(result.stdout, '')
+    assert.match(result.stderr, /vulnerable|audit/i)
+    await unchanged(f)
+  })
+
+  test(`an ancestor that loosens an exact pin is followed by a within-range action on the new declaration (${npmCli})`, async (t) => {
+    const f = await createProject(loosensPin(), { npmCli }, t)
+    const row = finding(await plan(f))
+    assert.equal(row.resolution, 'complete')
+    assert.deepEqual(choicesOf(row), ['within:e2e-target@6.0.12', `parent:${pb}@1.1.0`])
+    const result = await runUpgrade(f, [row.id, '--format', 'json'])
+    assert.equal(result.code, 0, result.stderr)
+    const output = JSON.parse(result.stdout)
+    assert.deepEqual(output.actions.map(a => [a.targetPackage, a.outcome]), [[pb, 'applied'], [target, 'applied']])
+    assert.deepEqual(await subjects(f), [`deps: bump ${pb} from 1.0.1 to 1.1.0`, `deps: bump ${target} from 6.0.9 to 6.0.12`])
+    assert.deepEqual(JSON.parse(await readFile(path.join(f.root, 'package.json'), 'utf8')), JSON.parse(f.initialFiles['package.json']), 'no override or declaration edit')
+    await assertResolved(f, `node_modules/${pb}`, target, '6.0.12')
+    assert.equal((await plan(f)).filter(r => r.package === target).length, 0)
+  })
+
+  test(`an ancestor that keeps the pin offers no chained action (${npmCli})`, async (t) => {
+    const f = await createProject(loosensPin('6.0.9'), { npmCli }, t)
+    const row = finding(await plan(f))
+    assert.equal(row.resolution, 'none')
+    assert.deepEqual(row.choices, [])
+  })
+
+  test(`a parent release younger than the configured policy is never planned (${npmCli})`, async (t) => {
+    const f = await createProject(bringsIn(), { npmCli }, t)
+    f.env = { ...f.env, npm_config_min_release_age: '60' }
+    const row = finding(await plan(f))
+    assert.ok(!row.choices.some(c => c.strategy === 'upgrade-via-parent-dependency'))
+  })
+
+  test(`a parent release that is no longer old enough is refused before any commit (${npmCli})`, async (t) => {
+    const s = parents()
+    const f = await createProject(s, { npmCli }, t)
+    const row = finding(await plan(f))
+    s.packages[pb]['1.1.0'].releasedAt = new Date(Date.now() - 86400000).toISOString()
+    const result = await runUpgrade(f, [row.id])
+    assert.equal(result.code, 1)
+    assert.equal(result.stdout, '')
+    assert.match(result.stderr, /age|release/i)
+    await unchanged(f)
+  })
+}

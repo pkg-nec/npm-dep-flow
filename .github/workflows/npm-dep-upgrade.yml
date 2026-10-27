@@ -50,6 +50,6 @@ jobs:
       - name: Run real Windows install, override and reproduction smoke
         if: runner.os == 'Windows'
         working-directory: tools/npm-dep-upgrade
-        run: node --test --test-name-pattern='^(D01|T01|O03 npm12|harness D01|project argument |debug )' test/e2e/direct.test.js test/e2e/transitive.test.js test/e2e/compatibility.test.js test/e2e/harness.test.js test/e2e/project-location.test.js test/e2e/debug.test.js
+        run: node --test --test-name-pattern='^(D01|T01|O03 npm12|harness D01|project argument |debug |parent pins the safe version and the other consumer is pinned|parent removes the dependency and the residual|a hook rejecting the second commit|what a parent release brings in resolves to the newest release old enough under a 7-day)' test/e2e/direct.test.js test/e2e/transitive.test.js test/e2e/compatibility.test.js test/e2e/harness.test.js test/e2e/project-location.test.js test/e2e/debug.test.js test/e2e/parents.test.js
       - name: Check whitespace
         run: git diff --check

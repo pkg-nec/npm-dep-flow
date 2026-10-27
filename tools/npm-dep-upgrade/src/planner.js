@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto'
 import semver from 'semver'
 import { runProcess } from './process.js'
 import { fail } from './errors.js'
-import { STRATEGY } from './model.js'
+import { PARENT_STRATEGY, STRATEGY } from './model.js'
 const namePattern = /^(?:@[a-z0-9][a-z0-9._~-]*\/)?[a-z0-9][a-z0-9._~-]*$/i
 export function canonicalLocation(value) {
   const name = '(?:@[a-z0-9][a-z0-9._~-]*/)?[a-z0-9][a-z0-9._~-]*'
@@ -24,13 +24,22 @@ export function validatePlanner(report) {
     if (row.minimumSafeVersion !== null && !semver.valid(row.minimumSafeVersion)) fail('INVALID_PLAN', 'planner', 'Invalid minimum safe version')
     if (row.minimumSafeVersionReleasedAt !== null && !Number.isFinite(Date.parse(row.minimumSafeVersionReleasedAt))) fail('INVALID_PLAN', 'planner', 'Invalid release timestamp')
     if ((row.resolution === 'none') !== (row.choices.length === 0)) fail('INVALID_PLAN', 'planner', 'Invalid resolution/action set')
+    // A branch may be covered by an ancestor upgrade and by one follow-up action of the other strategy, never twice by one strategy.
     const consumers = new Set()
     for (const choice of row.choices) {
-      if (!choice || choice.strategy !== STRATEGY || choice.targetPackage !== row.package || choice.targetLocation !== row.targetLocation || choice.currentVersion !== row.version || !semver.valid(choice.targetVersion) || !semver.gt(choice.targetVersion, row.version) || !Array.isArray(choice.affectedConsumers) || !choice.affectedConsumers.length) fail('INVALID_PLAN', 'planner', 'Invalid or unsupported planner choice')
+      if (!choice || ![STRATEGY, PARENT_STRATEGY].includes(choice.strategy) || !Array.isArray(choice.affectedConsumers) || !choice.affectedConsumers.length) fail('INVALID_PLAN', 'planner', 'Invalid or unsupported planner choice')
+      if (choice.strategy === STRATEGY) {
+        if (choice.targetPackage !== row.package || choice.targetLocation !== row.targetLocation || choice.currentVersion !== row.version || !semver.valid(choice.targetVersion) || !semver.gt(choice.targetVersion, row.version)) fail('INVALID_PLAN', 'planner', 'Invalid or unsupported planner choice')
+      }
+      else {
+        // The target fields describe the ancestor being upgraded; the covered consumers belong to the selected finding.
+        if (typeof choice.targetPackage !== 'string' || !namePattern.test(choice.targetPackage) || choice.targetLocation === row.targetLocation || !semver.valid(choice.currentVersion) || !semver.valid(choice.targetVersion) || !semver.gt(choice.targetVersion, choice.currentVersion)) fail('INVALID_PLAN', 'planner', 'Invalid parent upgrade choice')
+        canonicalLocation(choice.targetLocation)
+      }
       for (const consumer of choice.affectedConsumers) {
         if (!consumer || typeof consumer.location !== 'string' || !namePattern.test(consumer.requestedName) || !['dependencies', 'devDependencies', 'optionalDependencies', 'peerDependencies'].includes(consumer.type)) fail('INVALID_PLAN', 'planner', 'Invalid choice consumer')
         if (consumer.location) canonicalLocation(consumer.location)
-        const key = JSON.stringify([consumer.location, consumer.requestedName, consumer.type])
+        const key = JSON.stringify([choice.strategy, consumer.location, consumer.requestedName, consumer.type])
         if (consumers.has(key)) fail('INVALID_PLAN', 'planner', 'Duplicate choice consumer')
         consumers.add(key)
       }
@@ -44,7 +53,7 @@ export function selectItem(report, selector, packageName = null) {
   if (found.length !== 1) fail('AMBIGUOUS_TARGET', 'selection', `Ambiguous target; use a longer ID or --package:\n${found.map(r => `${r.id} ${r.package}@${r.version} ${r.targetLocation}`).join('\n')}`)
   const row = found[0]
   if (row.resolution === 'none') fail('INELIGIBLE_TARGET', 'selection', 'Selected target is ineligible')
-  if (!Array.isArray(row.choices) || row.choices.some(choice => choice.strategy !== STRATEGY)) fail('UNSUPPORTED_STRATEGY', 'selection', 'Selected strategy is unsupported')
+  if (!Array.isArray(row.choices) || row.choices.some(choice => ![STRATEGY, PARENT_STRATEGY].includes(choice.strategy))) fail('UNSUPPORTED_STRATEGY', 'selection', 'Selected strategy is unsupported')
   return row
 }
 export async function readPlanner(root, run = runProcess, { clearCache = false } = {}) {

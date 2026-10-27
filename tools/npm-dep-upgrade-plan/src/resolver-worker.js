@@ -31,11 +31,24 @@ function closure(g, starts) {
   }
   return found
 }
+const PARENT_STRATEGY = 'upgrade-via-parent-dependency'
+const isParent = choice => choice.strategy === PARENT_STRATEGY
 export function verifyResolution(before, after, item, choices, semver) {
+  const withinRange = choices.filter(c => !isParent(c)), parents = choices.filter(isParent)
   const oldNodes = new Map(before.nodes.map(n => [n.location, n])), nodes = new Map(after.nodes.map(n => [n.location, n]))
-  const selected = new Map(choices.flatMap(c => c.affectedConsumers.map(e => [key(e), c])))
+  const selected = new Map(withinRange.flatMap(c => c.affectedConsumers.map(e => [key(e), c])))
+  const parentSelected = new Set(parents.flatMap(c => c.affectedConsumers.map(key)))
+  for (const choice of parents) {
+    const old = oldNodes.get(choice.targetLocation), landed = nodes.get(choice.targetLocation)
+    if (!old || old.name !== choice.targetPackage || old.version !== choice.currentVersion) throw new Error('Ancestor installation changed since planning')
+    if (!landed || landed.name !== choice.targetPackage || landed.version !== choice.targetVersion) throw new Error('Ancestor did not resolve to the tested version')
+    for (const n of before.nodes) if (n.name === choice.targetPackage && n.location !== choice.targetLocation && !equal(n, nodes.get(n.location))) throw new Error('Another ancestor installation changed')
+  }
+  const parentLocations = parents.map(c => c.targetLocation)
+  const parentClosureBefore = closure(before, parentLocations), parentClosureAfter = closure(after, parentLocations)
+  const scoped = new Set([...closure(before, [item.targetLocation]), ...parentClosureBefore, ...parentClosureAfter])
   const oldIncoming = before.edges.filter(e => e.to === item.targetLocation)
-  for (const n of before.nodes) if (n.location && n.name !== item.package && !equal(n, nodes.get(n.location)) && !closure(before, [item.targetLocation]).has(n.location)) throw new Error('Unrelated parent installation changed')
+  for (const n of before.nodes) if (n.location && n.name !== item.package && !equal(n, nodes.get(n.location)) && !scoped.has(n.location)) throw new Error('Unrelated parent installation changed')
   for (const old of before.edges) {
     const oldNode = oldNodes.get(old.to)
     if (oldNode?.name !== item.package) continue
@@ -43,15 +56,59 @@ export function verifyResolution(before, after, item, choices, semver) {
     const currentNode = nodes.get(current?.to)
     if (oldIncoming.includes(old)) {
       const choice = selected.get(key(old))
-      if (!currentNode || currentNode.name !== item.package || !semver.validRange(old.rawSpec) || !semver.satisfies(currentNode.version, old.rawSpec)) throw new Error('Original consumer requirement not satisfied')
-      if (choice ? currentNode.version !== choice.targetVersion : !equal(oldNode, currentNode)) throw new Error('Consumer resolved outside intended scope')
+      if (!choice && (parentSelected.has(key(old)) || parentClosureBefore.has(old.from))) {
+        // The ancestor's own change may remove this dependency; if it survives it must satisfy its current declaration.
+        if (current && (!currentNode || currentNode.name !== item.package || !semver.validRange(current.rawSpec) || !semver.satisfies(currentNode.version, current.rawSpec))) throw new Error('Original consumer requirement not satisfied')
+        continue
+      }
+      // After an ancestor upgrade a consumer may declare a different range than before; judge it by what it declares now.
+      const declared = parents.length && current ? current.rawSpec : old.rawSpec
+      if (!currentNode || currentNode.name !== item.package || !semver.validRange(declared) || !semver.satisfies(currentNode.version, declared)) throw new Error('Original consumer requirement not satisfied')
+      // An ancestor's new closure may let npm dedupe the shared installation upward; moving a consumer to a newer
+      // valid release of the same installation is permitted then, but never to an older one or to another location.
+      const upgradedInPlace = parents.length > 0 && !choice && current.to === old.to && semver.gt(currentNode.version, oldNode.version)
+      if (choice ? currentNode.version !== choice.targetVersion : !equal(oldNode, currentNode) && !upgradedInPlace) throw new Error('Consumer resolved outside intended scope')
     }
-    else if (oldNode?.name === item.package && !equal(oldNode, currentNode)) throw new Error('Another target installation changed')
+    else if (oldNode?.name === item.package && !equal(oldNode, currentNode) && !parentClosureBefore.has(old.from)) throw new Error('Another target installation changed')
   }
   const newTargets = oldIncoming.map(e => after.edges.find(x => key(x) === key(e))?.to).filter(x => x !== undefined)
-  const allowed = new Set([...closure(before, [item.targetLocation]), ...closure(after, newTargets)])
+  const allowed = new Set([...closure(before, [item.targetLocation]), ...closure(after, newTargets), ...parentClosureBefore, ...parentClosureAfter])
   for (const n of [...before.nodes, ...after.nodes]) if (n.location && !equal(oldNodes.get(n.location), nodes.get(n.location)) && !allowed.has(n.location)) throw new Error('Unrelated installation changed')
   for (const e of after.edges) if (e.to === null ? !e.optional : e.valid === false) throw new Error('Invalid dependency graph after resolution')
+}
+// A consumer branch is cleared when nothing reachable from where the consumer now lives is still an affected
+// installation of the package, so removing a dependency clears it but a descendant that reintroduces the
+// vulnerability does not. Affected installations the consumer already reached by another route are other findings.
+export function computeCoverage(before, after, item, semver) {
+  const oldNodes = new Map(before.nodes.map(n => [n.location, n])), nodes = new Map(after.nodes.map(n => [n.location, n]))
+  const safe = n => semver.gt(n.version, item.version) && item.advisories.every(a => !semver.satisfies(n.version, a.range))
+  const clearedConsumers = [], remainingConsumers = []
+  for (const e of before.edges.filter(e => e.to === item.targetLocation)) {
+    const holder = oldNodes.get(e.from), here = nodes.get(e.from)
+    const holders = here && holder && here.name === holder.name
+      ? [e.from]
+      : after.nodes.filter(n => n.location && holder && n.name === holder.name && oldNodes.get(n.location)?.name !== holder.name).map(n => n.location)
+    const known = closure({ edges: before.edges.filter(x => x !== e) }, [e.from])
+    // Another original consumer's edge into the target is that consumer's own branch, not a route of this one.
+    const others = new Set(before.edges.filter(x => x.to === item.targetLocation && x.from !== e.from).map(key))
+    const reachable = closure({ edges: after.edges.filter(x => !others.has(key(x))) }, holders)
+    const affected = [...reachable].some((location) => {
+      const n = nodes.get(location)
+      return n?.name === item.package && !safe(n) && !(location !== item.targetLocation && known.has(location) && equal(oldNodes.get(location), n))
+    })
+    ;
+    (affected ? remainingConsumers : clearedConsumers).push({ location: e.from, requestedName: e.requestedName, type: e.type })
+  }
+  return { resolution: !clearedConsumers.length ? 'none' : remainingConsumers.length ? 'partial' : 'complete', clearedConsumers, remainingConsumers }
+}
+export function choiceSatisfied(current, choice, item, semver) {
+  const nodes = new Map(current.nodes.map(n => [n.location, n]))
+  return choice.affectedConsumers.every((consumer) => {
+    const edge = current.edges.find(e => key(e) === key(consumer))
+    if (!edge) return true
+    const node = nodes.get(edge.to)
+    return !!node && node.name === item.package && semver.gt(node.version, item.version) && item.advisories.every(a => !semver.satisfies(node.version, a.range))
+  })
 }
 export function matchesSelectedScope(before, probe, targetLocation, affectedConsumers) {
   const selected = new Set(affectedConsumers.map(key))
@@ -82,6 +139,36 @@ function mergeRule(base, route, name, version, nodes, rootEdges, semver) {
   }
   return { [selector]: value, ...Object.fromEntries(Object.entries(base).filter(([k]) => k !== selector)) }
 }
+const DAY_MS = 86_400_000
+// The release-age cutoff from npm configuration: never fewer than seven days, bounded by an explicit `before`.
+function releaseCutoff(config, now = Date.now()) {
+  const configured = Number(config.get('min-release-age') || 0)
+  const before = config.get('before')
+  const explicit = before ? new Date(before).getTime() : Infinity
+  if (!Number.isFinite(configured) || Number.isNaN(explicit)) throw new Error('Invalid release-age policy')
+  return Math.min(now - Math.max(7, configured) * DAY_MS, explicit)
+}
+// Phase 1 lands the ancestor on exactly the tested release (npm's named update, capped at that release's publication
+// time). That cap would also hold back everything the new release brings in, so phase 2 removes those new or changed
+// installations from the tree and lets npm resolve them again under the real cutoff: the newest releases that are old
+// enough, with every other installation left untouched. No overrides, no manifest edits, no hand-edited lockfile.
+async function landAncestor({ Arborist, opts, choice, releasedAt, cutoff, load }) {
+  const current = new Map((await load()).nodes.map(n => [n.location, n]))
+  const first = await new Arborist({ ...opts, before: new Date(Math.min(releasedAt, cutoff)) }).buildIdealTree({ update: { names: [choice.targetPackage] } })
+  await first.meta.save()
+  const stale = graph(first).nodes.filter(n => n.location && n.location !== choice.targetLocation && !equal(current.get(n.location), n)).map(n => n.location).sort((a, b) => a.length - b.length)
+  if (!stale.length) return first
+  const arborist = new Arborist({ ...opts, before: new Date(cutoff) })
+  const virtual = await arborist.loadVirtual()
+  for (const location of stale) {
+    const node = virtual.inventory.get(location)
+    if (node) node.parent = null
+  }
+  arborist.virtualTree = virtual
+  const ideal = await arborist.buildIdealTree()
+  await ideal.meta.save()
+  return ideal
+}
 export async function resolveRequest(request) {
   const require = createRequire(path.join(request.npmPath, 'package.json'))
   const Arborist = require('@npmcli/arborist'), Config = require('@npmcli/config'), semver = require('semver')
@@ -95,17 +182,59 @@ export async function resolveRequest(request) {
   delete opts.minReleaseAge
   const load = async () => graph(await new Arborist(opts).loadVirtual())
   const before = await load(), original = await readFile(path.join(request.root, 'package.json'))
-  const snapshots = [], accepted = [], nodes = new Map(before.nodes.map(n => [n.location, n]))
-  const rootEdges = before.edges.filter(e => e.from === ''), parents = new Map()
-  for (const e of before.edges) {
-    if (!parents.has(e.to)) parents.set(e.to, new Set())
-    parents.get(e.to).add(e.from)
+  const snapshots = [], accepted = [], satisfied = []
+  let nodes, rootEdges, parents
+  // Scope probing follows the tree as it stands after earlier actions, which may have moved installations.
+  const indexScope = (current) => {
+    nodes = new Map(current.nodes.map(n => [n.location, n]))
+    rootEdges = current.edges.filter(e => e.from === '')
+    parents = new Map()
+    for (const e of current.edges) {
+      if (!parents.has(e.to)) parents.set(e.to, new Set())
+      parents.get(e.to).add(e.from)
+    }
   }
+  indexScope(before)
   for (let choiceIndex = 0;
     choiceIndex < request.choices.length;
     choiceIndex++) {
     const choice = request.choices[choiceIndex], startFiles = await Promise.all(['package.json', 'package-lock.json'].map(n => readFile(path.join(request.root, n))))
+    if (isParent(choice)) {
+      // npm's named update under the original declarations, capped at the tested release's publication time so
+      // the ancestor lands on exactly that version. No overrides, no declaration edits.
+      const restore = () => Promise.all(['package.json', 'package-lock.json'].map((n, i) => writeFile(path.join(request.root, n), startFiles[i])))
+      const releasedAt = Date.parse(request.releaseTimes?.[`${choice.targetPackage}@${choice.targetVersion}`])
+      const cutoff = releaseCutoff(config)
+      if (!Number.isFinite(releasedAt) || releasedAt > cutoff) {
+        // A release without a publication time, or younger than the policy allows, is never an ancestor candidate.
+        if (request.strict) throw new Error('Ancestor release is not old enough under the release-age policy')
+        continue
+      }
+      let after
+      try {
+        // A release npm cannot resolve (peer conflict, missing dependency release) is unsuitable, not a failed run.
+        const tree = await landAncestor({ Arborist, opts, choice, releasedAt, cutoff, load })
+        after = graph(tree)
+        if (!(await readFile(path.join(request.root, 'package.json'))).equals(startFiles[0])) throw new Error('Ancestor update changed the manifest')
+        verifyResolution(before, after, request.item, [...accepted, choice], semver)
+      }
+      catch (error) {
+        await restore()
+        if (request.strict) throw error
+        continue
+      }
+      accepted.push(choice)
+      snapshots.push({ choiceIndex, graph: after, files: Object.fromEntries(await Promise.all(['package.json', 'package-lock.json'].map(async n => [n, (await readFile(path.join(request.root, n))).toString('base64')]))) })
+      continue
+    }
     const scopeBefore = await load()
+    indexScope(scopeBefore)
+    // An action whose consumers an earlier ancestor upgrade already cleared stays in the plan: whether npm dedupes
+    // is decided again at execution, where the executor skips it only if it is still satisfied.
+    if (accepted.length && choiceSatisfied(scopeBefore, choice, request.item, semver)) {
+      satisfied.push(choice)
+      continue
+    }
     const manifest = JSON.parse(startFiles[0])
     let finalManifest = startFiles[0], mutation
     if (choice.affectedConsumers.some(e => e.location === '')) {
@@ -169,14 +298,8 @@ export async function resolveRequest(request) {
     accepted.push(choice)
     snapshots.push({ choiceIndex, graph: after, files: Object.fromEntries(await Promise.all(['package.json', 'package-lock.json'].map(async n => [n, (await readFile(path.join(request.root, n))).toString('base64')]))) })
   }
-  const after = await load(), clearedConsumers = [], remainingConsumers = [], afterNodes = new Map(after.nodes.map(n => [n.location, n]))
-  for (const e of before.edges.filter(e => e.to === request.item.targetLocation)) {
-    const current = after.edges.find(x => key(x) === key(e)), node = afterNodes.get(current?.to)
-    const safe = node && semver.gt(node.version, request.item.version) && request.item.advisories.every(a => !semver.satisfies(node.version, a.range))
-    ;
-    (safe ? clearedConsumers : remainingConsumers).push({ location: e.from, requestedName: e.requestedName, type: e.type })
-  }
-  return { schemaVersion: 1, choices: accepted, graph: after, before, snapshots, coverage: { resolution: !clearedConsumers.length ? 'none' : remainingConsumers.length ? 'partial' : 'complete', clearedConsumers, remainingConsumers }, manifestChanged: !(await readFile(path.join(request.root, 'package.json'))).equals(original), freshAt: request.startedAt }
+  const after = await load()
+  return { schemaVersion: 1, choices: request.choices.filter(choice => accepted.includes(choice) || satisfied.includes(choice)), graph: after, before, snapshots, coverage: computeCoverage(before, after, request.item, semver), manifestChanged: !(await readFile(path.join(request.root, 'package.json'))).equals(original), freshAt: request.startedAt }
 }
 if (process.argv[2]) {
   try {

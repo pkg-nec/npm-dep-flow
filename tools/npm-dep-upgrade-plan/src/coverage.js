@@ -25,6 +25,19 @@ export function selectWithinRangeChoices(row, targetLocation, catalog) {
   return choices
 }
 
+// After an ancestor upgrade a remaining consumer can declare a looser range than before (an exact pin becoming a caret,
+// for example). Within-range actions for it are chosen from the declaration the resolved graph now carries.
+export function selectResidualChoices(row, targetLocation, remaining, graph, catalog) {
+  const nodes = new Map(graph.nodes.map(node => [node.location, node]))
+  const requirements = []
+  for (const consumer of remaining) {
+    const edge = graph.edges.find(candidate => consumerKey({ location: candidate.from, requestedName: candidate.requestedName, type: candidate.type }) === consumerKey(consumer))
+    if (!edge || nodes.get(edge.to)?.name !== row.package) continue
+    requirements.push({ declaredRequirement: edge.rawSpec, directDependents: [{ location: consumer.location, requestedName: consumer.requestedName, type: consumer.type, targetLocation }] })
+  }
+  return selectWithinRangeChoices({ ...row, requirements }, targetLocation, catalog)
+}
+
 // paths reports npm's effective root edge; duplicate root fields also constrain it.
 export function withRootDeclarations(rows, manifest) {
   return rows.map((row) => {

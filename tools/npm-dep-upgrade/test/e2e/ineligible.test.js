@@ -14,6 +14,8 @@ for (const kind of ['D03', 'D04 exact', 'T07 pinned', 'T08', 'O02', 'F04 clean']
   if (kind === 'T08') {
     s = transitive()
     s.packages['e2e-parent-a']['1.2.4'].manifest.dependencies['e2e-target'] = '6.0.9'
+    // No parent release exists to clear the pin, so neither strategy can remediate it (parent upgrades have their own cases).
+    delete s.packages['e2e-parent-a']['1.3.0']
   }
   if (kind === 'O02') s = existingOverride(true)
   if (kind === 'F04 clean') s.advisories = []

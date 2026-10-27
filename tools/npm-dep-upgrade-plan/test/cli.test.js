@@ -86,6 +86,12 @@ function injectedDeps(report, versions = new Map(), renderers = {}) {
     async runNpmDepVersions(projectRoot, packageName) {
       return { versions: versions.get(packageName) ?? [], releaseTimes: new Map(), fetchedAt: new Date().toISOString() }
     },
+    async readUpstream() {
+      return { nodes: new Map(), edges: [] }
+    },
+    async readReleasePolicy() {
+      return { minAgeDays: 7, cutoffMs: null }
+    },
     renderMarkdown: renderers.renderMarkdown ?? (() => 'markdown report\n'),
     renderJson: renderers.renderJson ?? (() => '{"schemaVersion":1}\n'),
   }
@@ -295,7 +301,11 @@ const times = JSON.parse(process.env.PLAN_RELEASE_TIMES_JSON)[name] || {};
 console.log(JSON.stringify({ schemaVersion: 2, package: name, fetchedAt: new Date().toISOString(), rows: versions.map(version => ({ version, releasedAt: times[version] || null })) }));
 `
   writeFileSync(path.join(commandDirectory, 'fake-versions.js'), versionsScript)
-  writeFileSync(path.join(commandDirectory, 'fake-paths.js'), `console.log('npm-dep-paths v' + (process.env.PLAN_PATHS_VERSION || '1.0.0') + '\\nLocation: fixture');`)
+  writeFileSync(path.join(commandDirectory, 'fake-paths.js'), `const args = process.argv.slice(2);
+if (args.includes('--version')) { console.log('npm-dep-paths v' + (process.env.PLAN_PATHS_VERSION || '1.0.0') + '\\nLocation: fixture'); process.exit(0); }
+const at = value => ({ name: value.slice(0, value.lastIndexOf('@')), version: value.slice(value.lastIndexOf('@') + 1) });
+const target = at(args[1]); const parent = at(args[args.indexOf('--upstream-of') + 1]);
+console.log(JSON.stringify({ schemaVersion: 2, project: { name: 'fixture-project', version: '1.0.0' }, selector: args[1], result: { package: target.name, version: target.version, requirements: [{ declaredRequirement: '*', directDependents: [{ name: parent.name, version: parent.version, location: 'node_modules/' + parent.name, targetLocation: 'node_modules/' + target.name, type: 'dependencies', requestedName: target.name }] }] }, upstream: { selectedDependent: args[args.indexOf('--upstream-of') + 1], rootLocation: '', selectedLocations: [], targetLocations: [], topLevelLocations: [], nodes: [], edges: [] } }));`)
   writeFileSync(path.join(commandDirectory, 'fake-audit.js'), `#!/usr/bin/env node\n${auditScript}`)
   writeFileSync(path.join(commandDirectory, 'fake-npm.js'), `#!/usr/bin/env node\n${npmScript}`)
 
@@ -656,4 +666,87 @@ test('a failing child clear in clear-only mode exits 1 with an empty stdout', as
   assert.equal(await main(['--clear-cache'], io.io, deps), 1)
   assert.equal(io.stdout, '')
   assert.match(io.stderr, /^npm-dep-upgrade-plan: npm-dep-audit --clear-cache failed/)
+})
+
+function parentReport() {
+  const requirement = (spec, name, version) => ({ declaredRequirement: spec, directDependents: [{ name, version, location: `node_modules/${name}`, targetLocation: 'node_modules/brace-expansion', type: 'dependencies', requestedName: 'brace-expansion' }] })
+  return { schemaVersion: 2, auditedAt: new Date().toISOString(), rows: [vulnerableRow('brace-expansion', '5.0.9', 'high', [requirement('5.0.9', 'nx', '23.1.2'), requirement('^5.0.5', 'plain', '1.0.0')])] }
+}
+
+function parentDeps(calls) {
+  const deps = injectedDeps(parentReport(), new Map(), { renderJson: findings => JSON.stringify(findings) })
+  deps.loadProject = async () => ({ root: path.join(scratchRoot, 'parent-flow'), manifestBytes: Buffer.from('{}'), lockBytes: Buffer.from('{}') })
+  deps.clearCache = async () => {}
+  deps.runNpmDepVersions = async (_root, name, _spawn, _platform, controls) => {
+    calls.versions.push([name, controls])
+    return { versions: name === 'brace-expansion' ? ['5.0.9', '5.0.12'] : ['23.1.2', '23.2.0'], releaseTimes: new Map([['23.2.0', '2026-10-01T00:00:00.000Z']]), fetchedAt: new Date().toISOString() }
+  }
+  deps.readReleasePolicy = async () => ({ minAgeDays: 7, cutoffMs: null })
+  deps.readUpstream = async (root, target, parents, controls) => {
+    calls.upstream.push({ target, parents, controls })
+    return { nodes: new Map([['', { location: '', name: 'app', version: '1.0.0' }], ['node_modules/nx', { location: 'node_modules/nx', name: 'nx', version: '23.1.2' }]]), edges: [{ from: '', to: 'node_modules/nx', requestedName: 'nx', type: 'dependencies', spec: '^23.0.0' }] }
+  }
+  deps.resolveChoices = async (_project, _item, choices) => {
+    calls.resolves.push(choices.map(c => `${c.targetPackage}@${c.targetVersion}`))
+    const parent = choices.find(c => c.strategy === 'upgrade-via-parent-dependency')
+    const cleared = [{ location: 'node_modules/plain', requestedName: 'brace-expansion', type: 'dependencies' }, ...(parent ? [{ location: 'node_modules/nx', requestedName: 'brace-expansion', type: 'dependencies' }] : [])]
+    return { choices, graph: { nodes: [], edges: [] }, coverage: { resolution: parent ? 'complete' : 'partial', clearedConsumers: cleared, remainingConsumers: [] }, freshAt: Date.now() }
+  }
+  return deps
+}
+
+test('a partially resolved finding gains a parent upgrade and the resolution comes from the joint resolution', async () => {
+  const calls = { versions: [], upstream: [], resolves: [] }
+  const io = createIo()
+  assert.equal(await main(['/project', '--no-cache', '--format', 'json'], io.io, parentDeps(calls)), 0, io.stderr)
+  const [finding] = JSON.parse(io.stdout)
+  assert.equal(finding.resolution, 'complete')
+  assert.deepEqual(finding.choices.map(c => `${c.strategy}:${c.targetPackage}@${c.targetVersion}`), [
+    'update-within-declared-range:brace-expansion@5.0.12',
+    'upgrade-via-parent-dependency:nx@23.2.0',
+  ])
+  assert.deepEqual(calls.upstream[0].parents, [{ name: 'nx', version: '23.1.2' }])
+  assert.deepEqual(calls.upstream[0].target, { package: 'brace-expansion', version: '5.0.9' })
+  assert.equal(calls.versions.filter(([name]) => name === 'brace-expansion').length, 1, 'the audited package catalog is reused')
+  assert.deepEqual(calls.versions.filter(([name]) => name === 'nx').length, 1)
+})
+
+test('bypass and clear requests reach every new sibling call', async () => {
+  const calls = { versions: [], upstream: [], resolves: [] }
+  const io = createIo()
+  assert.equal(await main(['/project', '--no-cache', '--clear-cache', '--format', 'json'], io.io, parentDeps(calls)), 0, io.stderr)
+  assert.deepEqual(calls.upstream[0].controls, { noCache: true, clearCache: true })
+  const nx = calls.versions.find(([name]) => name === 'nx')[1]
+  assert.equal(nx.noCache, true)
+  assert.equal(nx.clearCache, true)
+})
+
+test('a failing paths query is fatal and leaves stdout empty', async () => {
+  const calls = { versions: [], upstream: [], resolves: [] }
+  const deps = parentDeps(calls)
+  deps.readUpstream = async () => {
+    throw new Error('npm-dep-paths failed for brace-expansion@5.0.9')
+  }
+  const io = createIo()
+  assert.equal(await main(['/project', '--no-cache'], io.io, deps), 1)
+  assert.equal(io.stdout, '')
+  assert.match(io.stderr, /npm-dep-upgrade-plan: npm-dep-paths failed/)
+})
+
+test('ancestor catalog freshness bounds the cached plan', async (t) => {
+  const root = mkdtempSync(path.join(tmpdir(), 'planner-parent-fresh-'))
+  t.after(() => rmSync(root, { recursive: true, force: true }))
+  const calls = { versions: [], upstream: [], resolves: [] }
+  const deps = parentDeps(calls)
+  deps.loadProject = async () => ({ root, manifestBytes: Buffer.from('{}'), lockBytes: Buffer.from('{}') })
+  deps.readPlanningContext = async () => ({ fixture: 'parent-fresh' })
+  const inner = deps.runNpmDepVersions
+  deps.runNpmDepVersions = async (...args) => {
+    const catalog = await inner(...args)
+    return args[1] === 'nx' ? { ...catalog, fetchedAt: new Date(Date.now() - 50 * 60000).toISOString() } : catalog
+  }
+  assert.equal(await main(['/project', '--format', 'json'], createIo().io, deps), 0)
+  const before = calls.versions.length
+  assert.equal(await main(['/project', '--format', 'json', '--cache-ttl', '30m'], createIo().io, deps), 0)
+  assert.ok(calls.versions.length > before, 'a shorter TTL refreshes because the oldest source is too old')
 })
