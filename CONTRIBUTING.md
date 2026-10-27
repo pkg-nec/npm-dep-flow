@@ -24,6 +24,7 @@ On top of those two sets, the shared configuration enables additional readabilit
 
 - Simpler control flow: `no-else-return`, `no-lonely-if`, `no-negated-condition`, `no-nested-ternary`, `no-unneeded-ternary`, `no-useless-return`, `default-case-last`.
 - Clearer expressions and assignments: `eqeqeq` (comparisons with `null` are exempt, so `== null` still checks `null` and `undefined`), `yoda`, `dot-notation`, `no-multi-assign`, `no-return-assign`, `no-useless-concat`, `no-useless-rename`, `prefer-exponentiation-operator`, `prefer-regex-literals`.
+- Blank-line layout: `@stylistic/padding-line-between-statements` requires a blank line after the last `import` and before and after every function declaration. Consecutive imports and one-line `const` helpers that are not function declarations are exempt from the extra padding; `lint:fix` inserts the lines.
 - Modern, predictable declarations: `no-var`, `prefer-const`, `object-shorthand`, `prefer-arrow-callback`, `prefer-object-spread`, `default-param-last`, `no-use-before-define` (hoisted function declarations are exempt).
 
 Fix a finding in the code instead of disabling its rule; for example, replace a nested ternary with `if`/`else`, a lookup object, or a helper function. Keep the pinned versions and lockfile in sync when updating lint dependencies.
