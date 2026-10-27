@@ -29,7 +29,7 @@ export async function commitSnapshots(guard, snapshots, actions, context, option
   catch (error) {
     if (error.createdCommit) commits.push({ ...error.createdCommit, actionIndex: activeSnapshot.choiceIndex })
     error.committed = commits
-    if (commits.length) error.message += `; completed commits: ${commits.map(c => c.hash).join(', ')}. Remaining verified dependency changes may be uncommitted`
+    if (commits.length) error.message += `; completed commits: ${[...(adapters.completedCommits || []), ...commits].map(c => c.hash).join(', ')}. Remaining verified dependency changes may be uncommitted`
     throw error
   }
 }

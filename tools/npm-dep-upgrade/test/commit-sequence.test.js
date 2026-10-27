@@ -63,3 +63,18 @@ test('reports a created commit when post-commit file verification fails', async 
   assert.ok(failure.message.includes(head))
   assert.deepEqual(await readFile(f.root + '/package-lock.json'), Buffer.concat([snapshot.files['package-lock.json'], Buffer.from('\n')]))
 })
+
+test('a failure message lists earlier completed commits before the sequence commits', async (t) => {
+  const { writeFile } = await import('node:fs/promises')
+  const f = await gitProject(t), guard = await preflightGit(f.root)
+  await writeFile(f.repo + '/empty-hooks/pre-commit', '#!/bin/sh\ncase "$(git log -1 --format=%s)" in *6.0.10*) exit 1;; esac\n', { mode: 0o755 })
+  const snapshots = ['6.0.10', '6.0.12'].map((version, choiceIndex) => {
+    const manifest = { ...f.manifest, dependencies: { 'e2e-target': '^' + version } }, lock = structuredClone(f.lock)
+    lock.packages[''] = manifest
+    lock.packages['node_modules/e2e-target'].version = version
+    return { choiceIndex, files: { 'package.json': Buffer.from(JSON.stringify(manifest)), 'package-lock.json': Buffer.from(JSON.stringify(lock)) } }
+  })
+  const actions = ['6.0.10', '6.0.12'].map(targetVersion => ({ strategy: 'update-within-declared-range', targetPackage: 'e2e-target', currentVersion: '6.0.9', targetVersion }))
+  const earlier = { hash: 'c'.repeat(40), subject: 'deps: migrate Angular toolchain to 21.2.27', actionIndex: 0 }
+  await assert.rejects(commitSnapshots(guard, snapshots, actions, {}, {}, { completedCommits: [earlier], prepareSnapshot: async () => {} }), error => error.committed.length === 1 && error.message.includes(`completed commits: ${earlier.hash}, ${error.committed[0].hash}.`))
+})
