@@ -690,7 +690,7 @@ function parentDeps(calls) {
     calls.resolves.push(choices.map(c => `${c.targetPackage}@${c.targetVersion}`))
     const parent = choices.find(c => c.strategy === 'upgrade-via-parent-dependency')
     const cleared = [{ location: 'node_modules/plain', requestedName: 'brace-expansion', type: 'dependencies' }, ...(parent ? [{ location: 'node_modules/nx', requestedName: 'brace-expansion', type: 'dependencies' }] : [])]
-    return { choices, coverage: { resolution: parent ? 'complete' : 'partial', clearedConsumers: cleared }, freshAt: Date.now() }
+    return { choices, graph: { nodes: [], edges: [] }, coverage: { resolution: parent ? 'complete' : 'partial', clearedConsumers: cleared, remainingConsumers: [] }, freshAt: Date.now() }
   }
   return deps
 }

@@ -48,7 +48,7 @@ function adapters(overrides = {}) {
         calls.resolves.push({ item, choices, options })
         const parents = choices.filter(c => c.strategy === 'upgrade-via-parent-dependency')
         const cleared = [consumer('node_modules/c'), ...parents.flatMap(p => p.affectedConsumers)]
-        return { choices, coverage: { resolution: cleared.length === 3 ? 'complete' : 'partial', clearedConsumers: cleared }, freshAt: Date.now() }
+        return { choices, graph: { nodes: [], edges: [] }, coverage: { resolution: cleared.length === 3 ? 'complete' : 'partial', clearedConsumers: cleared, remainingConsumers: [] }, freshAt: Date.now() }
       },
       ...overrides.adapters,
     },
@@ -104,7 +104,7 @@ test('a candidate the resolver drops, or one that makes an earlier parent choice
     adapters: {
       resolveChoices: async (project, item, choices) => {
         dropped.push(choices.length)
-        return { choices: choices.filter(c => c.strategy !== 'upgrade-via-parent-dependency'), coverage: { resolution: 'partial', clearedConsumers: [consumer('node_modules/c'), consumer('node_modules/b')] }, freshAt: Date.now() }
+        return { choices: choices.filter(c => c.strategy !== 'upgrade-via-parent-dependency'), graph: { nodes: [], edges: [] }, coverage: { resolution: 'partial', clearedConsumers: [consumer('node_modules/c'), consumer('node_modules/b')], remainingConsumers: [] }, freshAt: Date.now() }
       },
     },
   })
@@ -183,4 +183,51 @@ test('the policy is not read when no ancestor search is needed', async () => {
   const rootOnly = { ...row, requirements: [{ declaredRequirement: '^1', directDependents: [dependent('app', '1.0.0', '')] }] }
   await planParentChoices({ ...base, finding: finding([], 'none'), row: rootOnly, adapters: a })
   assert.equal(calls.policy, undefined)
+})
+
+function chainFixture() {
+  const only = { package: 'a', version: '1.2.3', severity: 'high', advisories: [{ range: '<1.2.5' }], requirements: [{ declaredRequirement: '1.2.3', directDependents: [dependent('b', '1.0.1', 'node_modules/b')] }] }
+  const calls = { resolves: [] }
+  const graph = specs => ({
+    nodes: [{ location: 'node_modules/a', name: 'a', version: '1.2.3' }, { location: 'node_modules/b', name: 'b', version: '1.1.0' }],
+    edges: [{ from: 'node_modules/b', to: 'node_modules/a', requestedName: 'a', type: 'dependencies', rawSpec: specs }],
+  })
+  const adapters = {
+    readReleasePolicy: async () => ({ minAgeDays: 7, cutoffMs: null }),
+    readUpstream: async () => ({ nodes: new Map(), edges: [] }),
+    readCatalog: async name => ({ versions: name === 'a' ? ['1.2.3', '1.2.5'] : ['1.1.0'], releaseTimes: new Map(), fetchedAt: iso(0.01) }),
+    findParentChoices: async (request) => {
+      const candidate = parent('b', '1.1.0')
+      const cleared = await request.evaluate([...request.accepted, candidate])
+      return cleared.has(consumerKey(consumer('node_modules/b'))) ? [{ ...candidate, affectedConsumers: [consumer('node_modules/b')] }] : []
+    },
+    resolveChoices: async (project, item, choices) => {
+      calls.resolves.push(choices.map(c => `${c.strategy === 'update-within-declared-range' ? 'within' : 'parent'}:${c.targetPackage}@${c.targetVersion}`))
+      const residual = choices.some(c => c.strategy === 'update-within-declared-range')
+      return { choices, graph: graph(calls.spec), coverage: { resolution: residual ? 'complete' : 'none', clearedConsumers: residual ? [consumer('node_modules/b')] : [], remainingConsumers: residual ? [] : [consumer('node_modules/b')] }, freshAt: Date.now() }
+    },
+  }
+  return { only, adapters, calls }
+}
+
+test('a parent whose new declaration accepts a safe version is paired with a within-range action for that branch', async () => {
+  const { only, adapters: a, calls } = chainFixture()
+  calls.spec = '^1.2.0'
+  const f = { package: 'a', version: '1.2.3', targetLocation: 'node_modules/a', resolution: 'none', choices: [] }
+  await planParentChoices({ ...base, finding: f, row: only, adapters: a })
+  assert.deepEqual(f.choices.map(c => `${c.strategy}:${c.targetPackage}@${c.targetVersion}`), ['update-within-declared-range:a@1.2.5', 'upgrade-via-parent-dependency:b@1.1.0'])
+  assert.deepEqual(f.choices[0].affectedConsumers, [consumer('node_modules/b')])
+  assert.deepEqual(f.choices[1].affectedConsumers, [consumer('node_modules/b')])
+  assert.equal(f.resolution, 'complete')
+  assert.deepEqual(calls.resolves.at(-1), ['parent:b@1.1.0', 'within:a@1.2.5'])
+})
+
+test('a parent whose new declaration still excludes every safe version stays unsuitable', async () => {
+  const { only, adapters: a, calls } = chainFixture()
+  calls.spec = '1.2.3'
+  const f = { package: 'a', version: '1.2.3', targetLocation: 'node_modules/a', resolution: 'none', choices: [] }
+  await planParentChoices({ ...base, finding: f, row: only, adapters: a })
+  assert.deepEqual(f.choices, [])
+  assert.equal(f.resolution, 'none')
+  assert.ok(calls.resolves.every(call => call.every(entry => entry.startsWith('parent:'))))
 })

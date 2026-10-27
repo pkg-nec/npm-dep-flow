@@ -98,3 +98,11 @@ test('the executor selects parent strategies and still refuses unknown ones', ()
   assert.equal(selectItem(validatePlanner(mixed([parent()])), id).choices[0].strategy, 'upgrade-via-parent-dependency')
   assert.throws(() => selectItem({ rows: [{ ...row, choices: [{ ...row.choices[0], strategy: 'upgrade-via-grandparent' }] }] }, id), /unsupported/i)
 })
+
+test('an ancestor upgrade and a follow-up within-range action may cover the same branch, but not two actions of one strategy', () => {
+  const shared = [{ location: parentLocation, requestedName: '@e2e/target', type: 'dependencies' }]
+  const within = { ...row.choices[0], affectedConsumers: shared }
+  validatePlanner(mixed([within, parent({ affectedConsumers: shared })]))
+  assert.throws(() => validatePlanner(mixed([within, { ...within, targetVersion: '6.0.13' }])), /duplicate/i)
+  assert.throws(() => validatePlanner(mixed([parent({ affectedConsumers: shared }), parent({ targetPackage: 'other-parent', targetLocation: 'node_modules/other-parent', affectedConsumers: shared })])), /duplicate/i)
+})

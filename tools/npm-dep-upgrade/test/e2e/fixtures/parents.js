@@ -109,3 +109,12 @@ export function swapsAffectedHelper(extraAdvisories = []) {
   s.advisories = [...s.advisories, { name: helperName, range: '>=2.0.4 <2.0.7', id: 20001 }, ...extraAdvisories]
   return s
 }
+
+// pb@1.0.1 pins the target exactly; pb@1.1.0 declares it as a caret, which accepts the safe release but leaves the
+// locked vulnerable one in place, so a within-range action for pb is needed after the ancestor upgrade.
+export function loosensPin(next = '^6.0.8') {
+  const s = parents({ pbNext: { [target]: next } })
+  delete s.packages[pc]
+  s.manifest.dependencies = { [pb]: '^1.0.0' }
+  return s
+}

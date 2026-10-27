@@ -61,7 +61,9 @@ export function verifyResolution(before, after, item, choices, semver) {
         if (current && (!currentNode || currentNode.name !== item.package || !semver.validRange(current.rawSpec) || !semver.satisfies(currentNode.version, current.rawSpec))) throw new Error('Original consumer requirement not satisfied')
         continue
       }
-      if (!currentNode || currentNode.name !== item.package || !semver.validRange(old.rawSpec) || !semver.satisfies(currentNode.version, old.rawSpec)) throw new Error('Original consumer requirement not satisfied')
+      // After an ancestor upgrade a consumer may declare a different range than before; judge it by what it declares now.
+      const declared = parents.length && current ? current.rawSpec : old.rawSpec
+      if (!currentNode || currentNode.name !== item.package || !semver.validRange(declared) || !semver.satisfies(currentNode.version, declared)) throw new Error('Original consumer requirement not satisfied')
       // An ancestor's new closure may let npm dedupe the shared installation upward; moving a consumer to a newer
       // valid release of the same installation is permitted then, but never to an older one or to another location.
       const upgradedInPlace = parents.length > 0 && !choice && current.to === old.to && semver.gt(currentNode.version, oldNode.version)

@@ -74,6 +74,7 @@ Planner and upgrade output use schema version 3; audit/paths/versions remain ver
 | Scope conflict | a named update that would also move another copy of the ancestor is rejected |
 | Second-commit hook failure | first commit kept, hash and remaining state reported, outside edit preserved |
 | Fresh security | a candidate that became vulnerable, or too young, after planning is refused before any commit; a vulnerable planned release falls forward to the next eligible one |
+| Loosened pin | an ancestor that turns an exact pin into a caret is followed by a within-range action on the new declaration: two commits, `complete`, no overrides; an ancestor that keeps the pin offers nothing |
 | Supporting advisories | replacing an affected supporting version with one carrying the same advisories is accepted; gaining an advisory is refused before any commit |
 | Release-age policy | what a parent release brings in resolves to the newest release old enough under a 7-day and a 30-day `min-release-age`; a parent release younger than the policy is never planned |
 

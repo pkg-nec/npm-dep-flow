@@ -24,6 +24,7 @@ export function validatePlanner(report) {
     if (row.minimumSafeVersion !== null && !semver.valid(row.minimumSafeVersion)) fail('INVALID_PLAN', 'planner', 'Invalid minimum safe version')
     if (row.minimumSafeVersionReleasedAt !== null && !Number.isFinite(Date.parse(row.minimumSafeVersionReleasedAt))) fail('INVALID_PLAN', 'planner', 'Invalid release timestamp')
     if ((row.resolution === 'none') !== (row.choices.length === 0)) fail('INVALID_PLAN', 'planner', 'Invalid resolution/action set')
+    // A branch may be covered by an ancestor upgrade and by one follow-up action of the other strategy, never twice by one strategy.
     const consumers = new Set()
     for (const choice of row.choices) {
       if (!choice || ![STRATEGY, PARENT_STRATEGY].includes(choice.strategy) || !Array.isArray(choice.affectedConsumers) || !choice.affectedConsumers.length) fail('INVALID_PLAN', 'planner', 'Invalid or unsupported planner choice')
@@ -38,7 +39,7 @@ export function validatePlanner(report) {
       for (const consumer of choice.affectedConsumers) {
         if (!consumer || typeof consumer.location !== 'string' || !namePattern.test(consumer.requestedName) || !['dependencies', 'devDependencies', 'optionalDependencies', 'peerDependencies'].includes(consumer.type)) fail('INVALID_PLAN', 'planner', 'Invalid choice consumer')
         if (consumer.location) canonicalLocation(consumer.location)
-        const key = JSON.stringify([consumer.location, consumer.requestedName, consumer.type])
+        const key = JSON.stringify([choice.strategy, consumer.location, consumer.requestedName, consumer.type])
         if (consumers.has(key)) fail('INVALID_PLAN', 'planner', 'Duplicate choice consumer')
         consumers.add(key)
       }

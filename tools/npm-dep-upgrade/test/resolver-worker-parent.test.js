@@ -153,3 +153,20 @@ test('a root consumer is cleared by its own edge even though a sibling consumer 
   assert.deepEqual(coverage.remainingConsumers, [consumerOf('node_modules/b')])
   assert.equal(coverage.resolution, 'partial')
 })
+
+test('a within-range action for a consumer whose declaration the parent upgrade loosened is judged against the new declaration', () => {
+  const pinned = {
+    nodes: [node('', 'app', '1.0.0'), node('node_modules/a', 'a', '1.2.3'), node('node_modules/b', 'b', '1.0.1')],
+    edges: [edge('', 'node_modules/b', 'b', '^1.0.0'), edge('node_modules/b', 'node_modules/a', 'a', '1.2.3')],
+  }
+  const chained = {
+    nodes: [node('', 'app', '1.0.0'), node('node_modules/a', 'a', '1.2.5'), node('node_modules/b', 'b', '1.1.0')],
+    edges: [edge('', 'node_modules/b', 'b', '^1.0.0'), edge('node_modules/b', 'node_modules/a', 'a', '^1.2.0')],
+  }
+  const residual = { strategy: 'update-within-declared-range', targetPackage: 'a', targetLocation: 'node_modules/a', currentVersion: '1.2.3', targetVersion: '1.2.5', affectedConsumers: [consumerOf('node_modules/b')] }
+  verifyResolution(pinned, chained, item, [parentChoice(), residual], semver)
+  assert.equal(computeCoverage(pinned, chained, item, semver).resolution, 'complete')
+  const tooHigh = { ...chained, nodes: chained.nodes.map(n => (n.name === 'a' ? { ...n, version: '2.0.0' } : n)) }
+  assert.throws(() => verifyResolution(pinned, tooHigh, item, [parentChoice(), residual], semver), /requirement|scope/i)
+  assert.throws(() => verifyResolution(pinned, chained, item, [residual], semver), /requirement|changed/i)
+})

@@ -6,7 +6,7 @@ import { createProject } from './helpers/project.js'
 import { plan, runUpgrade, assertResolved } from './helpers/runner.js'
 import { checked, command } from './helpers/commands.js'
 import { target } from './fixtures/catalog.js'
-import { bringsIn, chain, swapsAffectedHelper, constrained, grandName, helperName, hName, parents, pb, pc, reintroduced, sharedGrand, twoAncestorCopies } from './fixtures/parents.js'
+import { loosensPin, bringsIn, chain, swapsAffectedHelper, constrained, grandName, helperName, hName, parents, pb, pc, reintroduced, sharedGrand, twoAncestorCopies } from './fixtures/parents.js'
 
 const runtimes = [process.env.NPM_DEP_UPGRADE_E2E_NPM_CLI, process.env.NPM_DEP_UPGRADE_E2E_COMPAT_NPM_CLI].filter(Boolean)
 const subjects = async f => (await checked(f, 'git', ['log', '--format=%s', `${f.initialHead}..HEAD`])).split('\n').filter(Boolean).reverse()
@@ -290,6 +290,28 @@ for (const npmCli of runtimes) {
     assert.equal(result.stdout, '')
     assert.match(result.stderr, /vulnerable|audit/i)
     await unchanged(f)
+  })
+
+  test(`an ancestor that loosens an exact pin is followed by a within-range action on the new declaration (${npmCli})`, async (t) => {
+    const f = await createProject(loosensPin(), { npmCli }, t)
+    const row = finding(await plan(f))
+    assert.equal(row.resolution, 'complete')
+    assert.deepEqual(choicesOf(row), ['within:e2e-target@6.0.12', `parent:${pb}@1.1.0`])
+    const result = await runUpgrade(f, [row.id, '--format', 'json'])
+    assert.equal(result.code, 0, result.stderr)
+    const output = JSON.parse(result.stdout)
+    assert.deepEqual(output.actions.map(a => [a.targetPackage, a.outcome]), [[pb, 'applied'], [target, 'applied']])
+    assert.deepEqual(await subjects(f), [`deps: bump ${pb} from 1.0.1 to 1.1.0`, `deps: bump ${target} from 6.0.9 to 6.0.12`])
+    assert.deepEqual(JSON.parse(await readFile(path.join(f.root, 'package.json'), 'utf8')), JSON.parse(f.initialFiles['package.json']), 'no override or declaration edit')
+    await assertResolved(f, `node_modules/${pb}`, target, '6.0.12')
+    assert.equal((await plan(f)).filter(r => r.package === target).length, 0)
+  })
+
+  test(`an ancestor that keeps the pin offers no chained action (${npmCli})`, async (t) => {
+    const f = await createProject(loosensPin('6.0.9'), { npmCli }, t)
+    const row = finding(await plan(f))
+    assert.equal(row.resolution, 'none')
+    assert.deepEqual(row.choices, [])
   })
 
   test(`a parent release younger than the configured policy is never planned (${npmCli})`, async (t) => {
