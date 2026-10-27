@@ -6,7 +6,7 @@ import { DAY_MS } from './model.js'
 const FIELDS = ['dependencies', 'devDependencies', 'optionalDependencies', 'peerDependencies', 'overrides']
 
 // The planned release is used while it is eligible; otherwise the lowest newer eligible release of the same major.
-// Only the publication time of @angular/cli (the catalog's release times) decides release age.
+// Only the publication time of the line's anchor (the catalog's release times) decides release age.
 export function selectLineRelease(line, choice, catalog, advisories, nowMs) {
   const planned = choice.targetVersion
   if (!catalog.versions.includes(planned) || !stableVersion(planned)) fail('NO_CANDIDATE', 'selection', `Planned ${line.name} release is not in the registry catalog`)
@@ -46,7 +46,7 @@ function checkNestedOverride(line, name, before, after, version) {
   if (!line.unchecked.includes(name) && newEntry['.'] !== version) fail('UNEXPECTED_MANIFEST_CHANGE', 'verification', `${name} in overrides must be ${version}`)
 }
 
-// Only allowlisted toolchain packages may change, and (except architect) only to the selected version.
+// Only the line's allowlisted packages may change, and (except its unchecked ones) only to the selected version.
 export function checkManifestChanges(line, beforeManifest, afterManifest, version) {
   for (const field of FIELDS) {
     const before = declared(beforeManifest, field)

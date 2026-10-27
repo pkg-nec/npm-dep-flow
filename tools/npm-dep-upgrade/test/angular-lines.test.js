@@ -2,8 +2,13 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { ANGULAR_LINES, lineOfStrategy } from '../src/angular-lines.js'
 
-test('the registry holds the toolchain line', () => {
-  assert.equal(ANGULAR_LINES.length, 1)
+const RUNTIME = ['@angular/common', '@angular/compiler', '@angular/compiler-cli', '@angular/core', '@angular/forms', '@angular/platform-browser', '@angular/router']
+
+test('the registry holds the toolchain line first and the runtime line second', () => {
+  assert.deepEqual(ANGULAR_LINES.map(line => line.key), ['toolchain', 'runtime'])
+})
+
+test('the toolchain line keeps its values', () => {
   const [line] = ANGULAR_LINES
   assert.equal(line.key, 'toolchain')
   assert.equal(line.name, 'toolchain')
@@ -16,7 +21,21 @@ test('the registry holds the toolchain line', () => {
   assert.equal(line.description('19.2.0'), 'migrate Angular toolchain to 19.2.0')
 })
 
+test('the runtime line migrates the seven runtime packages and the platform-browser-dynamic override', () => {
+  const line = ANGULAR_LINES[1]
+  assert.equal(line.key, 'runtime')
+  assert.equal(line.name, 'runtime')
+  assert.equal(line.strategy, 'upgrade-angular-runtime')
+  assert.equal(line.anchor, '@angular/core')
+  assert.deepEqual(line.members, RUNTIME)
+  assert.deepEqual(line.overrides, ['@angular/platform-browser-dynamic'])
+  assert.deepEqual(line.allowlist, [...RUNTIME, '@angular/platform-browser-dynamic'])
+  assert.deepEqual(line.unchecked, [])
+  assert.equal(line.description('21.2.26'), 'bump Angular runtime to 21.2.26')
+})
+
 test('lineOfStrategy finds a line by strategy', () => {
   assert.equal(lineOfStrategy('upgrade-angular-toolchain'), ANGULAR_LINES[0])
+  assert.equal(lineOfStrategy('upgrade-angular-runtime'), ANGULAR_LINES[1])
   assert.equal(lineOfStrategy('update-within-declared-range'), undefined)
 })

@@ -349,6 +349,7 @@ for (const [label, edit] of [
   ['off-allowlist edit', manifest => ({ ...manifest, dependencies: { 'left-pad': '1.3.1' } })],
   ['wrong-version edit', manifest => ({ ...manifest, devDependencies: { ...manifest.devDependencies, '@angular/build': '21.2.28' } })],
   ['missing @angular/cli bump', manifest => ({ ...manifest, devDependencies: { ...manifest.devDependencies, '@angular/cli': OLD } })],
+  ['missing @angular/build bump', manifest => ({ ...manifest, devDependencies: { ...manifest.devDependencies, '@angular/build': OLD } })],
 ]) test(`${label} fails with UNEXPECTED_MANIFEST_CHANGE and is reverted`, async (t) => {
   const f = await fixture(t)
   const a = adapters(f, { steps: { migrate: async (root) => {
@@ -366,6 +367,18 @@ test('plain install failure retries with -f and then plain install must pass', a
   await migrate(f, a)
   assert.deepEqual(a.fake.calls.slice(2).map(c => c.args), [context.installArgs, [...context.installArgs, '-f'], context.installArgs])
   assert.equal(await status(f), '')
+})
+
+test('a declared member the install left at another version is reverted', async (t) => {
+  const f = await fixture(t)
+  const a = adapters(f, { steps: { install1: async (root) => {
+    const manifest = JSON.parse(await readFile(path.join(root, 'package.json'), 'utf8'))
+    const lock = lockFor(manifest, NEW, '1.0.1')
+    lock.packages['node_modules/@angular/build'].version = OLD
+    await writeFile(path.join(root, 'package-lock.json'), json(lock))
+    return { code: 0, stdout: '', stderr: '' }
+  } } })
+  await rejectsRestored(f, a, error => error.code === 'TARGET_MISMATCH' && error.message.startsWith(`@angular/build did not install at ${NEW}.`))
 })
 
 test('install failing with -f too is reverted', async (t) => {
@@ -496,4 +509,325 @@ test('the line drives the commit description, strategy and messages', async (t) 
   assert.deepEqual(a.fake.calls[1].args, ['--no', 'nx', 'migrate', `@angular/cli@${NEW}`])
   await writeFile(path.join(f.root, 'scratch.txt'), 'x\n')
   await assert.rejects(migrateLine({ line: renamed, guard: f.guard, project: f.project, item, choice, context, options, adapters: adapters(f).value }), /Angular renamed migration requires a clean working tree/)
+})
+
+// ---- Runtime line -------------------------------------------------------------------------------------------------
+// The webapp shape: six runtime members in dependencies, @angular/compiler-cli beside the toolchain in devDependencies,
+// and a stale @angular/platform-browser-dynamic override (no lockfile entry, no dependent).
+const RT_OLD = '21.2.10', RT_NEW = '21.2.11'
+const RUNTIME_STRATEGY = 'upgrade-angular-runtime'
+const runtimeLine = lineOfStrategy(RUNTIME_STRATEGY)
+const RUNTIME_DEPS = ['@angular/common', '@angular/compiler', '@angular/core', '@angular/forms', '@angular/platform-browser', '@angular/router']
+const runtimeChoice = { strategy: RUNTIME_STRATEGY, targetPackage: '@angular/core', targetLocation: 'node_modules/@angular/core', currentVersion: RT_OLD, targetVersion: RT_NEW, affectedConsumers: [{ location: 'node_modules/@angular/core', requestedName: 'vuln-dep', type: 'dependencies' }] }
+
+function webappManifest({ override = true } = {}) {
+  return {
+    name: 'webapp',
+    version: '1.0.0',
+    dependencies: { ...Object.fromEntries(RUNTIME_DEPS.map(name => [name, RT_OLD])), 'left-pad': '1.3.0' },
+    devDependencies: { '@angular/build': OLD, '@angular/cli': OLD, '@angular/compiler-cli': RT_OLD },
+    overrides: { '@angular-devkit/core': OLD, ...(override ? { '@angular/platform-browser-dynamic': '20.3.0' } : {}), 'other-pkg': '2.0.0' },
+  }
+}
+
+const runtimeVersion = manifest => manifest.dependencies['@angular/core']
+
+// The lockfile npm would write for a manifest: every member at its declared version; @angular/cli and @angular/core
+// each need vuln-dep 1.0.0 until their next release needs 1.0.1, so a split nests the fixed copy under the toolchain.
+function webappLock(manifest, { stuck = {} } = {}) {
+  const cli = manifest.devDependencies['@angular/cli'], core = runtimeVersion(manifest)
+  const cliNeeds = cli === NEW ? '1.0.1' : '1.0.0', coreNeeds = core === RT_NEW ? '1.0.1' : '1.0.0'
+  const packages = { '': { name: manifest.name, version: manifest.version, dependencies: manifest.dependencies, devDependencies: manifest.devDependencies } }
+  for (const field of ['dependencies', 'devDependencies']) for (const [name, version] of Object.entries(manifest[field])) {
+    packages[`node_modules/${name}`] = { version: stuck[name] || version, ...(field === 'devDependencies' ? { dev: true } : {}) }
+  }
+  packages['node_modules/@angular/cli'].dependencies = { 'vuln-dep': cliNeeds }
+  packages['node_modules/@angular/core'].dependencies = { 'vuln-dep': coreNeeds }
+  packages['node_modules/vuln-dep'] = { version: coreNeeds }
+  if (cliNeeds !== coreNeeds) packages['node_modules/@angular/cli/node_modules/vuln-dep'] = { version: cliNeeds, dev: true }
+  return { name: manifest.name, version: manifest.version, lockfileVersion: 3, requires: true, packages }
+}
+
+async function webappFixture(t, options) {
+  const f = await gitProject(t)
+  await writeFile(path.join(f.repo, '.git', 'info', 'exclude'), 'empty-hooks/\n')
+  const manifest = webappManifest(options)
+  await writeFile(path.join(f.root, 'package.json'), json(manifest))
+  await writeFile(path.join(f.root, 'package-lock.json'), json(webappLock(manifest)))
+  await git(f.repo, ['add', '.'])
+  await git(f.repo, ['commit', '-m', 'test: angular webapp'])
+  const guard = await preflightGit(f.root)
+  return { ...f, guard, project: { root: guard.root }, originalManifest: manifest }
+}
+
+// What nx migrate <anchor>@<version> writes: the members the root declares move to the version, nothing else.
+async function nxMigrate(root, args) {
+  const spec = args.at(-1), at = spec.lastIndexOf('@'), anchor = spec.slice(0, at), version = spec.slice(at + 1)
+  const line = [lineOfStrategy(TOOLCHAIN_STRATEGY), runtimeLine].find(entry => entry.anchor === anchor)
+  const manifest = JSON.parse(await readFile(path.join(root, 'package.json'), 'utf8'))
+  for (const field of ['dependencies', 'devDependencies']) for (const name of line.members) if (manifest[field]?.[name]) manifest[field][name] = version
+  await writeFile(path.join(root, 'package.json'), json(manifest))
+}
+
+// A scripted npm/npx for the webapp. Like real npm after nx migrate, a plain install fails with ERESOLVE while the
+// lockfile's runtime members disagree with the manifest (they peer exactly on each other); `-f` writes the lockfile,
+// and the plain install after it then succeeds without changing it.
+function webappRun(root, steps = {}) {
+  const calls = []
+  let installs = 0
+  const run = async (launched, launchedArgs, opts) => {
+    const { command, args } = decodeLaunch(launched, launchedArgs)
+    calls.push({ command, args, cwd: opts.cwd })
+    let step = command === 'npx' ? 'migrate' : 'ci'
+    if (command === 'npm' && args[0] !== 'ci') step = `install${++installs}`
+    if (steps[step]) return steps[step](root, args)
+    if (step === 'migrate') await nxMigrate(root, args)
+    if (step.startsWith('install')) {
+      const manifest = JSON.parse(await readFile(path.join(root, 'package.json'), 'utf8'))
+      const lock = JSON.parse(await readFile(path.join(root, 'package-lock.json'), 'utf8'))
+      if (!args.includes('-f') && lock.packages['node_modules/@angular/core'].version !== runtimeVersion(manifest)) return { code: 1, stdout: '', stderr: 'npm error code ERESOLVE' }
+      await writeFile(path.join(root, 'package-lock.json'), json(webappLock(manifest)))
+    }
+    return { code: 0, stdout: '', stderr: '' }
+  }
+  return { run, calls }
+}
+
+const webappCatalog = (times = {}, reads = []) => async (root, name) => {
+  reads.push(name)
+  const anchors = { '@angular/cli': [OLD, NEW], '@angular/core': [RT_OLD, RT_NEW] }
+  const versions = anchors[name] || ['1.0.0', '1.0.1', '1.3.0', OLD, NEW, RT_OLD, RT_NEW]
+  return { versions, releaseTimes: new Map(versions.map(v => [v, times[v] || old])), minAgeDays: 7, cutoffMs: null }
+}
+
+function webappAdapters(f, overrides = {}) {
+  const fake = webappRun(f.root, overrides.steps)
+  const catalogReads = []
+  return {
+    fake,
+    catalogReads,
+    value: { run: fake.run, readCatalog: webappCatalog({}, catalogReads), readCandidateAdvisories: advisoriesFor(), readFreshAudit: async () => [], ...overrides.adapters },
+  }
+}
+
+const migrateRuntime = (f, a) => migrateLine({ line: runtimeLine, guard: f.guard, project: f.project, item, choice: runtimeChoice, context, options, adapters: a.value })
+const runtimeInstalls = [context.installArgs, [...context.installArgs, '-f'], context.installArgs]
+
+async function runtimeRejectsRestored(f, a, predicate) {
+  let failure
+  try {
+    await migrateRuntime(f, a)
+  }
+  catch (error) { failure = error }
+  assert.ok(failure, 'migration should fail')
+  assert.ok(predicate(failure), failure.message)
+  await assertRestored(f, failure)
+  return failure
+}
+
+for (const platform of ['win32', 'linux']) {
+  test(`runtime: the happy path bumps the seven members and the override in one commit with ${platform} launches`, async (t) => {
+    const f = await webappFixture(t), a = webappAdapters(f, { adapters: { platform } }), start = f.guard.head
+    const result = await migrateRuntime(f, a)
+    assert.equal((await git(f.repo, ['log', '-1', '--format=%s'])).trim(), `deps(webapp): bump Angular runtime to ${RT_NEW}`)
+    assert.equal((await git(f.repo, ['rev-parse', 'HEAD^'])).trim(), start)
+    assert.deepEqual((await git(f.repo, ['diff-tree', '--no-commit-id', '--name-only', '-r', 'HEAD'])).trim().split('\n').sort(), ['package-lock.json', 'package.json'])
+    assert.equal(await status(f), '')
+    assert.deepEqual(a.fake.calls.map(c => [c.command, ...c.args]), [
+      ['npm', 'ci', ...context.installArgs.slice(1)],
+      ['npx', '--no', 'nx', 'migrate', `@angular/core@${RT_NEW}`],
+      ...runtimeInstalls.map(args => ['npm', ...args]),
+    ])
+    assert.ok(a.fake.calls.every(c => c.cwd === f.guard.root))
+    assert.equal(a.catalogReads[0], '@angular/core')
+    const committed = JSON.parse(await git(f.repo, ['show', 'HEAD:package.json']))
+    for (const name of RUNTIME_DEPS) assert.equal(committed.dependencies[name], RT_NEW)
+    assert.equal(committed.devDependencies['@angular/compiler-cli'], RT_NEW)
+    assert.deepEqual([committed.devDependencies['@angular/cli'], committed.devDependencies['@angular/build']], [OLD, OLD])
+    assert.deepEqual(committed.overrides, { '@angular-devkit/core': OLD, '@angular/platform-browser-dynamic': RT_NEW, 'other-pkg': '2.0.0' })
+    const lock = JSON.parse(await git(f.repo, ['show', 'HEAD:package-lock.json']))
+    assert.equal(lock.packages['node_modules/vuln-dep'].version, '1.0.1')
+    assert.equal(lock.packages['node_modules/@angular/platform-browser-dynamic'], undefined)
+    assert.equal(result.commit.subject, `deps(webapp): bump Angular runtime to ${RT_NEW}`)
+    assert.deepEqual(result.action, { ...runtimeChoice, targetVersion: RT_NEW, outcome: 'applied', targetLocations: ['node_modules/@angular/core'], releasedAt: old, supportingChanges: [] })
+  })
+}
+
+test('runtime: an absent platform-browser-dynamic override stays absent', async (t) => {
+  const f = await webappFixture(t, { override: false }), a = webappAdapters(f)
+  await migrateRuntime(f, a)
+  assert.deepEqual(JSON.parse(await git(f.repo, ['show', 'HEAD:package.json'])).overrides, { '@angular-devkit/core': OLD, 'other-pkg': '2.0.0' })
+})
+
+test('runtime: release age is read from @angular/core and a young release runs no subprocess', async (t) => {
+  const f = await webappFixture(t), a = webappAdapters(f)
+  a.value.readCatalog = webappCatalog({ [RT_NEW]: new Date(Date.now() - DAY).toISOString(), [NEW]: new Date(Date.now() - DAY).toISOString() }, a.catalogReads)
+  await assert.rejects(migrateRuntime(f, a), error => error.code === 'RELEASE_AGE' && /runtime/.test(error.message))
+  assert.deepEqual(a.catalogReads, ['@angular/core'])
+  assert.equal(a.fake.calls.length, 0)
+  assert.equal(await status(f), '')
+})
+
+test('runtime: migrations.json aborts with MIGRATIONS_GENERATED and is reverted', async (t) => {
+  const f = await webappFixture(t)
+  const a = webappAdapters(f, { steps: { migrate: async (root, args) => {
+    await nxMigrate(root, args)
+    await writeFile(path.join(root, 'migrations.json'), '{"migrations":[]}\n')
+    return { code: 0, stdout: '', stderr: '' }
+  } } })
+  await runtimeRejectsRestored(f, a, error => error.code === 'MIGRATIONS_GENERATED')
+  await assert.rejects(access(path.join(f.root, 'migrations.json')))
+  assert.equal(a.fake.calls.length, 2)
+})
+
+for (const [label, edit] of [
+  ['an nx run that also bumps @angular/cli', manifest => Object.assign(manifest.devDependencies, { '@angular/cli': RT_NEW })],
+  ['an nx run that also bumps @angular/build', manifest => Object.assign(manifest.devDependencies, { '@angular/build': RT_NEW })],
+  ['an nx run that adds an eighth package', manifest => Object.assign(manifest.dependencies, { '@angular/animations': RT_NEW })],
+  ['an nx run that leaves a member behind', manifest => Object.assign(manifest.dependencies, { '@angular/forms': RT_OLD })],
+  ['an nx run that moves a member to another version', manifest => Object.assign(manifest.devDependencies, { '@angular/compiler-cli': '21.2.12' })],
+  ['an nx run that sets the override to another version', manifest => Object.assign(manifest.overrides, { '@angular/platform-browser-dynamic': '21.2.27' })],
+]) test(`runtime: ${label} fails with UNEXPECTED_MANIFEST_CHANGE and is reverted`, async (t) => {
+  const f = await webappFixture(t)
+  const a = webappAdapters(f, { steps: { migrate: async (root, args) => {
+    await nxMigrate(root, args)
+    const manifest = JSON.parse(await readFile(path.join(root, 'package.json'), 'utf8'))
+    edit(manifest)
+    await writeFile(path.join(root, 'package.json'), json(manifest))
+    return { code: 0, stdout: '', stderr: '' }
+  } } })
+  await runtimeRejectsRestored(f, a, error => error.code === 'UNEXPECTED_MANIFEST_CHANGE')
+  assert.equal(a.fake.calls.length, 2)
+})
+
+test('runtime: an install failing even with -f is reverted', async (t) => {
+  const f = await webappFixture(t)
+  const a = webappAdapters(f, { steps: { install2: failed } })
+  await runtimeRejectsRestored(f, a, error => error.code === 'INSTALL_FAILED' && /even with -f/.test(error.message))
+  assert.deepEqual(a.fake.calls.slice(2).map(c => c.args), runtimeInstalls.slice(0, 2))
+})
+
+test('runtime: a member the forced install left at another version is reverted', async (t) => {
+  const f = await webappFixture(t)
+  const forced = async (root) => {
+    const manifest = JSON.parse(await readFile(path.join(root, 'package.json'), 'utf8'))
+    await writeFile(path.join(root, 'package-lock.json'), json(webappLock(manifest, { stuck: { '@angular/forms': RT_OLD } })))
+    return { code: 0, stdout: '', stderr: '' }
+  }
+  const a = webappAdapters(f, { steps: { install2: forced, install3: async () => ({ code: 0, stdout: '', stderr: '' }) } })
+  await runtimeRejectsRestored(f, a, error => error.code === 'TARGET_MISMATCH' && /@angular\/forms did not install at 21\.2\.11/.test(error.message))
+})
+
+test('runtime: a finding consumer still affected after the forced install is reverted', async (t) => {
+  const f = await webappFixture(t)
+  const forced = async (root) => {
+    const manifest = JSON.parse(await readFile(path.join(root, 'package.json'), 'utf8'))
+    const lock = webappLock(manifest)
+    lock.packages['node_modules/@angular/core'].dependencies = { 'vuln-dep': '1.0.0' }
+    lock.packages['node_modules/vuln-dep'].version = '1.0.0'
+    delete lock.packages['node_modules/@angular/cli/node_modules/vuln-dep']
+    await writeFile(path.join(root, 'package-lock.json'), json(lock))
+    return { code: 0, stdout: '', stderr: '' }
+  }
+  const a = webappAdapters(f, { steps: { install2: forced, install3: async () => ({ code: 0, stdout: '', stderr: '' }) } })
+  await runtimeRejectsRestored(f, a, error => error.code === 'RUNTIME_NOT_CLEARED')
+})
+
+test('runtime: a new advisory on a runtime member the install changed is reverted', async (t) => {
+  const f = await webappFixture(t), a = webappAdapters(f, { adapters: { readCandidateAdvisories: advisoriesFor({ '@angular/forms': [{ id: 9, range: `>=${RT_NEW}` }] }) } })
+  await runtimeRejectsRestored(f, a, error => error.code === 'VULNERABLE_SUPPORTING_CHANGE')
+})
+
+test('runtime: the Windows launch form reaches npx.cmd through a shell', async (t) => {
+  const f = await webappFixture(t), spawned = []
+  const scripted = webappRun(f.root)
+  const spawnImpl = (command, args, opts) => {
+    spawned.push({ command, args, shell: opts.shell })
+    const child = new EventEmitter()
+    child.stdout = new PassThrough()
+    child.stderr = new PassThrough()
+    child.kill = () => {}
+    scripted.run(command, args, { cwd: opts.cwd }).then((r) => {
+      child.stdout.end()
+      child.stderr.end()
+      child.emit('close', r.code, null)
+    })
+    return child
+  }
+  const a = webappAdapters(f, { adapters: { platform: 'win32', run: (command, args, opts) => runProcess(command, args, { ...opts, spawnImpl }) } })
+  await migrateRuntime(f, a)
+  assert.equal(spawned[1].command, `npx.cmd --no nx migrate @angular/core@${RT_NEW}`)
+  assert.deepEqual(spawned.slice(2).map(s => s.command), runtimeInstalls.map(args => `npm.cmd ${args.join(' ')}`))
+  assert.ok(spawned.every(s => s.shell === true && s.args.length === 0))
+})
+
+// ---- Both lines through the CLI with the real registry and the real migration -------------------------------------
+const bothItem = selectedId => ({ ...item, choices: [
+  { ...runtimeChoice, affectedConsumers: [{ location: 'node_modules/@angular/core', requestedName: 'vuln-dep', type: 'dependencies' }] },
+  { ...choice, affectedConsumers: [{ location: 'node_modules/@angular/cli', requestedName: 'vuln-dep', type: 'dependencies' }] },
+], id: selectedId })
+
+async function runBoth(t, { platform = 'linux', steps } = {}) {
+  const { main } = await import('../src/cli.js')
+  const { itemId } = await import('../src/planner.js')
+  const f = await webappFixture(t)
+  const fake = webappRun(f.root, steps)
+  const selected = bothItem(itemId(item.package, item.targetLocation))
+  let stdout = '', stderr = ''
+  const io = { stdout: { write: (s) => {
+    stdout += s
+  } }, stderr: { write: (s) => {
+    stderr += s
+  } } }
+  const phases = []
+  const deps = {
+    preflightGit: async () => f.guard,
+    readPlanner: async () => ({ rows: [selected] }),
+    loadNpmContext: async () => ({ ...context }),
+    readCatalog: webappCatalog(),
+    readCandidateAdvisories: advisoriesFor(),
+    readEvidence: () => assert.fail('the line phases clear the finding'),
+    createStagingProject: () => assert.fail('must not stage'),
+    migrateLine: (args) => {
+      phases.push([args.line.name, args.guard.head, args.choice.affectedConsumers.map(consumer => consumer.location)])
+      return migrateLine({ ...args, adapters: { ...args.adapters, run: fake.run, platform, readFreshAudit: async () => [] } })
+    },
+  }
+  const code = await main([selected.id, '--format', 'json', '--module', 'webapp'], io, deps)
+  return { f, fake, phases, code, stdout, stderr }
+}
+
+for (const platform of ['win32', 'linux']) test(`a toolchain and a runtime choice run both pre-phases in order with two commits (${platform})`, async (t) => {
+  const x = await runBoth(t, { platform })
+  assert.equal(x.code, 0, x.stderr)
+  const subjects = (await git(x.f.repo, ['log', '-3', '--format=%s'])).trim().split('\n')
+  assert.deepEqual(subjects, [`deps(webapp): bump Angular runtime to ${RT_NEW}`, `deps(webapp): migrate Angular toolchain to ${NEW}`, 'test: angular webapp'])
+  const [runtimeHash, toolchainHash] = (await git(x.f.repo, ['log', '-2', '--format=%H'])).trim().split('\n')
+  assert.deepEqual(x.phases.map(([name]) => name), ['toolchain', 'runtime'])
+  assert.equal(x.phases[1][1], toolchainHash)
+  assert.deepEqual(x.phases[1][2], ['node_modules/@angular/core'])
+  assert.deepEqual(x.fake.calls.filter(c => c.command === 'npx').map(c => c.args.at(-1)), [`@angular/cli@${NEW}`, `@angular/core@${RT_NEW}`])
+  // The toolchain install succeeds at once; only the runtime bump needs the -f fallback.
+  assert.deepEqual(x.fake.calls.filter(c => c.command === 'npm' && c.args[0] !== 'ci').map(c => c.args), [context.installArgs, ...runtimeInstalls])
+  const result = JSON.parse(x.stdout)
+  assert.equal(result.resolution, 'complete')
+  assert.deepEqual(result.actions.map(a => [a.strategy, a.targetVersion, a.outcome]), [[TOOLCHAIN_STRATEGY, NEW, 'applied'], [RUNTIME_STRATEGY, RT_NEW, 'applied']])
+  assert.deepEqual(result.commits.map(c => [c.hash, c.actionIndex]), [[toolchainHash, 0], [runtimeHash, 1]])
+  assert.equal(await status(x.f), '')
+})
+
+test('a failure in the runtime phase keeps and names the toolchain commit', async (t) => {
+  const x = await runBoth(t, { steps: { migrate: async (root, args) => {
+    await nxMigrate(root, args)
+    if (args.at(-1).startsWith('@angular/core@')) await writeFile(path.join(root, 'migrations.json'), '{}\n')
+    return { code: 0, stdout: '', stderr: '' }
+  } } })
+  assert.equal(x.code, 1)
+  assert.equal(x.stdout, '')
+  const toolchainHash = (await git(x.f.repo, ['rev-parse', 'HEAD'])).trim()
+  assert.equal((await git(x.f.repo, ['log', '-1', '--format=%s'])).trim(), `deps(webapp): migrate Angular toolchain to ${NEW}`)
+  assert.equal(x.stderr, `npm-dep-upgrade: migration: nx migrate generated migrations.json; migrate to ${RT_NEW} manually. Working tree restored. Completed commits: ${toolchainHash}. Dependency files were not changed after the toolchain commit. node_modules may have changed.\n`)
+  assert.equal(await status(x.f), '')
+  await assert.rejects(access(path.join(x.f.root, 'migrations.json')))
+  assert.equal(JSON.parse(await readFile(path.join(x.f.root, 'package.json'), 'utf8')).dependencies['@angular/core'], RT_OLD)
 })

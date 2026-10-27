@@ -139,7 +139,7 @@ test('a failing planner clear in clear-only mode exits 1', async () => {
 const toolchainChoice = { strategy: 'upgrade-angular-toolchain', targetPackage: '@angular/cli', targetLocation: 'node_modules/@angular/cli', currentVersion: '21.2.26', targetVersion: '21.2.27', affectedConsumers: [{ location: 'node_modules/@angular/build', requestedName: 'e2e-target', type: 'dependencies' }] }
 const withinChoice = { strategy: 'update-within-declared-range', targetPackage: 'e2e-target', targetLocation: 'node_modules/e2e-target', currentVersion: '6.0.9', targetVersion: '6.0.12', affectedConsumers: [{ location: '', requestedName: 'e2e-target', type: 'dependencies' }] }
 
-// Dependency files after a synthetic line migration: the line's anchor moves to the planned version.
+// Dependency files after a stubbed line migration: the line's anchor moves to the planned version.
 function lineFiles(current, choice) {
   const manifest = JSON.parse(current['package.json']), lock = JSON.parse(current['package-lock.json'])
   manifest.devDependencies = { ...manifest.devDependencies, [choice.targetPackage]: choice.targetVersion }
@@ -402,53 +402,53 @@ test('no staging is created when every remaining choice lost its consumers', asy
   assert.equal(result.commits.length, 1)
 })
 
-// A second line injected through the `lines` dependency stands in for the runtime line in multi-phase runs.
-const syntheticLine = { key: 'synthetic', name: 'synthetic', strategy: 'upgrade-angular-synthetic', anchor: '@e2e/synthetic', members: ['@e2e/synthetic'], overrides: [], allowlist: ['@e2e/synthetic'], unchecked: [], description: version => `migrate synthetic line to ${version}` }
-const syntheticChoice = { strategy: 'upgrade-angular-synthetic', targetPackage: '@e2e/synthetic', targetLocation: 'node_modules/@e2e/synthetic', currentVersion: '1.0.0', targetVersion: '1.0.1', affectedConsumers: [{ location: '', requestedName: 'e2e-target', type: 'dependencies' }] }
+// Both lines of the real registry run as pre-phases: toolchain first, then runtime.
+const runtimeChoice = { strategy: 'upgrade-angular-runtime', targetPackage: '@angular/core', targetLocation: 'node_modules/@angular/core', currentVersion: '21.2.25', targetVersion: '21.2.26', affectedConsumers: [{ location: '', requestedName: 'e2e-target', type: 'dependencies' }] }
 
 async function twoLineFixture(t, options) {
   const { ANGULAR_LINES } = await import('../src/angular-lines.js')
   const x = await toolchainFixture(t, options)
-  x.deps.lines = [ANGULAR_LINES[0], syntheticLine]
+  assert.equal(x.deps.lines, undefined)
+  x.runtimeLine = ANGULAR_LINES.find(line => line.key === 'runtime')
   return x
 }
 
 test('two line choices run as pre-phases in registry order, each with its own commit', async (t) => {
-  const x = await twoLineFixture(t, { choices: [syntheticChoice, withinChoice, toolchainChoice] })
+  const x = await twoLineFixture(t, { choices: [runtimeChoice, withinChoice, toolchainChoice] })
   assert.equal(await main([x.item.id, '--format', 'json'], x.c.io, x.deps), 0, x.c.err())
-  assert.deepEqual(x.events, ['project', 'context', 'toolchain', 'project', 'synthetic', 'project', 'evidence', 'staging', 'execute', 'commit'])
-  assert.equal(x.seen.synthetic.line, syntheticLine)
-  assert.deepEqual(x.seen.synthetic.choice, syntheticChoice)
-  assert.equal(x.seen.syntheticHead, x.seen.toolchainCommit.hash)
+  assert.deepEqual(x.events, ['project', 'context', 'toolchain', 'project', 'runtime', 'project', 'evidence', 'staging', 'execute', 'commit'])
+  assert.equal(x.seen.runtime.line, x.runtimeLine)
+  assert.deepEqual(x.seen.runtime.choice, runtimeChoice)
+  assert.equal(x.seen.runtimeHead, x.seen.toolchainCommit.hash)
   assert.deepEqual(x.seen.evidenceItem.choices, [withinChoice])
-  assert.deepEqual(x.seen.stagingManifest, x.seen.syntheticFiles['package.json'])
+  assert.deepEqual(x.seen.stagingManifest, x.seen.runtimeFiles['package.json'])
   const result = JSON.parse(x.c.out())
-  assert.deepEqual(result.actions.map(a => [a.strategy, a.outcome]), [['upgrade-angular-toolchain', 'applied'], ['upgrade-angular-synthetic', 'applied'], ['update-within-declared-range', 'applied']])
-  assert.deepEqual(result.commits.map(c => [c.hash, c.actionIndex]).slice(0, 2), [[x.seen.toolchainCommit.hash, 0], [x.seen.syntheticCommit.hash, 1]])
+  assert.deepEqual(result.actions.map(a => [a.strategy, a.outcome]), [['upgrade-angular-toolchain', 'applied'], ['upgrade-angular-runtime', 'applied'], ['update-within-declared-range', 'applied']])
+  assert.deepEqual(result.commits.map(c => [c.hash, c.actionIndex]).slice(0, 2), [[x.seen.toolchainCommit.hash, 0], [x.seen.runtimeCommit.hash, 1]])
   assert.deepEqual(result.commits.map(c => c.actionIndex), [0, 1, 2])
-  assert.match(result.commits[1].subject, /migrate synthetic line to 1\.0\.1/)
+  assert.match(result.commits[1].subject, /^deps: bump Angular runtime to 21\.2\.26$/)
   const { runGit } = await import('../src/git.js')
-  assert.equal((await runGit(x.f.root, ['rev-parse', `${result.commits[2].hash}^`])).trim(), x.seen.syntheticCommit.hash)
-  assert.equal((await runGit(x.f.root, ['rev-parse', `${x.seen.syntheticCommit.hash}^`])).trim(), x.seen.toolchainCommit.hash)
+  assert.equal((await runGit(x.f.root, ['rev-parse', `${result.commits[2].hash}^`])).trim(), x.seen.runtimeCommit.hash)
+  assert.equal((await runGit(x.f.root, ['rev-parse', `${x.seen.runtimeCommit.hash}^`])).trim(), x.seen.toolchainCommit.hash)
 })
 
 test('line-only findings commit every phase and keep the planned resolution', async (t) => {
-  const x = await twoLineFixture(t, { choices: [toolchainChoice, syntheticChoice], resolution: 'partial' })
+  const x = await twoLineFixture(t, { choices: [toolchainChoice, runtimeChoice], resolution: 'partial' })
   x.deps.createStagingProject = () => assert.fail('must not stage')
   x.deps.readEvidence = () => assert.fail('must not read evidence')
   assert.equal(await main([x.item.id, '--format', 'json'], x.c.io, x.deps), 0, x.c.err())
   const result = JSON.parse(x.c.out())
   assert.equal(result.resolution, 'partial')
-  assert.deepEqual(result.commits.map(c => [c.hash, c.actionIndex]), [[x.seen.toolchainCommit.hash, 0], [x.seen.syntheticCommit.hash, 1]])
-  assert.equal(await headOf(x.f.root), x.seen.syntheticCommit.hash)
+  assert.deepEqual(result.commits.map(c => [c.hash, c.actionIndex]), [[x.seen.toolchainCommit.hash, 0], [x.seen.runtimeCommit.hash, 1]])
+  assert.equal(await headOf(x.f.root), x.seen.runtimeCommit.hash)
 })
 
 test('a failure in the second phase keeps and names the first commit without restoring over it', async (t) => {
   const { readFile } = await import('node:fs/promises'), path = await import('node:path')
-  const x = await twoLineFixture(t, { choices: [toolchainChoice, syntheticChoice, withinChoice] })
+  const x = await twoLineFixture(t, { choices: [toolchainChoice, runtimeChoice, withinChoice] })
   const base = x.deps.migrateLine
   x.deps.migrateLine = async (args) => {
-    if (args.line === syntheticLine) {
+    if (args.line === x.runtimeLine) {
       args.guard.installedTreeMayHaveChanged = true
       throw Object.assign(new Error('nx migrate failed; inspect nx diagnostics. Working tree restored'), { stage: 'migration' })
     }
@@ -464,63 +464,63 @@ test('a failure in the second phase keeps and names the first commit without res
 
 test('a second-phase commit Git created before the migration failed is named with the first', async (t) => {
   const { readFile } = await import('node:fs/promises'), path = await import('node:path')
-  const x = await twoLineFixture(t, { choices: [toolchainChoice, syntheticChoice, withinChoice] })
+  const x = await twoLineFixture(t, { choices: [toolchainChoice, runtimeChoice, withinChoice] })
   const base = x.deps.migrateLine
   x.deps.migrateLine = async (args) => {
     const migrated = await base(args)
-    if (args.line === syntheticLine) throw Object.assign(new Error('Dependency files changed after commit'), { stage: 'commit', createdCommit: migrated.commit })
+    if (args.line === x.runtimeLine) throw Object.assign(new Error('Dependency files changed after commit'), { stage: 'commit', createdCommit: migrated.commit })
     return migrated
   }
   assert.equal(await main([x.item.id], x.c.io, x.deps), 1)
-  assert.equal(x.c.err(), `npm-dep-upgrade: commit: Dependency files changed after commit; completed commits: ${x.seen.toolchainCommit.hash}, ${x.seen.syntheticCommit.hash}. Dependency files were not restored over the synthetic commit; inspect Git state.\n`)
-  assert.equal(await headOf(x.f.root), x.seen.syntheticCommit.hash)
-  assert.deepEqual(await readFile(path.join(x.f.root, 'package.json')), x.seen.syntheticFiles['package.json'])
+  assert.equal(x.c.err(), `npm-dep-upgrade: commit: Dependency files changed after commit; completed commits: ${x.seen.toolchainCommit.hash}, ${x.seen.runtimeCommit.hash}. Dependency files were not restored over the runtime commit; inspect Git state.\n`)
+  assert.equal(await headOf(x.f.root), x.seen.runtimeCommit.hash)
+  assert.deepEqual(await readFile(path.join(x.f.root, 'package.json')), x.seen.runtimeFiles['package.json'])
 })
 
 test('a failure after every phase names all phase commits and the last phase', async (t) => {
-  const x = await twoLineFixture(t, { choices: [toolchainChoice, syntheticChoice, withinChoice] })
+  const x = await twoLineFixture(t, { choices: [toolchainChoice, runtimeChoice, withinChoice] })
   x.deps.executeActions = async () => {
     throw Object.assign(new Error('Cannot resolve selected upgrades'), { stage: 'resolution' })
   }
   assert.equal(await main([x.item.id], x.c.io, x.deps), 1)
-  assert.equal(x.c.err(), `npm-dep-upgrade: resolution: Cannot resolve selected upgrades; completed commits: ${x.seen.toolchainCommit.hash}, ${x.seen.syntheticCommit.hash}. Dependency files were not changed after the synthetic commit.\n`)
-  assert.equal(await headOf(x.f.root), x.seen.syntheticCommit.hash)
+  assert.equal(x.c.err(), `npm-dep-upgrade: resolution: Cannot resolve selected upgrades; completed commits: ${x.seen.toolchainCommit.hash}, ${x.seen.runtimeCommit.hash}. Dependency files were not changed after the runtime commit.\n`)
+  assert.equal(await headOf(x.f.root), x.seen.runtimeCommit.hash)
 })
 
 test('the target removed by the first phase skips later phases and reports them already satisfied', async (t) => {
-  const x = await twoLineFixture(t, { choices: [toolchainChoice, syntheticChoice, withinChoice], targetGone: true, resolution: 'partial' })
+  const x = await twoLineFixture(t, { choices: [toolchainChoice, runtimeChoice, withinChoice], targetGone: true, resolution: 'partial' })
   x.deps.createStagingProject = () => assert.fail('must not stage')
   x.deps.readEvidence = () => assert.fail('must not read evidence')
   assert.equal(await main([x.item.id, '--format', 'json'], x.c.io, x.deps), 0, x.c.err())
   assert.deepEqual(x.events, ['project', 'context', 'toolchain', 'project'])
   const result = JSON.parse(x.c.out())
   assert.equal(result.resolution, 'complete')
-  assert.deepEqual(result.actions.map(a => [a.strategy, a.outcome]), [['upgrade-angular-toolchain', 'applied'], ['upgrade-angular-synthetic', 'already-satisfied'], ['update-within-declared-range', 'already-satisfied']])
+  assert.deepEqual(result.actions.map(a => [a.strategy, a.outcome]), [['upgrade-angular-toolchain', 'applied'], ['upgrade-angular-runtime', 'already-satisfied'], ['update-within-declared-range', 'already-satisfied']])
   assert.deepEqual(result.commits.map(c => [c.hash, c.actionIndex]), [[x.seen.toolchainCommit.hash, 0]])
 })
 
 test('a later line choice keeps only consumers still on the target and is skipped when none remain', async (t) => {
-  const mixed = { ...syntheticChoice, affectedConsumers: [...syntheticChoice.affectedConsumers, goneConsumer] }
+  const mixed = { ...runtimeChoice, affectedConsumers: [...runtimeChoice.affectedConsumers, goneConsumer] }
   const kept = await twoLineFixture(t, { choices: [toolchainChoice, mixed, withinChoice] })
   assert.equal(await main([kept.item.id, '--format', 'json'], kept.c.io, kept.deps), 0, kept.c.err())
-  assert.deepEqual(kept.seen.synthetic.choice, syntheticChoice)
+  assert.deepEqual(kept.seen.runtime.choice, runtimeChoice)
   assert.deepEqual(JSON.parse(kept.c.out()).commits.map(c => c.actionIndex), [0, 1, 2])
 
-  const gone = { ...syntheticChoice, affectedConsumers: [goneConsumer] }
+  const gone = { ...runtimeChoice, affectedConsumers: [goneConsumer] }
   const x = await twoLineFixture(t, { choices: [toolchainChoice, gone, withinChoice] })
   assert.equal(await main([x.item.id, '--format', 'json'], x.c.io, x.deps), 0, x.c.err())
-  assert.ok(!x.events.includes('synthetic'))
+  assert.ok(!x.events.includes('runtime'))
   const result = JSON.parse(x.c.out())
-  assert.deepEqual(result.actions.map(a => [a.strategy, a.outcome]), [['upgrade-angular-toolchain', 'applied'], ['upgrade-angular-synthetic', 'already-satisfied'], ['update-within-declared-range', 'applied']])
+  assert.deepEqual(result.actions.map(a => [a.strategy, a.outcome]), [['upgrade-angular-toolchain', 'applied'], ['upgrade-angular-runtime', 'already-satisfied'], ['update-within-declared-range', 'applied']])
   assert.deepEqual(result.actions[1].affectedConsumers, [goneConsumer])
   assert.deepEqual(result.commits.map(c => c.actionIndex), [0, 2])
 })
 
 async function secondPhaseFails(t, failure) {
-  const x = await twoLineFixture(t, { choices: [toolchainChoice, syntheticChoice, withinChoice] })
+  const x = await twoLineFixture(t, { choices: [toolchainChoice, runtimeChoice, withinChoice] })
   const base = x.deps.migrateLine
   x.deps.migrateLine = async (args) => {
-    if (args.line !== syntheticLine) return base(args)
+    if (args.line !== x.runtimeLine) return base(args)
     args.guard.installedTreeMayHaveChanged = true
     throw failure()
   }

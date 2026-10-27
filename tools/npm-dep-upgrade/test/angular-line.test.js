@@ -97,3 +97,68 @@ test('an object-form devkit override updated by setLineOverrides passes the mani
   wrong.overrides['@angular-devkit/core']['.'] = '19.1.0'
   assert.throws(() => check(line, JSON.parse(text), wrong, '19.2.0'), error => error.code === 'UNEXPECTED_MANIFEST_CHANGE')
 })
+
+const runtime = ANGULAR_LINES.find(entry => entry.key === 'runtime')
+const RUNTIME_DEPS = ['@angular/common', '@angular/compiler', '@angular/core', '@angular/forms', '@angular/platform-browser', '@angular/router']
+const runtimeChoice = { currentVersion: '21.2.25', targetVersion: '21.2.26' }
+
+test('runtime release selection keeps the planned release, falls back to the lowest newer same-major one and keeps the codes', () => {
+  assert.deepEqual(selectLineRelease(runtime, runtimeChoice, catalog({ '21.2.25': old, '21.2.26': old }), [], NOW), { version: '21.2.26', releasedAt: '2026-01-01T00:00:00.000Z' })
+  const times = { '21.2.26': old, '21.2.27': '2026-10-25T00:00:00Z', '21.2.28': old, '22.0.0': old }
+  assert.equal(selectLineRelease(runtime, runtimeChoice, catalog(times), [{ range: '21.2.26' }], NOW).version, '21.2.28')
+  assert.throws(() => selectLineRelease(runtime, runtimeChoice, catalog({ '21.2.26': '2026-10-25T00:00:00Z' }), [], NOW), error => code('RELEASE_AGE')(error) && /Planned runtime release has insufficient release age/.test(error.message))
+  assert.throws(() => selectLineRelease(runtime, runtimeChoice, catalog({ '21.2.25': old }), [], NOW), error => code('NO_CANDIDATE')(error) && /Planned runtime release is not in the registry catalog/.test(error.message))
+  assert.throws(() => selectLineRelease(runtime, runtimeChoice, catalog({ '21.2.26': old, '22.0.0': old }), [{ range: '21.2.26' }], NOW), code('NO_CANDIDATE'))
+})
+
+const runtimeManifest = (version = '21.2.25', overrides = { '@angular/platform-browser-dynamic': version }) => ({
+  dependencies: { ...Object.fromEntries(RUNTIME_DEPS.map(name => [name, version])), 'left-pad': '1.3.0' },
+  devDependencies: { '@angular/build': '21.2.27', '@angular/cli': '21.2.27', '@angular/compiler-cli': version },
+  overrides,
+})
+const migratedRuntime = (version = '21.2.26') => {
+  const after = runtimeManifest()
+  for (const name of RUNTIME_DEPS) after.dependencies[name] = version
+  after.devDependencies['@angular/compiler-cli'] = version
+  after.overrides['@angular/platform-browser-dynamic'] = version
+  return after
+}
+
+test('the seven runtime members and the override at the target pass the runtime check', () => {
+  assert.equal(check(runtime, runtimeManifest(), migratedRuntime(), '21.2.26'), undefined)
+  const withoutOverride = migratedRuntime()
+  delete withoutOverride.overrides['@angular/platform-browser-dynamic']
+  assert.equal(check(runtime, runtimeManifest('21.2.25', {}), { ...withoutOverride, overrides: {} }, '21.2.26'), undefined)
+})
+
+test('runtime changes outside the allowlist or at another version fail, with no unchecked member', () => {
+  const bad = (mutate, pattern) => {
+    const after = migratedRuntime()
+    mutate(after)
+    assert.throws(() => check(runtime, runtimeManifest(), after, '21.2.26'), error => error.code === 'UNEXPECTED_MANIFEST_CHANGE' && error.stage === 'verification' && pattern.test(error.message))
+  }
+  bad(after => Object.assign(after.devDependencies, { '@angular/cli': '21.2.28' }), /@angular\/cli in devDependencies/)
+  bad(after => Object.assign(after.devDependencies, { '@angular/build': '21.2.28' }), /@angular\/build in devDependencies/)
+  bad(after => Object.assign(after.dependencies, { '@angular/animations': '21.2.26' }), /@angular\/animations in dependencies/)
+  bad(after => Object.assign(after.dependencies, { '@angular/forms': '21.2.27' }), /@angular\/forms in dependencies must be 21\.2\.26/)
+  bad(after => Object.assign(after.devDependencies, { '@angular/compiler-cli': '21.2.25-rc.0' }), /@angular\/compiler-cli in devDependencies must be 21\.2\.26/)
+  bad(after => Object.assign(after.overrides, { '@angular/platform-browser-dynamic': '21.2.27' }), /@angular\/platform-browser-dynamic in overrides must be 21\.2\.26/)
+  bad(after => Object.assign(after.overrides, { '@angular-devkit/core': '21.2.26' }), /@angular-devkit\/core in overrides/)
+  bad((after) => {
+    delete after.dependencies['@angular/router']
+  }, /@angular\/router in dependencies must be 21\.2\.26/)
+})
+
+test('the runtime override is updated only when present, in string or object form, preserving formatting', () => {
+  const crlf = '{\r\n\t"name": "webapp",\r\n\t"overrides": {\r\n\t\t"@angular/platform-browser-dynamic": "21.2.25",\r\n\t\t"@angular-devkit/core": "21.2.25"\r\n\t}\r\n}'
+  assert.equal(setLineOverrides(runtime, crlf, '21.2.26'), crlf.replace('"21.2.25",', '"21.2.26",'))
+  const lf = '{\n    "overrides": {\n        "@angular/platform-browser-dynamic": "21.2.25"\n    }\n}\n'
+  assert.equal(setLineOverrides(runtime, lf, '21.2.26'), lf.replace('21.2.25', '21.2.26'))
+  assert.equal(setLineOverrides(runtime, '{"overrides":{"@angular/platform-browser-dynamic":{".":"21.2.25","rxjs":"7.8.0"}}}', '21.2.26'), '{"overrides":{"@angular/platform-browser-dynamic":{".":"21.2.26","rxjs":"7.8.0"}}}')
+  assert.equal(setLineOverrides(runtime, '{"overrides":{"@angular-devkit/core":"21.2.25"}}', '21.2.26'), null)
+  assert.equal(setLineOverrides(runtime, '{"name":"webapp"}', '21.2.26'), null)
+  // The webapp entry is stale (nothing depends on it and the lockfile has no entry); it is still kept at the target.
+  const stale = '{\n  "dependencies": {\n    "@angular/core": "21.2.26"\n  },\n  "overrides": {\n    "@angular/platform-browser-dynamic": "20.0.0"\n  }\n}\n'
+  assert.equal(setLineOverrides(runtime, stale, '21.2.26'), stale.replace('20.0.0', '21.2.26'))
+  assert.throws(() => setLineOverrides(runtime, '{"overrides":{"@angular/platform-browser-dynamic":{"rxjs":"7.8.0"}}}', '21.2.26'), error => error.code === 'UNSUPPORTED_OVERRIDE')
+})

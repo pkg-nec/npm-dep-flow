@@ -64,11 +64,19 @@ function parseJson(bytes, name) {
   catch { fail('INVALID_PROJECT', 'verification', `Invalid ${name}`) }
 }
 
+const ROOT_FIELDS = ['devDependencies', 'dependencies']
+// The line members the root declares, the anchor first; the planner only offers a line whose members share one version.
+const declaredMembers = (line, manifest) => [line.anchor, ...line.members.filter(name => name !== line.anchor)].filter(name => ROOT_FIELDS.some(field => Object.hasOwn(manifest[field] || {}, name)))
+
+// Every member the root declares must reach the target; a member nx left behind would otherwise pass unnoticed.
 function verifyManifest(line, beforeManifest, afterText, version) {
   const after = parseJson(afterText, 'package.json')
   checkManifestChanges(line, beforeManifest, after, version)
-  const field = ['devDependencies', 'dependencies'].find(name => Object.hasOwn(beforeManifest[name] || {}, line.anchor))
-  if (!field || after[field]?.[line.anchor] !== version) fail('UNEXPECTED_MANIFEST_CHANGE', 'verification', `${line.anchor} was not migrated to ${version}`)
+  if (!ROOT_FIELDS.some(field => Object.hasOwn(beforeManifest[field] || {}, line.anchor))) fail('UNEXPECTED_MANIFEST_CHANGE', 'verification', `${line.anchor} was not migrated to ${version}`)
+  for (const name of declaredMembers(line, beforeManifest)) {
+    const field = ROOT_FIELDS.find(candidate => Object.hasOwn(beforeManifest[candidate] || {}, name))
+    if (after[field]?.[name] !== version) fail('UNEXPECTED_MANIFEST_CHANGE', 'verification', `${name} was not migrated to ${version}`)
+  }
 }
 
 const entryName = (location, entry) => entry.name || location.slice(location.lastIndexOf('node_modules/') + 'node_modules/'.length)
@@ -192,7 +200,10 @@ export async function migrateLine({ line, guard, project, item, choice, context,
     await expectChanged(guard, ['package.json', 'package-lock.json'], 'UNEXPECTED_FILE_CHANGE', 'install')
     const after = await readDependencyFiles(root)
     verifyManifest(line, beforeManifest, after['package.json'].toString('utf8'), version)
-    if (parseJson(after['package-lock.json'], 'package-lock.json').packages?.[choice.targetLocation]?.version !== version) fail('TARGET_MISMATCH', 'verification', `${line.anchor} did not install at ${version}`)
+    // A forced install accepts peer conflicts, so every declared member is checked in the lockfile, not only the anchor.
+    const installedPackages = parseJson(after['package-lock.json'], 'package-lock.json').packages || {}
+    if (installedPackages[choice.targetLocation]?.version !== version) fail('TARGET_MISMATCH', 'verification', `${line.anchor} did not install at ${version}`)
+    for (const name of declaredMembers(line, beforeManifest)) if (installedPackages[`node_modules/${name}`]?.version !== version) fail('TARGET_MISMATCH', 'verification', `${name} did not install at ${version}`)
     await verify({ line, item, choice, version, before, after, beforeGraph, advisories, context, root, adapters })
     await recordOwnedFiles(guard, after)
     const committed = await commit(guard, after, { package: line.anchor, oldVersion: choice.currentVersion, newVersion: version, strategy: line.strategy, description: line.description(version) }, options)

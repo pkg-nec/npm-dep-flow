@@ -163,3 +163,30 @@ test('splitLines and selectItem follow an injected line registry', () => {
   assert.deepEqual(lines.map(entry => [entry.line, entry.choice]), [[registry[0], toolchain], [synthetic, extra]])
   assert.deepEqual(rest.choices, [row.choices[0]])
 })
+
+const runtime = { strategy: 'upgrade-angular-runtime', targetPackage: '@angular/core', targetLocation: 'node_modules/@angular/core', currentVersion: '21.2.25', targetVersion: '21.2.26', affectedConsumers: [{ location: 'node_modules/@angular/core', requestedName: '@e2e/target', type: 'dependencies' }] }
+test('the Angular runtime strategy is accepted, selected and split out after the toolchain', () => {
+  const r = validatePlanner(report([toolchainRow(runtime)]))
+  assert.equal(selectItem(r, id).choices.at(-1), runtime)
+  validatePlanner(report([toolchainRow({ ...runtime, affectedConsumers: [{ location: '', requestedName: '@angular/core', type: 'dependencies' }] })]))
+  const both = { ...row, choices: [runtime, row.choices[0], toolchain] }
+  validatePlanner(report([{ ...both, resolution: 'partial' }]))
+  const { lines, rest } = splitLines(selectItem(report([both]), id))
+  assert.deepEqual(lines.map(entry => [entry.line, entry.choice]), [[lineOfStrategy(TOOLCHAIN_STRATEGY), toolchain], [lineOfStrategy('upgrade-angular-runtime'), runtime]])
+  assert.deepEqual(rest.choices, [row.choices[0]])
+})
+test('malformed Angular runtime choices are rejected', () => {
+  for (const choice of [
+    { ...runtime, targetPackage: '@angular/cli' },
+    { ...runtime, targetPackage: '@angular/cli', targetLocation: 'node_modules/@angular/cli' },
+    { ...runtime, targetLocation: 'node_modules/x/node_modules/@angular/core' },
+    { ...runtime, targetVersion: '22.0.0' },
+    { ...runtime, targetVersion: '21.2.25' },
+    { ...runtime, targetVersion: '21.2.24' },
+    { ...runtime, currentVersion: 'bad' },
+    { ...runtime, affectedConsumers: [] },
+  ]) assert.throws(() => validatePlanner(report([toolchainRow(choice)])), /Invalid Angular runtime choice|Invalid or unsupported planner choice/)
+  const second = { ...runtime, targetVersion: '21.2.27', affectedConsumers: [{ location: 'node_modules/@angular/compiler', requestedName: '@e2e/target', type: 'dependencies' }] }
+  assert.throws(() => validatePlanner(report([toolchainRow(runtime, [second])])), /More than one Angular runtime choice/)
+  assert.throws(() => splitLines({ ...row, choices: [runtime, toolchain, second] }), error => error.code === 'INVALID_PLAN' && /runtime/.test(error.message))
+})
