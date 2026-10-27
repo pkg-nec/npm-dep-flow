@@ -36,6 +36,19 @@ const declared = (manifest, field) => {
   return value && typeof value === 'object' && !Array.isArray(value) ? value : {}
 }
 
+const isObject = value => !!value && typeof value === 'object' && !Array.isArray(value)
+
+// An object-form override pins the package at its "." key; every other key must stay as it was.
+function checkNestedOverride(name, before, after, version) {
+  const oldEntry = isObject(before) ? before : {}
+  const newEntry = isObject(after) ? after : {}
+  for (const key of new Set([...Object.keys(oldEntry), ...Object.keys(newEntry)])) {
+    if (key === '.') continue
+    if (Object.hasOwn(oldEntry, key) !== Object.hasOwn(newEntry, key) || JSON.stringify(oldEntry[key]) !== JSON.stringify(newEntry[key])) fail('UNEXPECTED_MANIFEST_CHANGE', 'verification', `Unexpected change to ${key} in the override for ${name}`)
+  }
+  if (name !== ARCHITECT && newEntry['.'] !== version) fail('UNEXPECTED_MANIFEST_CHANGE', 'verification', `${name} in overrides must be ${version}`)
+}
+
 // Only allowlisted toolchain packages may change, and (except architect) only to the selected version.
 export function checkManifestChanges(beforeManifest, afterManifest, version) {
   for (const field of FIELDS) {
@@ -45,7 +58,9 @@ export function checkManifestChanges(beforeManifest, afterManifest, version) {
       const unchanged = Object.hasOwn(before, name) === Object.hasOwn(after, name) && JSON.stringify(before[name]) === JSON.stringify(after[name])
       if (unchanged) continue
       if (!ALLOWLIST.includes(name)) fail('UNEXPECTED_MANIFEST_CHANGE', 'verification', `Unexpected change to ${name} in ${field}`)
-      if (name !== ARCHITECT && after[name] !== version) fail('UNEXPECTED_MANIFEST_CHANGE', 'verification', `${name} in ${field} must be ${version}`)
+      const nested = field === 'overrides' && (isObject(before[name]) || isObject(after[name]))
+      if (nested) checkNestedOverride(name, before[name], after[name], version)
+      else if (name !== ARCHITECT && after[name] !== version) fail('UNEXPECTED_MANIFEST_CHANGE', 'verification', `${name} in ${field} must be ${version}`)
     }
   }
 }

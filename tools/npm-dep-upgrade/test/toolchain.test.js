@@ -29,7 +29,7 @@ test('a now vulnerable planned release gives way to the lowest newer clean same-
 
 test('a different major is never chosen', () => {
   const times = { '19.2.0': old, '20.0.0': old }
-  assert.throws(() => selectToolchainRelease(choice, catalog(times), [{ range: '19.2.0' }], NOW), /./)
+  assert.throws(() => selectToolchainRelease(choice, catalog(times), [{ range: '19.2.0' }], NOW), error => error.code === 'NO_CANDIDATE' && error.stage === 'selection')
 })
 
 test('the before cutoff is respected', () => {
@@ -82,4 +82,16 @@ test('an absent override returns null and an object override uses its dot key', 
   assert.equal(setDevkitOverride('{"name":"a"}', '19.2.0'), null)
   assert.equal(setDevkitOverride('{"overrides":{"@angular-devkit/core":{".":"19.0.0","x":"1.0.0"}}}', '19.2.0'), '{"overrides":{"@angular-devkit/core":{".":"19.2.0","x":"1.0.0"}}}')
   assert.throws(() => setDevkitOverride('{"overrides":{"@angular-devkit/core":{"x":"1.0.0"}}}', '19.2.0'), error => error.code === 'UNSUPPORTED_OVERRIDE')
+})
+
+test('an object-form devkit override updated by setDevkitOverride passes the manifest check; a changed sibling fails', () => {
+  const text = '{"overrides":{"@angular-devkit/core":{".":"19.0.0","x":"1.0.0"}}}'
+  const updated = setDevkitOverride(text, '19.2.0')
+  assert.equal(checkManifestChanges(JSON.parse(text), JSON.parse(updated), '19.2.0'), undefined)
+  const sibling = JSON.parse(updated)
+  sibling.overrides['@angular-devkit/core'].x = '2.0.0'
+  assert.throws(() => checkManifestChanges(JSON.parse(text), sibling, '19.2.0'), error => error.code === 'UNEXPECTED_MANIFEST_CHANGE')
+  const wrong = JSON.parse(updated)
+  wrong.overrides['@angular-devkit/core']['.'] = '19.1.0'
+  assert.throws(() => checkManifestChanges(JSON.parse(text), wrong, '19.2.0'), error => error.code === 'UNEXPECTED_MANIFEST_CHANGE')
 })
