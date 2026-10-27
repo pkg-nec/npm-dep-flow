@@ -99,7 +99,10 @@ export function computeCoverage(before, after, item, semver) {
     ;
     (affected ? remainingConsumers : clearedConsumers).push({ location: e.from, requestedName: e.requestedName, type: e.type })
   }
-  return { resolution: !clearedConsumers.length ? 'none' : remainingConsumers.length ? 'partial' : 'complete', clearedConsumers, remainingConsumers }
+  let resolution = 'complete'
+  if (!clearedConsumers.length) resolution = 'none'
+  else if (remainingConsumers.length) resolution = 'partial'
+  return { resolution, clearedConsumers, remainingConsumers }
 }
 export function choiceSatisfied(current, choice, item, semver) {
   const nodes = new Map(current.nodes.map(n => [n.location, n]))
@@ -126,7 +129,10 @@ export function matchesSelectedScope(before, probe, targetLocation, affectedCons
 function mergeRule(base, route, name, version, nodes, rootEdges, semver) {
   const location = route[0], n = nodes.get(location), selector = `${n.name}@${n.version}`
   const old = base[selector]
-  let value = old === undefined ? {} : typeof old === 'string' ? { '.': old } : structuredClone(old)
+  let value
+  if (old === undefined) value = {}
+  else if (typeof old === 'string') value = { '.': old }
+  else value = structuredClone(old)
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Unsupported override scope')
   const rootEdge = rootEdges.find(e => e.to === location)
   if (rootEdge && !Object.hasOwn(value, '.')) value['.'] = `$${rootEdge.requestedName}`

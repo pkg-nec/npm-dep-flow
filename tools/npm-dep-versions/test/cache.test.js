@@ -13,7 +13,10 @@ async function fixture(t) {
     calls++
     return { schemaVersion: 2, package: 'pkg', fetchedAt: new Date(now).toISOString(), rows: [{ version: '1.0.0', releasedAt: null }] }
   }
-  return { options, compute, time: n => now = n, calls: () => calls, file: async () => join(cacheRoot, (await readdir(cacheRoot)).find(n => n.startsWith('catalog-'))) }
+  const time = (n) => {
+    now = n
+  }
+  return { options, compute, time, calls: () => calls, file: async () => join(cacheRoot, (await readdir(cacheRoot)).find(n => n.startsWith('catalog-'))) }
 }
 test('catalog TTL is measured from original fetch and bypass leaves old bytes untouched', async (t) => {
   const f = await fixture(t)

@@ -3,7 +3,19 @@ import test from 'node:test'
 import { main } from '../src/cli.js'
 const capture = () => {
   let stdout = '', stderr = ''
-  return { io: { stdout: { write: s => stdout += s }, stderr: { write: s => stderr += s } }, out: () => stdout, err: () => stderr }
+  const io = {
+    stdout: {
+      write: (s) => {
+        stdout += s
+      },
+    },
+    stderr: {
+      write: (s) => {
+        stderr += s
+      },
+    },
+  }
+  return { io, out: () => stdout, err: () => stderr }
 }
 test('help/version bypass project mutation and argument failures emit no success report', async () => {
   const c = capture()

@@ -3,7 +3,7 @@ import { PARENT_STRATEGY } from './ancestors.js'
 
 const isParent = choice => choice.strategy === PARENT_STRATEGY
 const choiceKey = choice => JSON.stringify([choice.strategy, choice.targetPackage, choice.targetLocation, choice.targetVersion])
-const compareText = (a, b) => (a < b ? -1 : a > b ? 1 : 0)
+const compareText = (a, b) => (Number(a > b) - Number(a < b))
 
 function consumersOf(row, targetLocation) {
   const consumers = new Map()

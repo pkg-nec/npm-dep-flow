@@ -1,4 +1,4 @@
-const compare = (a, b) => a < b ? -1 : a > b ? 1 : 0
+const compare = (a, b) => Number(a > b) - Number(a < b)
 const edgeKey = edge => JSON.stringify([edge.from, edge.to, edge.requestedName, edge.type, edge.spec])
 
 function reverseEdges(graph) {

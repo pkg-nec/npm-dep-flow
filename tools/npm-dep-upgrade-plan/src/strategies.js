@@ -35,7 +35,7 @@ export function safeStableVersions(row, stableVersions) {
   candidates.sort((left, right) => {
     const bySemver = semver.compare(left, right)
     if (bySemver !== 0) return bySemver
-    return left < right ? -1 : left > right ? 1 : 0
+    return Number(left > right) - Number(left < right)
   })
 
   return candidates.filter(candidate =>

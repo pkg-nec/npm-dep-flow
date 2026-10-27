@@ -37,7 +37,7 @@ export function normalizeTimestamp(value) {
 export const packageNamePattern = /^(?:[a-z0-9][a-z0-9._~-]*|@[a-z0-9][a-z0-9._~-]*\/[a-z0-9][a-z0-9._~-]*)$/i
 
 export function compareRows(a, b) {
-  return semver.compare(a.version, b.version) || (a.version < b.version ? -1 : a.version > b.version ? 1 : 0)
+  return semver.compare(a.version, b.version) || (Number(a.version > b.version) - Number(a.version < b.version))
 }
 
 export function normalizeCatalogResponse(raw) {

@@ -18,7 +18,15 @@ Alternatively, run `npm ci --ignore-scripts`, `npm run lint`, or `npm run lint:f
 
 The shared flat configuration is `dev-tooling/eslint.config.mjs`. The commands supply it explicitly and lint source, executables, tests, and test helpers across `npm-dep-paths`, `npm-dep-audit`, `npm-dep-upgrade-plan`, `npm-dep-versions`, and `npm-dep-upgrade`, plus development-tooling JavaScript. It configures Node.js globals, ESM for `.js`/`.mjs`, and CommonJS for `.cjs`. Generated `node_modules`, `tmp`, `coverage`, `dist`, and `.cache` directories are excluded.
 
-Use the unchanged `@eslint/js` recommended and `@stylistic/eslint-plugin` recommended configurations. Keep their upstream style defaults; do not add personal rule overrides, rule-disable comments to bypass findings, or Prettier. Keep the pinned versions and lockfile in sync when updating lint dependencies.
+Use the unchanged `@eslint/js` recommended and `@stylistic/eslint-plugin` recommended configurations. Keep their upstream style defaults; do not add personal rule overrides, rule-disable comments to bypass findings, or Prettier.
+
+On top of those two sets, the shared configuration enables additional readability rules in a dedicated `rules` block. Add a rule there only if neither recommended configuration already sets it, and never change the severity or options of a recommended rule. The additional rules are:
+
+- Simpler control flow: `no-else-return`, `no-lonely-if`, `no-negated-condition`, `no-nested-ternary`, `no-unneeded-ternary`, `no-useless-return`, `default-case-last`.
+- Clearer expressions and assignments: `eqeqeq` (comparisons with `null` are exempt, so `== null` still checks `null` and `undefined`), `yoda`, `dot-notation`, `no-multi-assign`, `no-return-assign`, `no-useless-concat`, `no-useless-rename`, `prefer-exponentiation-operator`, `prefer-regex-literals`.
+- Modern, predictable declarations: `no-var`, `prefer-const`, `object-shorthand`, `prefer-arrow-callback`, `prefer-object-spread`, `default-param-last`, `no-use-before-define` (hoisted function declarations are exempt).
+
+Fix a finding in the code instead of disabling its rule; for example, replace a nested ternary with `if`/`else`, a lookup object, or a helper function. Keep the pinned versions and lockfile in sync when updating lint dependencies.
 
 Every future JavaScript change must pass shared lint with zero warnings. Pull requests must pass the GitHub Actions `lint` job and the tool test checks before merging. The lint workflow runs on every pull request targeting `main` and every push to `main`, including changes only to shared configuration or documentation.
 

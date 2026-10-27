@@ -3,7 +3,7 @@ import path from 'node:path'
 import { startRegistry } from './registry.js'
 import { createCommandPath, checked } from './commands.js'
 export const scratchRoot = process.env.NPM_DEP_FLOW_TEST_TMPDIR || process.env.TMPDIR || '/home/maw/src/nrc/npm-dep-flow-impl/tmp'
-export async function createProject(scenario, runtime = {}, t) {
+export async function createProject(scenario, runtime, t) {
   await mkdir(scratchRoot, { recursive: true })
   const scratch = await mkdtemp(path.join(scratchRoot, 'e2e-upgrade-'))
   const registry = await startRegistry(scenario)

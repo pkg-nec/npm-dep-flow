@@ -44,7 +44,10 @@ export function verifyCoverage(evidence, currentGraph) {
     if (affected) remainingConsumers.push(consumer)
     else clearedConsumers.push(consumer)
   }
-  return { resolution: !clearedConsumers.length ? 'none' : remainingConsumers.length ? 'partial' : 'complete', clearedConsumers, remainingConsumers }
+  let resolution = 'complete'
+  if (!clearedConsumers.length) resolution = 'none'
+  else if (remainingConsumers.length) resolution = 'partial'
+  return { resolution, clearedConsumers, remainingConsumers }
 }
 
 export function verifyInstalledGraph(expected, actual) {

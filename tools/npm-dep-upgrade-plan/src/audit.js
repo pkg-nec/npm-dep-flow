@@ -84,7 +84,7 @@ export async function runNpmDepAudit(projectRoot, spawnImpl = spawn, platform = 
   try {
     result = await runProcess(
       'npm-dep-audit',
-      ['.', '--min-severity', 'info', '--format', 'json', ...(ttlMs !== 3600000 ? ['--cache-ttl', `${ttlMs / 1000}s`] : []), ...(noCache ? ['--no-cache'] : []), ...(clearCache ? ['--clear-cache'] : [])],
+      ['.', '--min-severity', 'info', '--format', 'json', ...(ttlMs === 3600000 ? [] : ['--cache-ttl', `${ttlMs / 1000}s`]), ...(noCache ? ['--no-cache'] : []), ...(clearCache ? ['--clear-cache'] : [])],
       projectRoot,
       spawnImpl,
       platform,

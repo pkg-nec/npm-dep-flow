@@ -22,7 +22,7 @@ const strategyLabels = new Map([
 function compareText(left, right) {
   const a = String(left)
   const b = String(right)
-  return a < b ? -1 : a > b ? 1 : 0
+  return Number(a > b) - Number(a < b)
 }
 
 function compareVersion(left, right) {

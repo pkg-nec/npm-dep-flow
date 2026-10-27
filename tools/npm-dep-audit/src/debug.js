@@ -42,7 +42,11 @@ function argumentsForLog(args) {
 }
 
 function context() {
-  return scope.getStore() ?? (process.env.NPM_DEP_FLOW_DEBUG === '1' ? inheritedContext ??= { enabled: true, io: process, next: 0 } : undefined)
+  const stored = scope.getStore()
+  if (stored != null) return stored
+  if (process.env.NPM_DEP_FLOW_DEBUG !== '1') return undefined
+  inheritedContext ??= { enabled: true, io: process, next: 0 }
+  return inheritedContext
 }
 
 function write(ctx, message) {

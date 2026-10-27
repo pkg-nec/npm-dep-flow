@@ -5,7 +5,18 @@ import { renderJson } from '../src/report.js'
 test('planner verifies split coverage and propagates resolver failures without partial stdout', async () => {
   const row = { package: 'a', version: '1.2.3', severity: 'high', advisories: [{ range: '<1.2.5' }], requirements: ['1.2.3', '^1.2.0'].map((spec, i) => ({ declaredRequirement: spec, directDependents: [{ location: `node_modules/p${i}`, targetLocation: 'node_modules/a', requestedName: 'a', type: 'dependencies' }] })) }
   let stdout = '', stderr = '', seen = []
-  const io = { stdout: { write: s => stdout += s }, stderr: { write: s => stderr += s } }
+  const io = {
+    stdout: {
+      write: (s) => {
+        stdout += s
+      },
+    },
+    stderr: {
+      write: (s) => {
+        stderr += s
+      },
+    },
+  }
   const deps = { loadProject: async root => ({ root }), runNpmDepAudit: async () => ({ auditedAt: new Date().toISOString(), rows: [row] }), runNpmDepVersions: async () => ({ versions: ['1.2.5'], fetchedAt: new Date().toISOString() }), resolveChoices: async (project, item, choices, options) => {
     seen = [item, choices, options]
     return { choices, coverage: { resolution: 'partial' }, freshAt: Date.now() }
@@ -26,7 +37,14 @@ test('planner verifies split coverage and propagates resolver failures without p
 test('a finding whose jointly resolved coverage is none never carries choices', async () => {
   const row = { package: 'a', version: '1.2.3', severity: 'high', advisories: [{ range: '<1.2.5' }], requirements: ['1.2.3', '^1.2.0'].map((spec, i) => ({ declaredRequirement: spec, directDependents: [{ location: `node_modules/p${i}`, targetLocation: 'node_modules/a', type: 'dependencies', requestedName: 'a', name: `p${i}`, version: '1.0.0' }] })) }
   let stdout = ''
-  const io = { stdout: { write: s => stdout += s }, stderr: { write: () => {} } }
+  const io = {
+    stdout: {
+      write: (s) => {
+        stdout += s
+      },
+    },
+    stderr: { write: () => {} },
+  }
   const deps = {
     loadProject: async root => ({ root }), runNpmDepAudit: async () => ({ auditedAt: new Date().toISOString(), rows: [row] }),
     runNpmDepVersions: async () => ({ versions: ['1.2.5'], fetchedAt: new Date().toISOString() }),

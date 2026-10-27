@@ -3,9 +3,10 @@ import assert from 'node:assert/strict'
 import { readPlanningContext } from '../src/context.js'
 
 function runner(config, versions = {}) {
-  return async (command, args) => ({ code: 0, stdout: command === 'npm'
-    ? args[0] === '--version' ? '12.1.0' : JSON.stringify(config)
-    : `${command} v${versions[command] || '1.0.0'}\nLocation: /tools/${command}` })
+  return async (command, args) => {
+    if (command === 'npm') return { code: 0, stdout: args[0] === '--version' ? '12.1.0' : JSON.stringify(config) }
+    return { code: 0, stdout: `${command} v${versions[command] || '1.0.0'}\nLocation: /tools/${command}` }
+  }
 }
 
 test('effective scoped registry and tool changes invalidate identity without persisting secrets', async () => {

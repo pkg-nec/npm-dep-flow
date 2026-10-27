@@ -4,7 +4,7 @@ import { stableVersion, normalizeTimestamp } from './registry.js'
 import { fail } from './errors.js'
 import { DAY_MS, PARENT_STRATEGY } from './model.js'
 
-const compareText = (a, b) => (a < b ? -1 : a > b ? 1 : 0)
+const compareText = (a, b) => (Number(a > b) - Number(a < b))
 
 // An alias declaration (npm:name@range) constrains the real package by the range after the last '@'.
 function rangeOf(spec) {
@@ -35,7 +35,14 @@ export function orderChoices(item, evidence) {
     else fail('INVALID_PLAN', 'evidence', 'Parent choice is outside two ancestor levels of the selected installation')
   }
   const rank = entry => (entry.level === 0 ? Infinity : entry.level)
-  return entries.sort((a, b) => (rank(a) === rank(b) ? (a.level === 0 ? a.index - b.index : compareText(a.choice.targetLocation, b.choice.targetLocation) || compareText(a.choice.targetPackage, b.choice.targetPackage) || semver.compare(a.choice.targetVersion, b.choice.targetVersion)) : rank(a) < rank(b) ? -1 : 1))
+  const compareEntries = (a, b) => {
+    if (rank(a) === rank(b)) {
+      if (a.level === 0) return a.index - b.index
+      return compareText(a.choice.targetLocation, b.choice.targetLocation) || compareText(a.choice.targetPackage, b.choice.targetPackage) || semver.compare(a.choice.targetVersion, b.choice.targetVersion)
+    }
+    return rank(a) < rank(b) ? -1 : 1
+  }
+  return entries.sort(compareEntries)
 }
 
 // The planned release is used while it is eligible. If it no longer is (a fresh advisory, an incoming declaration

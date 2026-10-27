@@ -66,7 +66,7 @@ export async function runNpmDepVersions(projectRoot, packageName, spawnImpl = sp
       || (row.releasedAt !== null && (typeof row.releasedAt !== 'string' || normalizeTimestamp(row.releasedAt) !== row.releasedAt))) invalid()
     seen.add(row.version)
   }
-  const rows = [...report.rows].sort((a, b) => semver.compare(a.version, b.version) || (a.version < b.version ? -1 : a.version > b.version ? 1 : 0))
+  const rows = [...report.rows].sort((a, b) => semver.compare(a.version, b.version) || (Number(a.version > b.version) - Number(a.version < b.version)))
   return { versions: rows.map(row => row.version), releaseTimes: new Map(rows.filter(row => row.releasedAt !== null).map(row => [row.version, row.releasedAt])), fetchedAt: report.fetchedAt }
 }
 
