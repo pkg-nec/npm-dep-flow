@@ -27,7 +27,9 @@ function response(parent, { nodes, edges, dependents } = {}) {
 const runner = (responses, calls = []) => async (command, args, cwd, spawnImpl, platform) => {
   calls.push({ command, args, cwd, spawnImpl, platform })
   const next = responses.shift()
-  return typeof next === 'string' ? { code: 0, stdout: next, stderr: '' } : next.code !== undefined ? next : { code: 0, stdout: JSON.stringify(next), stderr: '' }
+  if (typeof next === 'string') return { code: 0, stdout: next, stderr: '' }
+  if (next.code === undefined) return { code: 0, stdout: JSON.stringify(next), stderr: '' }
+  return next
 }
 
 test('runs one public paths query per distinct immediate parent with forwarded controls', async () => {

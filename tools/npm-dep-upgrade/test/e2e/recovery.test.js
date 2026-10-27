@@ -15,7 +15,10 @@ for (const variant of ['tarball', 'integrity', 'peer']) test(`F02 G04 ${variant}
   }
   const f = await createProject(s, {}, t), [row] = await plan(f)
   await writeFile(path.join(f.root, 'untracked.txt'), 'preserve')
-  if (variant !== 'peer') s.request = ({ call }) => call.path === '/tarballs/e2e-target@6.0.12.tgz' ? (variant === 'tarball' ? { status: 404 } : { status: 200, raw: Buffer.from('corrupt-tarball') }) : null
+  if (variant !== 'peer') {
+    const fault = variant === 'tarball' ? { status: 404 } : { status: 200, raw: Buffer.from('corrupt-tarball') }
+    s.request = ({ call }) => call.path === '/tarballs/e2e-target@6.0.12.tgz' ? fault : null
+  }
   await assertUnchanged(f, await runUpgrade(f, [row.id]), /install|integrity|peer|resolution/i)
   assert.equal(await readFile(path.join(f.root, 'untracked.txt'), 'utf8'), 'preserve')
 })

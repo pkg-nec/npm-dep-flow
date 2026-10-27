@@ -59,7 +59,12 @@ export async function runCase(caseId, { npmCli, lockfileVersion = 3, installed =
   const { createProject } = await import('./project.js')
   const { direct, transitive, ancestor, shared, separate, existingOverride, supporting, ago } = await import('../fixtures/catalog.js')
   const { installCheckpoints } = await import('./commands.js')
-  let s = caseId === 'D01 tilde' ? direct('dependencies', '~') : ['D01', 'R01', 'R02', 'R05', 'F05', 'F06', 'G03'].includes(caseId) ? direct() : caseId === 'T02' ? ancestor() : caseId === 'T05' ? shared() : caseId === 'T06' ? shared(true) : caseId === 'T07' ? separate() : caseId === 'O01' ? existingOverride() : caseId === 'S01' ? supporting() : transitive()
+  const directCases = ['D01', 'R01', 'R02', 'R05', 'F05', 'F06', 'G03']
+  const scenarioByCase = { T02: ancestor, T05: shared, T06: () => shared(true), T07: separate, O01: existingOverride, S01: supporting }
+  let s
+  if (caseId === 'D01 tilde') s = direct('dependencies', '~')
+  else if (directCases.includes(caseId)) s = direct()
+  else s = (scenarioByCase[caseId] ?? transitive)()
   if (caseId === 'R02') for (const v of ['6.0.10', '6.0.12']) s.packages['e2e-target'][v].releasedAt = ago(1)
   const f = await createProject(s, { npmCli, lockfileVersion, installed }, t), rows = await plan(f), row = rows.find(r => r.package === 'e2e-target' && r.resolution !== 'none') || rows[0]
   if (caseId === 'O03') {

@@ -13,7 +13,10 @@ export function evaluateFindings(rows, versionsByPackage) {
       const choices = selectWithinRangeChoices(row, targetLocation, registry.versions)
       const consumers = new Set(row.requirements.flatMap(r => r.directDependents.filter(d => d.targetLocation === targetLocation).map(consumerKey)))
       const covered = new Set(choices.flatMap(c => c.affectedConsumers.map(consumerKey)))
-      return { package: row.package, version: row.version, targetLocation, severity: row.severity, minimumSafeVersion, minimumSafeVersionReleasedAt, resolution: !covered.size ? 'none' : covered.size === consumers.size ? 'complete' : 'partial', choices }
+      let resolution = 'partial'
+      if (!covered.size) resolution = 'none'
+      else if (covered.size === consumers.size) resolution = 'complete'
+      return { package: row.package, version: row.version, targetLocation, severity: row.severity, minimumSafeVersion, minimumSafeVersionReleasedAt, resolution, choices }
     })
   })
 }

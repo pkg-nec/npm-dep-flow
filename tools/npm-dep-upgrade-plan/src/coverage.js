@@ -9,7 +9,7 @@ export function selectWithinRangeChoices(row, targetLocation, catalog) {
     const consumer = { location: dependent.location, requestedName: dependent.requestedName, type: dependent.type }
     consumers.set(consumerKey(consumer), { consumer, range: declaredRange(row, requirement.declaredRequirement) })
   }
-  const remaining = new Map([...consumers].sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0))
+  const remaining = new Map([...consumers].sort(([a], [b]) => Number(a > b) - Number(a < b)))
   const choices = []
   const versions = safeStableVersions(row, Array.isArray(catalog) ? catalog : catalog.versions)
   while (remaining.size) {

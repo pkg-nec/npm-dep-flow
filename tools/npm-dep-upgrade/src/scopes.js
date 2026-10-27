@@ -58,7 +58,10 @@ function mergeRule(base, route, target, requirement, graph) {
   const node = graph.nodes.get(route[0])
   const key = `${node.name}@${node.version}`
   const existing = base[key]
-  let value = existing === undefined ? {} : typeof existing === 'string' ? { '.': existing } : structuredClone(existing)
+  let value
+  if (existing === undefined) value = {}
+  else if (typeof existing === 'string') value = { '.': existing }
+  else value = structuredClone(existing)
   if (!value || typeof value !== 'object' || Array.isArray(value)) fail('OVERRIDE_CONFLICT', 'scope', 'Invalid existing override object')
   const rootEdge = graph.edges.find(e => e.from === '' && e.to === route[0])
   if (rootEdge && !Object.hasOwn(value, '.')) value['.'] = `$${rootEdge.requestedName}`

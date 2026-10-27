@@ -1,6 +1,6 @@
 import semver from 'semver'
 
-const compare = (a, b) => a < b ? -1 : a > b ? 1 : 0
+const compare = (a, b) => Number(a > b) - Number(a < b)
 
 function reachableWithout(graph, excluded) {
   const reached = new Set()

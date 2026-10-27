@@ -84,8 +84,8 @@ test('corrupt entries are misses and unavailable storage does not prevent report
 
 test('a shorter requested TTL is measured from source freshness, not result creation', async (t) => {
   const f = await fixture(t)
-  const compute = async () => ({ value: { generation: ++generation }, freshAt: 0, expiresAt: 2000 })
   let generation = 0
+  const compute = async () => ({ value: { generation: ++generation }, freshAt: 0, expiresAt: 2000 })
   assert.deepEqual(await cachedResult({ ...f.options, ttlMs: 2000 }, compute), { generation: 1 })
   assert.deepEqual(await cachedResult({ ...f.options, ttlMs: 500 }, compute), { generation: 2 })
 })

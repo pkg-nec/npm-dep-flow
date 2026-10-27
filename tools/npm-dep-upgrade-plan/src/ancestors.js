@@ -46,7 +46,7 @@ export async function findParentChoices({ unresolvedConsumers, graph, readCatalo
     if (!catalogs.has(name)) catalogs.set(name, Promise.resolve(readCatalog(name)))
     return catalogs.get(name)
   }
-  const branches = [...unresolvedConsumers].sort((a, b) => (consumerKey(a) < consumerKey(b) ? -1 : consumerKey(a) > consumerKey(b) ? 1 : 0))
+  const branches = [...unresolvedConsumers].sort((a, b) => (Number(consumerKey(a) > consumerKey(b)) - Number(consumerKey(a) < consumerKey(b))))
   const unresolved = new Map(branches.map(consumer => [consumerKey(consumer), consumer]))
   const choices = []
   const cleared = new Set()
@@ -85,5 +85,5 @@ export async function findParentChoices({ unresolvedConsumers, graph, readCatalo
       level = next
     }
   }
-  return choices.sort((a, b) => (a.targetLocation < b.targetLocation ? -1 : a.targetLocation > b.targetLocation ? 1 : 0))
+  return choices.sort((a, b) => (Number(a.targetLocation > b.targetLocation) - Number(a.targetLocation < b.targetLocation)))
 }

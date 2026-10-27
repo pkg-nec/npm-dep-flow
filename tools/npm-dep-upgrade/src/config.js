@@ -21,7 +21,7 @@ function validate(values) {
 }
 export async function resolveOptions(cli) {
   if (cli.action !== 'upgrade') return cli
-  let configured = {}
+  const configured = {}
   if (cli.configPath) {
     let data
     try {

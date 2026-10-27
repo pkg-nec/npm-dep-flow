@@ -163,7 +163,8 @@ test('Markdown default and text alias preserve summaries with safely fenced upst
   const { readFile } = await import('node:fs/promises')
   const manifest = JSON.parse(await readFile(manifestPath, 'utf8'))
   const lock = JSON.parse(await readFile(lockPath, 'utf8'))
-  manifest.name = lock.packages[''].name = 'app```name'
+  manifest.name = 'app```name'
+  lock.packages[''].name = 'app```name'
   await writeFile(manifestPath, JSON.stringify(manifest))
   await writeFile(lockPath, JSON.stringify(lock))
   const output = capture()

@@ -99,7 +99,10 @@ export function computeCoverage(before, after, item, semver) {
     ;
     (affected ? remainingConsumers : clearedConsumers).push({ location: e.from, requestedName: e.requestedName, type: e.type })
   }
-  return { resolution: !clearedConsumers.length ? 'none' : remainingConsumers.length ? 'partial' : 'complete', clearedConsumers, remainingConsumers }
+  let resolution = 'complete'
+  if (!clearedConsumers.length) resolution = 'none'
+  else if (remainingConsumers.length) resolution = 'partial'
+  return { resolution, clearedConsumers, remainingConsumers }
 }
 // An action whose consumers are all already cleared (dependency removed or resolved to a safe version) is skipped.
 export function choiceSatisfied(current, choice, item, semver) {
@@ -114,7 +117,10 @@ export function choiceSatisfied(current, choice, item, semver) {
 function mergeRule(base, route, name, version, nodes, rootEdges, semver) {
   const location = route[0], n = nodes.get(location), selector = `${n.name}@${n.version}`
   const old = base[selector]
-  let value = old === undefined ? {} : typeof old === 'string' ? { '.': old } : structuredClone(old)
+  let value
+  if (old === undefined) value = {}
+  else if (typeof old === 'string') value = { '.': old }
+  else value = structuredClone(old)
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('Unsupported override scope')
   const rootEdge = rootEdges.find(e => e.to === location)
   if (rootEdge && !Object.hasOwn(value, '.')) value['.'] = `$${rootEdge.requestedName}`
@@ -185,11 +191,11 @@ export async function resolveRequest(request) {
   config.validate()
   if (!config.valid) throw new Error('Invalid npm resolver configuration')
   const opts = { ...config.flat, path: request.root, ignoreScripts: true, audit: false, fund: false, preferOnline: true }
-  if (!request.enforceAge) {
+  if (request.enforceAge) opts.minReleaseAge = Math.max(7, Number(opts.minReleaseAge || 0))
+  else {
     delete opts.before
     delete opts.minReleaseAge
   }
-  else opts.minReleaseAge = Math.max(7, Number(opts.minReleaseAge || 0))
   const load = async () => graph(await new Arborist(opts).loadVirtual())
   const before = await load(), original = await readFile(path.join(request.root, 'package.json'))
   const snapshots = [], accepted = [], skipped = []
