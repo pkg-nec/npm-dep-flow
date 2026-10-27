@@ -66,11 +66,19 @@ function migratedManifest(text, version = NEW) {
   return json(manifest)
 }
 
+// Unix launches `npm` with an argument list; Windows launches `npm.cmd <args>` as one shell string with no arguments.
+// Both are decoded to the same command name and arguments.
+function decodeLaunch(command, args) {
+  const [name, ...rest] = args.length === 0 && command.includes(' ') ? command.split(' ') : [command, ...args]
+  return { command: name.replace(/\.cmd$/, ''), args: rest }
+}
+
 // A scripted npm/npx: each behaviour may replace the default effect of a step.
 function fakeRun(root, steps = {}) {
   const calls = []
   let installs = 0
-  const run = async (command, args, opts) => {
+  const run = async (launched, launchedArgs, opts) => {
+    const { command, args } = decodeLaunch(launched, launchedArgs)
     calls.push({ command, args, cwd: opts.cwd })
     let step = command === 'npx' ? 'migrate' : 'ci'
     if (command === 'npm' && args[0] !== 'ci') step = `install${++installs}`
@@ -154,6 +162,20 @@ test('happy path commits exactly the migrated dependency files', async (t) => {
   assert.deepEqual(f.guard.originalFiles['package.json'], await readFile(path.join(f.root, 'package.json')))
   assert.deepEqual(f.guard.ownedFiles['package-lock.json'], await readFile(path.join(f.root, 'package-lock.json')))
 })
+
+for (const platform of ['win32', 'linux']) {
+  test(`happy path runs the whole flow with ${platform} launches`, async (t) => {
+    const f = await fixture(t), a = adapters(f, { adapters: { platform } })
+    await migrate(f, a)
+    assert.equal((await git(f.repo, ['log', '-1', '--format=%s'])).trim(), `deps(webapp): migrate Angular toolchain to ${NEW}`)
+    assert.equal(await status(f), '')
+    assert.deepEqual(a.fake.calls.map(c => [c.command, ...c.args]), [
+      ['npm', 'ci', ...context.installArgs.slice(1)],
+      ['npx', '--no', 'nx', 'migrate', `@angular/cli@${NEW}`],
+      ['npm', ...context.installArgs],
+    ])
+  })
+}
 
 test('override absent leaves overrides untouched', async (t) => {
   const f = await fixture(t, { override: false }), a = adapters(f)
