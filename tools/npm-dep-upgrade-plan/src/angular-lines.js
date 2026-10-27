@@ -19,7 +19,7 @@ export function orderChoices(choices) {
   return [...lines, ...choices.filter(choice => !isLineChoice(choice))]
 }
 
-// Kept for the resolver worker and report until they read the registry directly.
+// Kept for tests that name the toolchain line directly.
 const toolchain = lineOfStrategy('upgrade-angular-toolchain')
 export const TOOLCHAIN_STRATEGY = toolchain.strategy
 export const TOOLCHAIN_MEMBERS = toolchain.members

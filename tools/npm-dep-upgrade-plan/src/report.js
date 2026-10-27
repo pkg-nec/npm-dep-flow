@@ -1,4 +1,5 @@
 import semver from 'semver'
+import { ANGULAR_LINES } from './angular-lines.js'
 import { findingId } from './ids.js'
 
 const severityOrder = new Map([
@@ -86,7 +87,6 @@ function renderSeverity(value) {
 }
 
 const PARENT_STRATEGY = 'upgrade-via-parent-dependency'
-const TOOLCHAIN_STRATEGY = 'upgrade-angular-toolchain'
 
 const compareChoices = (a, b) => compareText(a.targetLocation, b.targetLocation) || compareText(a.targetPackage, b.targetPackage) || compareVersion(a.currentVersion, b.currentVersion) || compareVersion(a.targetVersion, b.targetVersion)
 
@@ -95,14 +95,16 @@ function transitionsOf(choices, strategy, label) {
   return [...new Set(selected.map(choice => `${label}: ${escapeMarkdown(choice.targetPackage)}@${escapeMarkdown(choice.currentVersion)} → ${escapeMarkdown(choice.targetPackage)}@${escapeMarkdown(choice.targetVersion)}`))]
 }
 
-// Within-range actions share one label; parent and toolchain upgrades keep their package and version transition.
-function renderStrategies(choices) {
+// Within-range actions share one label; parent and line upgrades keep their package and version transition. Line
+// transitions follow the parent ones in registry order, each with its line's label.
+export function renderStrategies(choices, lines = ANGULAR_LINES) {
   if (choices.length === 0) return '—'
-  const others = choices.filter(choice => choice.strategy !== PARENT_STRATEGY && choice.strategy !== TOOLCHAIN_STRATEGY)
+  const isLine = choice => lines.some(line => line.strategy === choice.strategy)
+  const others = choices.filter(choice => choice.strategy !== PARENT_STRATEGY && !isLine(choice))
   const labels = [...new Set(others.map(choice => escapeMarkdown(strategyLabels.get(choice.strategy) ?? choice.strategy)))]
   const parents = transitionsOf(choices, PARENT_STRATEGY, 'Upgrade via parent dependency')
-  const toolchain = transitionsOf(choices, TOOLCHAIN_STRATEGY, 'Upgrade Angular toolchain')
-  return [...labels, ...parents, ...toolchain].join('; ')
+  const lineTransitions = lines.flatMap(line => transitionsOf(choices, line.strategy, line.label))
+  return [...labels, ...parents, ...lineTransitions].join('; ')
 }
 
 export function renderMarkdown(rows) {

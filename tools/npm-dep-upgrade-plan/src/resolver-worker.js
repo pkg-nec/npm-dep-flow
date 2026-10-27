@@ -1,8 +1,8 @@
-// Standalone worker: only npm's in-memory resolver, private lock serialization, and the toolchain constants.
+// Standalone worker: only npm's in-memory resolver, private lock serialization, and the Angular line registry.
 import { readFile, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import path from 'node:path'
-import { TOOLCHAIN_MEMBERS, TOOLCHAIN_STRATEGY } from './angular-lines.js'
+import { ANGULAR_LINES, lineOfStrategy } from './angular-lines.js'
 
 const key = e => JSON.stringify([e.location ?? e.from, e.requestedName, e.type])
 const types = { prod: 'dependencies', dev: 'devDependencies', peer: 'peerDependencies', peerOptional: 'peerDependencies', optional: 'optionalDependencies' }
@@ -39,13 +39,24 @@ function closure(g, starts) {
 
 const PARENT_STRATEGY = 'upgrade-via-parent-dependency'
 const isParent = choice => choice.strategy === PARENT_STRATEGY
-const isToolchain = choice => choice.strategy === TOOLCHAIN_STRATEGY
-const isAncestor = choice => isParent(choice) || isToolchain(choice)
-// The root declarations of the toolchain members, as edges of the given graph.
-const memberEdges = g => g.edges.filter(e => e.from === '' && TOOLCHAIN_MEMBERS.includes(e.requestedName))
+// The line's name as it opens a diagnostic, such as `Toolchain`.
+const lineName = line => line.key[0].toUpperCase() + line.key.slice(1)
+// The root declarations of the line's members, as edges of the given graph.
+export const memberEdges = (g, line) => g.edges.filter(e => e.from === '' && line.members.includes(e.requestedName))
 
-// Toolchain and parent choices are both ancestor changes: their closures before and after are in scope.
-export function verifyResolution(before, after, item, choices, semver) {
+// Line choices are applied before every other choice, one per line, in registry order: later actions are judged
+// against the tree the line bumps leave.
+export function assertLineOrder(choices, lines = ANGULAR_LINES) {
+  const indexes = choices.map(choice => lines.findIndex(line => line.strategy === choice.strategy))
+  const count = indexes.filter(index => index >= 0).length
+  if (indexes.some((index, i) => (i < count) !== (index >= 0) || (i > 0 && i < count && index <= indexes[i - 1]))) throw new Error('Angular line choices must be resolved first')
+}
+
+// Line and parent choices are both ancestor changes: their closures before and after are in scope. Each line choice
+// is checked with the members of its own line; the members of a line without a choice may not move.
+export function verifyResolution(before, after, item, choices, semver, lines = ANGULAR_LINES) {
+  const lineOf = choice => lines.find(line => line.strategy === choice.strategy)
+  const isAncestor = choice => isParent(choice) || lineOf(choice) !== undefined
   const withinRange = choices.filter(c => !isAncestor(c)), parents = choices.filter(isParent), ancestors = choices.filter(isAncestor)
   const oldNodes = new Map(before.nodes.map(n => [n.location, n])), nodes = new Map(after.nodes.map(n => [n.location, n]))
   const selected = new Map(withinRange.flatMap(c => c.affectedConsumers.map(e => [key(e), c])))
@@ -56,20 +67,31 @@ export function verifyResolution(before, after, item, choices, semver) {
     if (!landed || landed.name !== choice.targetPackage || landed.version !== choice.targetVersion) throw new Error('Ancestor did not resolve to the tested version')
     for (const n of before.nodes) if (n.name === choice.targetPackage && n.location !== choice.targetLocation && !equal(n, nodes.get(n.location))) throw new Error('Another ancestor installation changed')
   }
-  const toolchainBefore = [], toolchainAfter = []
-  if (choices.some(isToolchain)) {
-    for (const old of memberEdges(before)) {
-      const choice = choices.find(isToolchain), current = after.edges.find(e => key(e) === key(old))
+  const membersBefore = [], membersAfter = []
+  const chosenLines = lines.filter(line => choices.some(c => c.strategy === line.strategy))
+  for (const line of chosenLines) {
+    const choice = choices.find(c => c.strategy === line.strategy), edges = memberEdges(before, line)
+    for (const old of edges) {
+      const current = after.edges.find(e => key(e) === key(old))
       const oldNode = oldNodes.get(old.to), landed = nodes.get(current?.to)
-      if (oldNode?.name !== old.requestedName || oldNode.version !== choice.currentVersion) throw new Error('Toolchain installation changed since planning')
-      if (landed?.name !== old.requestedName || landed.version !== choice.targetVersion) throw new Error('Toolchain member did not resolve to the tested version')
-      toolchainBefore.push(old.to)
-      toolchainAfter.push(current.to)
+      if (oldNode?.name !== old.requestedName || oldNode.version !== choice.currentVersion) throw new Error(`${lineName(line)} installation changed since planning`)
+      if (landed?.name !== old.requestedName || landed.version !== choice.targetVersion) throw new Error(`${lineName(line)} member did not resolve to the tested version`)
+      membersBefore.push(old.to)
+      membersAfter.push(current.to)
     }
-    if (!toolchainBefore.length) throw new Error('Toolchain installation changed since planning')
+    if (!edges.length) throw new Error(`${lineName(line)} installation changed since planning`)
+  }
+  // A line bump never moves the members of a line without a choice, even where they sit inside its closure.
+  if (chosenLines.length) {
+    for (const line of lines.filter(l => !chosenLines.includes(l))) {
+      for (const old of memberEdges(before, line)) {
+        const current = after.edges.find(e => key(e) === key(old))
+        if (old.to !== null && (current?.to !== old.to || !equal(oldNodes.get(old.to), nodes.get(old.to)))) throw new Error('Unrelated installation changed')
+      }
+    }
   }
   const parentLocations = parents.map(c => c.targetLocation)
-  const parentClosureBefore = closure(before, [...parentLocations, ...toolchainBefore]), parentClosureAfter = closure(after, [...parentLocations, ...toolchainAfter])
+  const parentClosureBefore = closure(before, [...parentLocations, ...membersBefore]), parentClosureAfter = closure(after, [...parentLocations, ...membersAfter])
   const scoped = new Set([...closure(before, [item.targetLocation]), ...parentClosureBefore, ...parentClosureAfter])
   const oldIncoming = before.edges.filter(e => e.to === item.targetLocation)
   for (const n of before.nodes) if (n.location && n.name !== item.package && !equal(n, nodes.get(n.location)) && !scoped.has(n.location)) throw new Error('Unrelated parent installation changed')
@@ -103,15 +125,16 @@ export function verifyResolution(before, after, item, choices, semver) {
 // A consumer branch is cleared when nothing reachable from where the consumer now lives is still an affected
 // installation of the package, so removing a dependency clears it but a descendant that reintroduces the
 // vulnerability does not. Affected installations the consumer already reached by another route are other findings.
-export function computeCoverage(before, after, item, semver) {
+export function computeCoverage(before, after, item, semver, lines = ANGULAR_LINES) {
+  const memberLine = lines.find(line => line.members.includes(item.package))
   const oldNodes = new Map(before.nodes.map(n => [n.location, n])), nodes = new Map(after.nodes.map(n => [n.location, n]))
   const safe = n => semver.gt(n.version, item.version) && item.advisories.every(a => !semver.satisfies(n.version, a.range))
   const clearedConsumers = [], remainingConsumers = []
   for (const e of before.edges.filter(e => e.to === item.targetLocation)) {
     const holder = oldNodes.get(e.from), here = nodes.get(e.from)
-    // The root's declaration of a toolchain member is judged from the member's new installation: everything else
-    // the root reaches belongs to other branches, such as another member's closure.
-    const rootMember = e.from === '' && TOOLCHAIN_MEMBERS.includes(item.package)
+    // The root's declaration of a line member is judged from the member's new installation: everything else the
+    // root reaches belongs to other branches, such as another member's closure.
+    const rootMember = e.from === '' && memberLine !== undefined
     const landed = rootMember ? after.edges.find(x => key(x) === key(e))?.to : null
     let holders
     if (rootMember) holders = landed ? [landed] : []
@@ -184,19 +207,20 @@ function serializeManifest(manifest, original) {
   return Buffer.from(JSON.stringify(manifest, null, indent).replaceAll('\n', newline) + (text.endsWith('\n') ? newline : ''))
 }
 
-// Every toolchain member the root declares moves to exactly the tested version in the field that declares it, and an
-// existing @angular-devkit/core override follows. No other declaration or override is touched or added.
-function toolchainManifest(manifest, choice) {
+// Every member of the line the root declares moves to exactly the tested version in the field that declares it, and
+// each of the line's overrides that exists follows. No other declaration or override is touched or added.
+export function lineManifest(manifest, choice, line) {
   const fields = ['dependencies', 'devDependencies']
-  if (!fields.some(field => Object.hasOwn(manifest[field] || {}, choice.targetPackage))) throw new Error('Toolchain is not declared by the project')
-  for (const name of TOOLCHAIN_MEMBERS) {
+  if (!fields.some(field => Object.hasOwn(manifest[field] || {}, choice.targetPackage))) throw new Error(`${lineName(line)} is not declared by the project`)
+  for (const name of line.members) {
     const field = fields.find(f => Object.hasOwn(manifest[f] || {}, name))
     if (field) manifest[field][name] = choice.targetVersion
   }
   const overrides = manifest.overrides
-  if (overrides && typeof overrides === 'object' && Object.hasOwn(overrides, '@angular-devkit/core')) {
-    const override = overrides['@angular-devkit/core']
-    if (typeof override === 'string') overrides['@angular-devkit/core'] = choice.targetVersion
+  for (const name of line.overrides) {
+    if (!overrides || typeof overrides !== 'object' || !Object.hasOwn(overrides, name)) continue
+    const override = overrides[name]
+    if (typeof override === 'string') overrides[name] = choice.targetVersion
     else if (override && typeof override === 'object' && typeof override['.'] === 'string') override['.'] = choice.targetVersion
     else throw new Error('Unsupported override scope')
   }
@@ -247,6 +271,7 @@ export async function resolveRequest(request) {
   const opts = { ...config.flat, path: request.root, ignoreScripts: true, audit: false, fund: false, preferOnline: true }
   delete opts.before
   delete opts.minReleaseAge
+  assertLineOrder(request.choices, ANGULAR_LINES)
   const load = async () => graph(await new Arborist(opts).loadVirtual())
   const before = await load(), original = await readFile(path.join(request.root, 'package.json'))
   const snapshots = [], accepted = [], satisfied = []
@@ -266,16 +291,16 @@ export async function resolveRequest(request) {
     choiceIndex < request.choices.length;
     choiceIndex++) {
     const choice = request.choices[choiceIndex], startFiles = await Promise.all(['package.json', 'package-lock.json'].map(n => readFile(path.join(request.root, n))))
-    if (isToolchain(choice)) {
-      // Later actions are judged against the tree the toolchain bump leaves, so it must be resolved first.
-      if (choiceIndex !== 0) throw new Error('Toolchain choice must be resolved first')
+    const line = lineOfStrategy(choice.strategy)
+    if (line) {
+      // Every line choice is judged against the original graph together with the line choices accepted before it.
       let after
       try {
-        await writeFile(path.join(request.root, 'package.json'), serializeManifest(toolchainManifest(JSON.parse(startFiles[0]), choice), startFiles[0]))
+        await writeFile(path.join(request.root, 'package.json'), serializeManifest(lineManifest(JSON.parse(startFiles[0]), choice, line), startFiles[0]))
         const tree = await new Arborist(opts).buildIdealTree()
         await tree.meta.save()
         after = graph(tree)
-        verifyResolution(before, after, request.item, [choice], semver)
+        verifyResolution(before, after, request.item, [...accepted, choice], semver, ANGULAR_LINES)
       }
       catch (error) {
         await Promise.all(['package.json', 'package-lock.json'].map((n, i) => writeFile(path.join(request.root, n), startFiles[i])))
@@ -303,7 +328,7 @@ export async function resolveRequest(request) {
         const tree = await landAncestor({ Arborist, opts, choice, releasedAt, cutoff, load })
         after = graph(tree)
         if (!(await readFile(path.join(request.root, 'package.json'))).equals(startFiles[0])) throw new Error('Ancestor update changed the manifest')
-        verifyResolution(before, after, request.item, [...accepted, choice], semver)
+        verifyResolution(before, after, request.item, [...accepted, choice], semver, ANGULAR_LINES)
       }
       catch (error) {
         await restore()
@@ -373,7 +398,7 @@ export async function resolveRequest(request) {
     await tree.meta.save()
     const after = graph(tree)
     try {
-      verifyResolution(before, after, request.item, [...accepted, choice], semver)
+      verifyResolution(before, after, request.item, [...accepted, choice], semver, ANGULAR_LINES)
     }
     catch (error) {
       await Promise.all(['package.json', 'package-lock.json'].map((n, i) => writeFile(path.join(request.root, n), startFiles[i])))
@@ -384,7 +409,7 @@ export async function resolveRequest(request) {
     snapshots.push({ choiceIndex, graph: after, files: Object.fromEntries(await Promise.all(['package.json', 'package-lock.json'].map(async n => [n, (await readFile(path.join(request.root, n))).toString('base64')]))) })
   }
   const after = await load()
-  return { schemaVersion: 1, choices: request.choices.filter(choice => accepted.includes(choice) || satisfied.includes(choice)), graph: after, before, snapshots, coverage: computeCoverage(before, after, request.item, semver), manifestChanged: !(await readFile(path.join(request.root, 'package.json'))).equals(original), freshAt: request.startedAt }
+  return { schemaVersion: 1, choices: request.choices.filter(choice => accepted.includes(choice) || satisfied.includes(choice)), graph: after, before, snapshots, coverage: computeCoverage(before, after, request.item, semver, ANGULAR_LINES), manifestChanged: !(await readFile(path.join(request.root, 'package.json'))).equals(original), freshAt: request.startedAt }
 }
 if (process.argv[2]) {
   try {
