@@ -4,7 +4,7 @@ import semver from 'semver'
 import { assertLineOrder, computeCoverage, lineManifest, memberEdges, verifyResolution } from '../src/resolver-worker.js'
 import { ANGULAR_LINES } from '../src/angular-lines.js'
 
-// The registry holds one line today; a second, synthetic line exercises the multi-line logic.
+// A synthetic second line beside the toolchain exercises the multi-line logic independently of the registry.
 const [toolchain] = ANGULAR_LINES
 const synthetic = { key: 'synthetic', strategy: 'upgrade-synthetic-line', label: 'Upgrade synthetic line', anchor: 'rx', members: ['rx', 'ry'], overrides: ['rx-extra'] }
 const LINES = [toolchain, synthetic]

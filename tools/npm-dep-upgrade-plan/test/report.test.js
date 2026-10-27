@@ -168,3 +168,22 @@ test('JSON passes a toolchain choice through unchanged', () => {
   const [json] = JSON.parse(renderJson([row({ choices: [toolchainChoice()] })], '2026-10-01T00:00:00.000Z')).rows
   assert.deepEqual(json.choices, [toolchainChoice()])
 })
+
+const runtimeChoice = (from = '21.2.25', to = '21.2.26') => ({
+  strategy: 'upgrade-angular-runtime', targetPackage: '@angular/core', currentVersion: from, targetVersion: to, targetLocation: 'node_modules/@angular/core',
+  affectedConsumers: [{ location: 'node_modules/@angular/core', requestedName: 'brace-expansion', type: 'dependencies' }],
+})
+
+test('the runtime transition follows the parent and toolchain transitions in the Strategy cell', () => {
+  const [within] = row().choices
+  const markdown = renderMarkdown([row({ resolution: 'partial', choices: [toolchainChoice(), runtimeChoice(), parentChoice('nx', '23.1.2', '23.2.0'), within] })])
+  const line = markdown.split('\n').find(item => item.startsWith('| ') && item.includes('brace-expansion |'))
+  assert.match(line, /\| Update within declared range; Upgrade via parent dependency: nx@23\.1\.2 → nx@23\.2\.0; Upgrade Angular toolchain: @angular\/cli@21\.2\.26 → @angular\/cli@21\.2\.27; Upgrade Angular runtime: @angular\/core@21\.2\.25 → @angular\/core@21\.2\.26 \|$/)
+  const alone = renderMarkdown([row({ choices: [runtimeChoice()] })])
+  assert.match(alone, /\| Upgrade Angular runtime: @angular\/core@21\.2\.25 → @angular\/core@21\.2\.26 \|\n$/)
+})
+
+test('JSON passes toolchain and runtime choices through unchanged and in order', () => {
+  const [json] = JSON.parse(renderJson([row({ choices: [toolchainChoice(), runtimeChoice()] })], '2026-10-01T00:00:00.000Z')).rows
+  assert.deepEqual(json.choices, [toolchainChoice(), runtimeChoice()])
+})

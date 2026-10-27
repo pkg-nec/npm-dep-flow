@@ -227,6 +227,20 @@ export function lineManifest(manifest, choice, line) {
   return manifest
 }
 
+// npm will not replace members that peer on each other exactly while a dependent outside the line still holds their
+// old versions in its peer set (ERESOLVE), so the root's member installations leave the starting tree and npm places
+// them again from the rewritten declarations. Every other installation starts where the lockfile has it.
+async function buildLineTree(Arborist, opts, line) {
+  const arborist = new Arborist(opts)
+  const virtual = await arborist.loadVirtual()
+  for (const name of line.members) {
+    const member = virtual.edgesOut.get(name)?.to
+    if (member && member.parent === virtual) member.parent = null
+  }
+  arborist.virtualTree = virtual
+  return arborist.buildIdealTree()
+}
+
 const DAY_MS = 86_400_000
 
 // The release-age cutoff from npm configuration: never fewer than seven days, bounded by an explicit `before`.
@@ -297,7 +311,7 @@ export async function resolveRequest(request) {
       let after
       try {
         await writeFile(path.join(request.root, 'package.json'), serializeManifest(lineManifest(JSON.parse(startFiles[0]), choice, line), startFiles[0]))
-        const tree = await new Arborist(opts).buildIdealTree()
+        const tree = await buildLineTree(Arborist, opts, line)
         await tree.meta.save()
         after = graph(tree)
         verifyResolution(before, after, request.item, [...accepted, choice], semver, ANGULAR_LINES)

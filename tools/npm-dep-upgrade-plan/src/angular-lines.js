@@ -8,6 +8,14 @@ export const ANGULAR_LINES = [
     members: ['@angular/cli', '@angular/build'],
     overrides: ['@angular-devkit/core'],
   },
+  {
+    key: 'runtime',
+    strategy: 'upgrade-angular-runtime',
+    label: 'Upgrade Angular runtime',
+    anchor: '@angular/core',
+    members: ['@angular/common', '@angular/compiler', '@angular/compiler-cli', '@angular/core', '@angular/forms', '@angular/platform-browser', '@angular/router'],
+    overrides: ['@angular/platform-browser-dynamic'],
+  },
 ]
 
 export const lineOfStrategy = strategy => ANGULAR_LINES.find(line => line.strategy === strategy)

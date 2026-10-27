@@ -811,3 +811,60 @@ test('the @angular/cli catalog freshness bounds the cached plan', async (t) => {
   assert.equal(await main(['/project', '--format', 'json', '--cache-ttl', '30m'], createIo().io, deps), 0)
   assert.ok(calls.versions.length > before, 'a shorter TTL refreshes because the @angular/cli catalog is too old')
 })
+
+function bothLinesDeps(calls, root = path.join(scratchRoot, 'both-lines-flow')) {
+  const requirement = (spec, name, version) => ({ declaredRequirement: spec, directDependents: [{ name, version, location: `node_modules/${name}`, targetLocation: 'node_modules/brace-expansion', type: 'dependencies', requestedName: 'brace-expansion' }] })
+  const report = { schemaVersion: 2, auditedAt: new Date().toISOString(), rows: [vulnerableRow('brace-expansion', '5.0.9', 'high', [requirement('5.0.9', '@angular/cli', '21.2.26'), requirement('5.0.9', '@angular/core', '21.2.25'), requirement('^5.0.5', 'plain', '1.0.0')])] }
+  const deps = injectedDeps(report, new Map(), { renderJson: findings => JSON.stringify(findings) })
+  const manifest = { name: 'app', version: '1.0.0', dependencies: { '@angular/core': '21.2.25', 'plain': '^1.0.0' }, devDependencies: { '@angular/cli': '21.2.26' } }
+  const lock = { lockfileVersion: 3, packages: { '': { name: 'app' }, 'node_modules/@angular/cli': { version: '21.2.26' }, 'node_modules/@angular/core': { version: '21.2.25' } } }
+  deps.loadProject = async () => ({ root, manifestBytes: Buffer.from(JSON.stringify(manifest)), lockBytes: Buffer.from(JSON.stringify(lock)) })
+  deps.clearCache = async () => {}
+  const catalogs = { 'brace-expansion': ['5.0.9', '5.0.12'], '@angular/cli': ['21.2.26', '21.2.27'], '@angular/core': ['21.2.25', '21.2.26'] }
+  deps.runNpmDepVersions = async (_root, name) => {
+    calls.versions.push(name)
+    return { versions: catalogs[name], releaseTimes: new Map(), fetchedAt: new Date(Date.now() - (calls.coreAgeMs && name === '@angular/core' ? calls.coreAgeMs : 0)).toISOString() }
+  }
+  deps.findParentChoices = async () => []
+  deps.readUpstream = async () => ({ nodes: new Map(), edges: [{ from: '', to: 'node_modules/@angular/cli' }, { from: '', to: 'node_modules/@angular/core' }] })
+  deps.resolveChoices = async (_project, _item, choices) => {
+    calls.resolves.push(choices.map(c => c.strategy))
+    const consumer = location => ({ location, requestedName: 'brace-expansion', type: 'dependencies' })
+    const cleared = [consumer('node_modules/plain')]
+    if (choices.some(c => c.strategy === 'upgrade-angular-toolchain')) cleared.push(consumer('node_modules/@angular/cli'))
+    if (choices.some(c => c.strategy === 'upgrade-angular-runtime')) cleared.push(consumer('node_modules/@angular/core'))
+    return { choices, graph: { nodes: [], edges: [] }, coverage: { resolution: cleared.length === 3 ? 'complete' : 'partial', clearedConsumers: cleared, remainingConsumers: [] }, freshAt: Date.now() }
+  }
+  return deps
+}
+
+test('the runtime step runs after the toolchain step, keeps its choice and completes the finding', async () => {
+  const calls = { versions: [], resolves: [] }
+  const io = createIo()
+  assert.equal(await main(['/project', '--no-cache', '--format', 'json'], io.io, bothLinesDeps(calls)), 0, io.stderr)
+  const [finding] = JSON.parse(io.stdout)
+  assert.equal(finding.resolution, 'complete')
+  assert.deepEqual(finding.choices.map(c => `${c.strategy}:${c.targetPackage}@${c.targetVersion}`), [
+    'upgrade-angular-toolchain:@angular/cli@21.2.27',
+    'upgrade-angular-runtime:@angular/core@21.2.26',
+    'update-within-declared-range:brace-expansion@5.0.12',
+  ])
+  const firstRuntime = calls.resolves.findIndex(strategies => strategies.includes('upgrade-angular-runtime'))
+  assert.ok(calls.resolves.slice(0, firstRuntime).some(strategies => strategies[0] === 'upgrade-angular-toolchain'))
+  for (const strategies of calls.resolves.slice(firstRuntime)) assert.deepEqual(strategies, ['upgrade-angular-toolchain', 'upgrade-angular-runtime', 'update-within-declared-range'])
+  assert.ok(calls.versions.indexOf('@angular/cli') < calls.versions.indexOf('@angular/core'))
+})
+
+test('the @angular/core catalog freshness bounds the cached plan', async (t) => {
+  const root = mkdtempSync(path.join(tmpdir(), 'planner-runtime-fresh-'))
+  t.after(() => rmSync(root, { recursive: true, force: true }))
+  const calls = { versions: [], resolves: [], coreAgeMs: 50 * 60000 }
+  const deps = bothLinesDeps(calls, root)
+  deps.readPlanningContext = async () => ({ fixture: 'runtime-fresh' })
+  assert.equal(await main(['/project', '--format', 'json'], createIo().io, deps), 0)
+  const before = calls.versions.length
+  assert.equal(await main(['/project', '--format', 'json'], createIo().io, deps), 0)
+  assert.equal(calls.versions.length, before, 'a one-hour TTL reuses the cached plan')
+  assert.equal(await main(['/project', '--format', 'json', '--cache-ttl', '30m'], createIo().io, deps), 0)
+  assert.ok(calls.versions.length > before, 'a shorter TTL refreshes because the @angular/core catalog is too old')
+})

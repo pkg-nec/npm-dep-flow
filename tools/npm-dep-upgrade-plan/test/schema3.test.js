@@ -65,3 +65,12 @@ test('a toolchain choice for a root consumer serializes under schema version 3',
   assert.equal(report.schemaVersion, 3)
   assert.deepEqual(report.rows[0].choices, [choice])
 })
+
+test('a runtime choice serializes under schema version 3 with @angular/core as its target package', () => {
+  const choice = { strategy: 'upgrade-angular-runtime', targetPackage: '@angular/core', targetLocation: 'node_modules/@angular/core', currentVersion: '21.2.25', targetVersion: '21.2.26', affectedConsumers: [{ location: '', requestedName: '@angular/core', type: 'dependencies' }] }
+  const finding = { package: '@angular/core', version: '21.2.25', targetLocation: 'node_modules/@angular/core', severity: 'high', minimumSafeVersion: '21.2.26', minimumSafeVersionReleasedAt: null, resolution: 'complete', choices: [choice] }
+  const report = JSON.parse(renderJson([finding], '2026-10-27T00:00:00.000Z'))
+  assert.equal(report.schemaVersion, 3)
+  assert.equal(report.rows[0].choices[0].targetPackage, '@angular/core')
+  assert.deepEqual(report.rows[0].choices, [choice])
+})

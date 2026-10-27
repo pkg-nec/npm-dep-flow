@@ -102,7 +102,8 @@ async function mainWithDebug(argv, io = process, deps = defaults) {
         const parents = await planParentChoices({ finding, row, project, options, controls: { noCache: options.noCache, ...clearControl }, adapters })
         freshAt = Math.min(freshAt, parents.freshAt)
       }
-      // Each Angular line bump covers what within-range and parent actions left, and is resolved ahead of them.
+      // Each Angular line bump covers what within-range, parent and earlier line actions left, and is resolved ahead
+      // of the parent and within-range actions. Lines are visited in registry order, so each keeps the earlier choices.
       for (const line of ANGULAR_LINES) {
         for (const finding of findings) {
           if (finding.resolution === 'complete') continue

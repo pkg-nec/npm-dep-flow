@@ -88,3 +88,40 @@ test('inLineScope limits consumers near the members', () => {
   assert.equal(inLineScope('node_modules/c', graph, members), false)
   assert.equal(inLineScope('node_modules/other', graph, members), false)
 })
+
+const runtime = ANGULAR_LINES.find(candidate => candidate.key === 'runtime')
+const RUNTIME_MEMBERS = ['@angular/common', '@angular/compiler', '@angular/compiler-cli', '@angular/core', '@angular/forms', '@angular/platform-browser', '@angular/router']
+const runtimeManifest = {
+  dependencies: Object.fromEntries(RUNTIME_MEMBERS.filter(name => name !== '@angular/compiler-cli').map(name => [name, '^21.2.0'])),
+  devDependencies: { '@angular/compiler-cli': '^21.2.0', '@angular/cli': '^21.2.0' },
+}
+const without = (record, ...names) => Object.fromEntries(Object.entries(record).filter(([name]) => !names.includes(name)))
+const runtimeLock = (versions = {}) => ({
+  '': {},
+  ...Object.fromEntries(RUNTIME_MEMBERS.map(name => [`node_modules/${name}`, { version: versions[name] ?? '21.2.25' }])),
+  'node_modules/@angular/cli': { version: '21.2.26' },
+})
+
+test('lineMembers returns the seven runtime members across dependencies and devDependencies', () => {
+  const result = lineMembers(runtime, runtimeManifest, runtimeLock())
+  assert.equal(result.version, '21.2.25')
+  assert.deepEqual(result.members.map(member => member.name), RUNTIME_MEMBERS)
+  assert.deepEqual(result.members.find(member => member.name === '@angular/compiler-cli'), { name: '@angular/compiler-cli', location: 'node_modules/@angular/compiler-cli', version: '21.2.25', requestedType: 'devDependencies' })
+  assert.ok(result.members.filter(member => member.name !== '@angular/compiler-cli').every(member => member.requestedType === 'dependencies'))
+})
+
+test('lineMembers returns null when @angular/core is not a root dependency', () => {
+  const dependencies = without(runtimeManifest.dependencies, '@angular/core')
+  assert.equal(lineMembers(runtime, { ...runtimeManifest, dependencies }, runtimeLock()), null)
+})
+
+test('lineMembers returns null when the runtime member versions differ', () => {
+  assert.equal(lineMembers(runtime, runtimeManifest, runtimeLock({ '@angular/forms': '21.2.24' })), null)
+})
+
+test('lineMembers tolerates a missing optional runtime member', () => {
+  const dependencies = without(runtimeManifest.dependencies, '@angular/router', '@angular/forms')
+  const result = lineMembers(runtime, { ...runtimeManifest, dependencies }, runtimeLock())
+  assert.deepEqual(result.members.map(member => member.name), RUNTIME_MEMBERS.filter(name => !['@angular/router', '@angular/forms'].includes(name)))
+  assert.equal(result.version, '21.2.25')
+})

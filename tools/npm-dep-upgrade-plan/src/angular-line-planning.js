@@ -19,25 +19,25 @@ function executionOrder(choices) {
 // keeps every existing action and clears at least one such branch wins. Returns the oldest source freshness it used.
 export async function planLineChoices({ line, finding, row, project, options, controls, adapters }) {
   if (finding.resolution === 'complete' || finding.choices.some(choice => choice.strategy === line.strategy)) return { freshAt: Infinity }
-  const toolchain = lineMembers(line, parse(project.manifestBytes), parse(project.lockBytes)?.packages)
-  if (!toolchain) return { freshAt: Infinity }
+  const installed = lineMembers(line, parse(project.manifestBytes), parse(project.lockBytes)?.packages)
+  if (!installed) return { freshAt: Infinity }
 
   const covered = new Set(finding.choices.flatMap(choice => choice.affectedConsumers.map(consumerKey)))
   const uncovered = [...consumersOf(row, finding.targetLocation)].filter(([key]) => !covered.has(key)).map(([, entry]) => entry)
-  // The root declares a vulnerable member itself; any other root declaration is not moved by a toolchain bump.
-  const rootInScope = inLineScope('', { edges: [{ from: '', to: finding.targetLocation }] }, toolchain.members)
+  // The root declares a vulnerable member itself; any other root declaration is not moved by a bump of this line.
+  const rootInScope = inLineScope('', { edges: [{ from: '', to: finding.targetLocation }] }, installed.members)
   const nested = uncovered.filter(entry => entry.consumer.location !== '')
   if (!nested.length && !(rootInScope && uncovered.length)) return { freshAt: Infinity }
   const graph = nested.length
     ? await adapters.readUpstream(project.root, { package: finding.package, version: finding.version }, nested.map(entry => ({ name: entry.dependent.name, version: entry.dependent.version })), controls)
     : { nodes: new Map(), edges: [] }
-  const inScope = uncovered.filter(entry => (entry.consumer.location === '' ? rootInScope : inLineScope(entry.consumer.location, graph, toolchain.members)))
+  const inScope = uncovered.filter(entry => (entry.consumer.location === '' ? rootInScope : inLineScope(entry.consumer.location, graph, installed.members)))
   if (!inScope.length) return { freshAt: Infinity }
 
   const catalog = await adapters.readCatalog(line.anchor)
   let freshAt = Date.parse(catalog.fetchedAt)
-  const cli = toolchain.members.find(member => member.name === line.anchor)
-  const choiceFor = (targetVersion, affectedConsumers) => ({ strategy: line.strategy, targetPackage: line.anchor, targetLocation: cli.location, currentVersion: toolchain.version, targetVersion, affectedConsumers })
+  const anchor = installed.members.find(member => member.name === line.anchor)
+  const choiceFor = (targetVersion, affectedConsumers) => ({ strategy: line.strategy, targetPackage: line.anchor, targetLocation: anchor.location, currentVersion: installed.version, targetVersion, affectedConsumers })
   const item = { ...row, targetLocation: finding.targetLocation }
   const existing = executionOrder(finding.choices)
   // The worker lands an existing parent action only on a release whose publication time it knows.
@@ -49,8 +49,9 @@ export async function planLineChoices({ line, finding, row, project, options, co
   }
   const uncoveredKeys = new Set(uncovered.map(entry => consumerKey(entry.consumer)))
   const inScopeKeys = new Set(inScope.map(entry => consumerKey(entry.consumer)))
-  // The toolchain bump must be resolved first: later actions are judged against the tree it leaves. A result counts
-  // only when every action survives and an in-scope uncovered branch is cleared.
+  // Line choices are resolved first, in registry order (an earlier line's existing choice stays ahead of this one):
+  // later actions are judged against the tree they leave. A result counts only when every action survives and an
+  // in-scope uncovered branch is cleared.
   const resolve = async (choice) => {
     const choices = orderChoices([choice, ...existing])
     const verified = await adapters.resolveChoices(project, item, choices, { ...options, releaseTimes })
@@ -62,7 +63,7 @@ export async function planLineChoices({ line, finding, row, project, options, co
   }
   const keysOf = consumers => new Set(consumers.map(consumerKey))
 
-  for (const version of lineCandidateVersions(toolchain.version, catalog.versions)) {
+  for (const version of lineCandidateVersions(installed.version, catalog.versions)) {
     const tentative = choiceFor(version, inScope.map(entry => entry.consumer))
     let result = await resolve(tentative)
     if (!result.suitable) continue
