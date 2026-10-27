@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import semver from 'semver'
 import { computeCoverage, verifyResolution } from '../src/resolver-worker.js'
-import { TOOLCHAIN_STRATEGY } from '../src/toolchain.js'
+import { TOOLCHAIN_STRATEGY } from '../src/angular-lines.js'
 
 const node = (location, name, version) => ({ location, name, version })
 const edge = (from, to, requestedName, rawSpec, extra = {}) => ({ from, to, requestedName, type: 'dependencies', rawSpec, effectiveSpec: rawSpec, valid: true, ...extra })

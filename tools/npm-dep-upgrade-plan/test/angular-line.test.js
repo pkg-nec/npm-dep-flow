@@ -1,12 +1,9 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import {
-  TOOLCHAIN_MEMBERS,
-  TOOLCHAIN_STRATEGY,
-  inToolchainScope,
-  toolchainCandidateVersions,
-  toolchainMembers,
-} from '../src/toolchain.js'
+import { ANGULAR_LINES, TOOLCHAIN_MEMBERS, TOOLCHAIN_STRATEGY } from '../src/angular-lines.js'
+import { inLineScope, lineCandidateVersions, lineMembers } from '../src/angular-line.js'
+
+const [line] = ANGULAR_LINES
 
 const manifest = {
   devDependencies: { '@angular/cli': '^21.2.0', '@angular/build': '^21.2.0' },
@@ -25,8 +22,8 @@ test('exports constants', () => {
   assert.deepEqual(TOOLCHAIN_MEMBERS, ['@angular/cli', '@angular/build'])
 })
 
-test('toolchainMembers returns both members sharing a version', () => {
-  assert.deepEqual(toolchainMembers(manifest, lock()), {
+test('lineMembers returns both members sharing a version', () => {
+  assert.deepEqual(lineMembers(line, manifest, lock()), {
     version: '21.2.26',
     members: [
       { name: '@angular/cli', location: 'node_modules/@angular/cli', version: '21.2.26', requestedType: 'devDependencies' },
@@ -35,16 +32,16 @@ test('toolchainMembers returns both members sharing a version', () => {
   })
 })
 
-test('toolchainMembers returns null when versions differ', () => {
-  assert.equal(toolchainMembers(manifest, lock('21.2.26', '21.2.25')), null)
+test('lineMembers returns null when versions differ', () => {
+  assert.equal(lineMembers(line, manifest, lock('21.2.26', '21.2.25')), null)
 })
 
-test('toolchainMembers returns null when cli is only transitive', () => {
-  assert.equal(toolchainMembers({ devDependencies: { '@angular/build': '^21.2.0' } }, lock()), null)
+test('lineMembers returns null when cli is only transitive', () => {
+  assert.equal(lineMembers(line, { devDependencies: { '@angular/build': '^21.2.0' } }, lock()), null)
 })
 
-test('toolchainMembers returns a single member when build is absent', () => {
-  const result = toolchainMembers({ dependencies: { '@angular/cli': '^21.2.0' } }, {
+test('lineMembers returns a single member when build is absent', () => {
+  const result = lineMembers(line, { dependencies: { '@angular/cli': '^21.2.0' } }, {
     'node_modules/@angular/cli': { version: '21.2.26' },
   })
   assert.equal(result.members.length, 1)
@@ -52,18 +49,18 @@ test('toolchainMembers returns a single member when build is absent', () => {
   assert.equal(result.version, '21.2.26')
 })
 
-test('toolchainMembers returns null when a declared build is not installed', () => {
-  assert.equal(toolchainMembers(manifest, { 'node_modules/@angular/cli': { version: '21.2.26' } }), null)
+test('lineMembers returns null when a declared build is not installed', () => {
+  assert.equal(lineMembers(line, manifest, { 'node_modules/@angular/cli': { version: '21.2.26' } }), null)
 })
 
-test('toolchainCandidateVersions keeps newer stable same-major versions ascending', () => {
+test('lineCandidateVersions keeps newer stable same-major versions ascending', () => {
   assert.deepEqual(
-    toolchainCandidateVersions('21.2.26', ['21.2.25', '21.2.27', '21.3.0', '22.0.0', '21.2.28-rc.1']),
+    lineCandidateVersions('21.2.26', ['21.2.25', '21.2.27', '21.3.0', '22.0.0', '21.2.28-rc.1']),
     ['21.2.27', '21.3.0'],
   )
 })
 
-test('inToolchainScope limits consumers near the members', () => {
+test('inLineScope limits consumers near the members', () => {
   const nodes = new Map()
   for (const location of [
     'node_modules/@angular/cli',
@@ -83,11 +80,11 @@ test('inToolchainScope limits consumers near the members', () => {
       { from: '', to: 'node_modules/other' },
     ],
   }
-  const { members } = toolchainMembers(manifest, lock())
-  assert.equal(inToolchainScope('', graph, members), true)
-  assert.equal(inToolchainScope('node_modules/@angular/build', graph, members), true)
-  assert.equal(inToolchainScope('node_modules/a', graph, members), true)
-  assert.equal(inToolchainScope('node_modules/b', graph, members), false)
-  assert.equal(inToolchainScope('node_modules/c', graph, members), false)
-  assert.equal(inToolchainScope('node_modules/other', graph, members), false)
+  const { members } = lineMembers(line, manifest, lock())
+  assert.equal(inLineScope('', graph, members), true)
+  assert.equal(inLineScope('node_modules/@angular/build', graph, members), true)
+  assert.equal(inLineScope('node_modules/a', graph, members), true)
+  assert.equal(inLineScope('node_modules/b', graph, members), false)
+  assert.equal(inLineScope('node_modules/c', graph, members), false)
+  assert.equal(inLineScope('node_modules/other', graph, members), false)
 })

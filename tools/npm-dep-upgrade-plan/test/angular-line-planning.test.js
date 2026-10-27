@@ -2,7 +2,8 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import semver from 'semver'
 import { consumerKey } from '../src/coverage.js'
-import { planToolchainChoices } from '../src/toolchain-planning.js'
+import { ANGULAR_LINES } from '../src/angular-lines.js'
+import { planLineChoices } from '../src/angular-line-planning.js'
 
 const CLI = 'node_modules/@angular/cli'
 const BUILD = 'node_modules/@angular/build'
@@ -22,7 +23,7 @@ const finding = (choices = [withinRange], resolution = 'partial') => ({ package:
 const manifest = { name: 'app', version: '1.0.0', devDependencies: { '@angular/cli': '21.2.26', '@angular/build': '21.2.26' } }
 const lock = { lockfileVersion: 3, packages: { '': { name: 'app' }, [CLI]: { version: '21.2.26' }, [BUILD]: { version: '21.2.26' }, [CORE]: { version: '21.2.26' } } }
 const project = (m = manifest, l = lock) => ({ root: '/project', manifestBytes: Buffer.from(JSON.stringify(m)), lockBytes: Buffer.from(JSON.stringify(l)) })
-const base = { options: { noCache: false, ttlMs: 3600000 }, controls: { noCache: false } }
+const base = { line: ANGULAR_LINES[0], options: { noCache: false, ttlMs: 3600000 }, controls: { noCache: false } }
 const iso = days => new Date(Date.now() - days * 86400000).toISOString()
 const upstream = {
   nodes: new Map([['', { location: '', name: 'app', version: '1.0.0' }], [CLI, { location: CLI, name: '@angular/cli', version: '21.2.26' }], [BUILD, { location: BUILD, name: '@angular/build', version: '21.2.26' }], [CORE, { location: CORE, name: '@angular-devkit/core', version: '21.2.26' }], ['node_modules/x', { location: 'node_modules/x', name: 'x', version: '1.0.0' }]]),
@@ -62,7 +63,7 @@ function adapters(overrides = {}) {
 test('picks the lowest clearing candidate with no release-age filter and resolves it first', async () => {
   const f = finding()
   const { adapters: a, calls } = adapters()
-  await planToolchainChoices({ ...base, project: project(), finding: f, row, adapters: a })
+  await planLineChoices({ ...base, project: project(), finding: f, row, adapters: a })
   assert.deepEqual(calls.catalogs, ['@angular/cli'])
   assert.deepEqual(calls.upstream[0].target, { package: 'a', version: '1.2.3' })
   for (const call of calls.resolves) assert.equal(call.choices[0].strategy, 'upgrade-angular-toolchain')
@@ -78,7 +79,7 @@ test('picks the lowest clearing candidate with no release-age filter and resolve
 test('keeps existing choices and orders the toolchain first, then parents, then within-range', async () => {
   const f = finding([withinRange, parentChoice])
   const { adapters: a, calls } = adapters()
-  await planToolchainChoices({ ...base, project: project(), finding: f, row, adapters: a })
+  await planLineChoices({ ...base, project: project(), finding: f, row, adapters: a })
   assert.deepEqual(f.choices.map(c => c.strategy), ['upgrade-angular-toolchain', 'upgrade-via-parent-dependency', 'update-within-declared-range'])
   assert.deepEqual(calls.resolves.at(-1).choices.map(c => c.strategy), ['upgrade-angular-toolchain', 'upgrade-via-parent-dependency', 'update-within-declared-range'])
   assert.equal(f.resolution, 'complete')
@@ -92,7 +93,7 @@ test('a candidate that makes an existing choice drop is not suitable', async () 
     const result = await inner(...args)
     return { ...result, choices: result.choices.filter(c => c.strategy !== 'update-within-declared-range') }
   }
-  await planToolchainChoices({ ...base, project: project(), finding: f, row, adapters: a })
+  await planLineChoices({ ...base, project: project(), finding: f, row, adapters: a })
   assert.deepEqual(f.choices, [withinRange])
   assert.equal(f.resolution, 'partial')
 })
@@ -100,7 +101,7 @@ test('a candidate that makes an existing choice drop is not suitable', async () 
 test('leaves the finding untouched when no candidate clears a branch', async () => {
   const f = finding()
   const { adapters: a, calls } = adapters({ clearsAt: null })
-  await planToolchainChoices({ ...base, project: project(), finding: f, row, adapters: a })
+  await planLineChoices({ ...base, project: project(), finding: f, row, adapters: a })
   assert.deepEqual(calls.resolves.map(call => call.choices[0].targetVersion), ['21.2.27', '21.2.28', '21.3.0'])
   assert.deepEqual(f, finding())
 })
@@ -109,13 +110,13 @@ test('skips projects without an Angular toolchain and findings already complete'
   const { adapters: a, calls } = adapters()
   const noCli = { ...manifest, devDependencies: { '@angular/build': '21.2.26' } }
   const f = finding()
-  assert.deepEqual(await planToolchainChoices({ ...base, project: project(noCli), finding: f, row, adapters: a }), { freshAt: Infinity })
+  assert.deepEqual(await planLineChoices({ ...base, project: project(noCli), finding: f, row, adapters: a }), { freshAt: Infinity })
   assert.deepEqual(f, finding())
   const mismatched = { ...lock, packages: { ...lock.packages, [BUILD]: { version: '21.2.25' } } }
-  await planToolchainChoices({ ...base, project: project(manifest, mismatched), finding: f, row, adapters: a })
-  await planToolchainChoices({ ...base, project: { root: '/project' }, finding: f, row, adapters: a })
+  await planLineChoices({ ...base, project: project(manifest, mismatched), finding: f, row, adapters: a })
+  await planLineChoices({ ...base, project: { root: '/project' }, finding: f, row, adapters: a })
   const complete = finding([{ ...withinRange, affectedConsumers: [consumer(BUILD), consumer(CORE), consumer('node_modules/x'), consumer('node_modules/c')] }], 'complete')
-  assert.deepEqual(await planToolchainChoices({ ...base, project: project(), finding: complete, row, adapters: a }), { freshAt: Infinity })
+  assert.deepEqual(await planLineChoices({ ...base, project: project(), finding: complete, row, adapters: a }), { freshAt: Infinity })
   assert.deepEqual(calls, { upstream: [], catalogs: [], resolves: [] })
 })
 
@@ -123,7 +124,7 @@ test('consumers outside two levels below a member are not tried', async () => {
   const outside = { ...row, requirements: [{ declaredRequirement: '1.2.3', directDependents: [dependent('x', '1.0.0', 'node_modules/x')] }] }
   const { adapters: a, calls } = adapters()
   const f = finding([], 'none')
-  await planToolchainChoices({ ...base, project: project(), finding: f, row: outside, adapters: a })
+  await planLineChoices({ ...base, project: project(), finding: f, row: outside, adapters: a })
   assert.equal(calls.upstream.length, 1)
   assert.deepEqual(calls.resolves, [])
   assert.deepEqual(f.choices, [])
@@ -146,7 +147,7 @@ test('a vulnerable member is cleared through its root declaration without a path
     },
   }
   const f = { package: '@angular/build', version: '21.2.26', targetLocation: BUILD, resolution: 'none', choices: [] }
-  await planToolchainChoices({ ...base, project: project(), finding: f, row: member, adapters: a })
+  await planLineChoices({ ...base, project: project(), finding: f, row: member, adapters: a })
   assert.equal(calls.upstream, 0)
   assert.deepEqual(f.choices, [{ strategy: 'upgrade-angular-toolchain', targetPackage: '@angular/cli', targetLocation: CLI, currentVersion: '21.2.26', targetVersion: '21.2.27', affectedConsumers: [root] }])
   assert.equal(f.resolution, 'complete')
@@ -155,17 +156,17 @@ test('a vulnerable member is cleared through its root declaration without a path
 test('a root declaration of a non-member package is not in toolchain scope', async () => {
   const direct = { ...row, requirements: [{ declaredRequirement: '1.2.3', directDependents: [dependent('app', '1.0.0', '')] }] }
   const { adapters: a, calls } = adapters()
-  await planToolchainChoices({ ...base, project: project(), finding: finding([], 'none'), row: direct, adapters: a })
+  await planLineChoices({ ...base, project: project(), finding: finding([], 'none'), row: direct, adapters: a })
   assert.deepEqual(calls.resolves, [])
 })
 
 test('returns the @angular/cli catalog freshness and forwards cache controls to paths', async () => {
   const { adapters: a, calls } = adapters()
-  const result = await planToolchainChoices({ ...base, controls: { noCache: true, clearCache: true }, project: project(), finding: finding(), row, adapters: a })
+  const result = await planLineChoices({ ...base, controls: { noCache: true, clearCache: true }, project: project(), finding: finding(), row, adapters: a })
   assert.equal(result.freshAt, Date.parse(catalogFetchedAt))
   assert.deepEqual(calls.upstream[0].controls, { noCache: true, clearCache: true })
   const none = adapters({ clearsAt: null })
-  assert.equal((await planToolchainChoices({ ...base, project: project(), finding: finding(), row, adapters: none.adapters })).freshAt, Date.parse(catalogFetchedAt))
+  assert.equal((await planLineChoices({ ...base, project: project(), finding: finding(), row, adapters: none.adapters })).freshAt, Date.parse(catalogFetchedAt))
 })
 
 // A scripted resolver: `plan(toolchain, call)` says which consumers the toolchain bump clears and whether existing
@@ -197,7 +198,7 @@ test('existing parent choices reach the resolver with their release times and th
   const parentFetchedAt = iso(0.04)
   const { calls, adapters: a } = scripted(() => ({ clears: [BUILD, CORE] }), { x: { versions: ['1.0.0', '1.1.0'], releaseTimes: new Map([['1.1.0', iso(30)]]), fetchedAt: parentFetchedAt } })
   const f = finding([withinRange, parentChoice])
-  const result = await planToolchainChoices({ ...base, project: project(), finding: f, row, adapters: a })
+  const result = await planLineChoices({ ...base, project: project(), finding: f, row, adapters: a })
   assert.deepEqual(f.choices.map(c => c.strategy), ['upgrade-angular-toolchain', 'upgrade-via-parent-dependency', 'update-within-declared-range'])
   assert.equal(f.choices[0].targetVersion, '21.2.27')
   assert.equal(f.resolution, 'complete')
@@ -210,7 +211,7 @@ test('existing parent choices reach the resolver with their release times and th
 test('a bump that clears only some in-scope consumers is resolved again with exactly those consumers', async () => {
   const { calls, adapters: a } = scripted(() => ({ clears: [BUILD] }))
   const f = finding()
-  await planToolchainChoices({ ...base, project: project(), finding: f, row, adapters: a })
+  await planLineChoices({ ...base, project: project(), finding: f, row, adapters: a })
   assert.equal(calls.resolves.length, 2)
   assert.deepEqual(calls.resolves[0].choices[0].affectedConsumers, [consumer(BUILD), consumer(CORE)])
   assert.deepEqual(calls.resolves[1].choices[0].affectedConsumers, [consumer(BUILD)])
@@ -221,7 +222,7 @@ test('a bump that clears only some in-scope consumers is resolved again with exa
 test('an out-of-scope uncovered consumer the bump also clears is recorded after a second resolution', async () => {
   const { calls, adapters: a } = scripted(() => ({ clears: [BUILD, CORE, 'node_modules/x'] }))
   const f = finding()
-  await planToolchainChoices({ ...base, project: project(), finding: f, row, adapters: a })
+  await planLineChoices({ ...base, project: project(), finding: f, row, adapters: a })
   assert.equal(calls.resolves.length, 2)
   assert.deepEqual(f.choices[0].affectedConsumers, [consumer(BUILD), consumer(CORE), consumer('node_modules/x')])
   assert.equal(f.resolution, 'complete')
@@ -230,7 +231,7 @@ test('an out-of-scope uncovered consumer the bump also clears is recorded after 
 test('a candidate whose second resolution drops an existing choice is rejected and the next one is tried', async () => {
   const { calls, adapters: a } = scripted((toolchain, call) => ({ clears: [BUILD], drop: call === 2 }))
   const f = finding()
-  await planToolchainChoices({ ...base, project: project(), finding: f, row, adapters: a })
+  await planLineChoices({ ...base, project: project(), finding: f, row, adapters: a })
   assert.deepEqual(calls.resolves.map(c => c.choices[0].targetVersion), ['21.2.27', '21.2.27', '21.2.28', '21.2.28'])
   assert.equal(f.choices[0].targetVersion, '21.2.28')
   assert.deepEqual(f.choices.slice(1), [withinRange])
@@ -240,7 +241,7 @@ test('a second resolution that clears a different set than the recorded consumer
   const shifted = { 2: [CORE], 4: [] }
   const { calls, adapters: a } = scripted((toolchain, call) => ({ clears: shifted[call] ?? [BUILD] }))
   const f = finding()
-  await planToolchainChoices({ ...base, project: project(), finding: f, row, adapters: a })
+  await planLineChoices({ ...base, project: project(), finding: f, row, adapters: a })
   assert.equal(calls.resolves.length, 4)
   assert.deepEqual(f, finding())
 })

@@ -3,7 +3,8 @@ import test from 'node:test'
 import path from 'node:path'
 import { readFile } from 'node:fs/promises'
 import { resolveChoices } from '../src/resolver.js'
-import { planToolchainChoices } from '../src/toolchain-planning.js'
+import { ANGULAR_LINES } from '../src/angular-lines.js'
+import { planLineChoices } from '../src/angular-line-planning.js'
 
 const day = 86400000
 const ago = days => new Date(Date.now() - days * day).toISOString()
@@ -49,7 +50,7 @@ for (const npmCli of [process.env.NPM_DEP_UPGRADE_E2E_NPM_CLI, process.env.NPM_D
       resolveChoices: (project, item, choices, options) => resolveChoices(project, item, choices, { ...options, env: f.env }),
     }
     const finding = { package: 'kid', version: '1.0.0', targetLocation: 'node_modules/kid', resolution: 'partial', choices: [parentChoice] }
-    await planToolchainChoices({ finding, row, project: { root: f.root, manifestBytes, lockBytes }, options: {}, controls: {}, adapters })
+    await planLineChoices({ line: ANGULAR_LINES[0], finding, row, project: { root: f.root, manifestBytes, lockBytes }, options: {}, controls: {}, adapters })
     assert.deepEqual(finding.choices.map(c => `${c.strategy}:${c.targetPackage}@${c.targetVersion}`), ['upgrade-angular-toolchain:@angular/cli@1.0.1', 'upgrade-via-parent-dependency:p@1.0.1'])
     assert.deepEqual(finding.choices[0].affectedConsumers, [consumer('node_modules/@angular/build'), consumer('node_modules/@angular/cli')])
     assert.equal(finding.resolution, 'complete')

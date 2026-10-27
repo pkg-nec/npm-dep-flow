@@ -2,7 +2,7 @@
 import { readFile, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import path from 'node:path'
-import { TOOLCHAIN_MEMBERS, TOOLCHAIN_STRATEGY } from './toolchain.js'
+import { TOOLCHAIN_MEMBERS, TOOLCHAIN_STRATEGY } from './angular-lines.js'
 
 const key = e => JSON.stringify([e.location ?? e.from, e.requestedName, e.type])
 const types = { prod: 'dependencies', dev: 'devDependencies', peer: 'peerDependencies', peerOptional: 'peerDependencies', optional: 'optionalDependencies' }
