@@ -6,6 +6,7 @@ import { createProject } from './helpers/project.js'
 import { shared, leaf, ago } from './fixtures/catalog.js'
 import { plan, runUpgrade, assertResolved } from './helpers/runner.js'
 import { checked, command } from './helpers/commands.js'
+
 const runtimes = [process.env.NPM_DEP_UPGRADE_E2E_NPM_CLI, process.env.NPM_DEP_UPGRADE_E2E_COMPAT_NPM_CLI].filter(Boolean)
 for (const npmCli of runtimes) for (const count of [1, 4]) test(`partial: ${count} caret and ${count} pinned consumers (${npmCli})`, async (t) => {
   const scenario = shared(true)
@@ -74,12 +75,14 @@ for (const npmCli of runtimes) test(`two safe ranges create two upgrades and com
     await assertResolved(f, 'node_modules/e2e-parent-b', 'e2e-target', i ? '7.0.5' : '6.0.9', copy)
   }
 })
+
 function twoRangeScenario() {
   const scenario = shared()
   scenario.packages['e2e-parent-b']['1.0.0'].manifest.dependencies['e2e-target'] = '6.0.9 || ^7.0.0'
   scenario.packages['e2e-target']['7.0.5'].seed = false
   return scenario
 }
+
 test('two-action failure before publication creates no commits', async (t) => {
   const { installCheckpoints } = await import('./helpers/commands.js')
   const { assertUnchanged } = await import('./helpers/runner.js')

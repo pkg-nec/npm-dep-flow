@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { Readable } from 'node:stream'
 import test from 'node:test'
 import { readCandidateAdvisories, normalizeTimestamp } from '../src/registry.js'
+
 test('candidate security adapter includes candidate-only ranges and rejects bad service data', async () => {
   const context = { registry: 'https://registry.example/', auditRegistry: 'https://audit.example/', requestOptions: {} }
   const versions = new Map([['e2e-target', ['6.0.10', '6.0.12']]])

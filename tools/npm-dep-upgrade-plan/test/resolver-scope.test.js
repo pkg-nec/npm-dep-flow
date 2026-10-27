@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import semver from 'semver'
 import { matchesSelectedScope, verifyResolution } from '../src/resolver-worker.js'
+
 test('rejects changing another root installation even when the new closure reaches it', () => {
   const before = { nodes: [
     { location: '', name: 'app', version: '1.0.0' },

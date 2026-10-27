@@ -1,5 +1,6 @@
 import { fail } from './errors.js'
 import path from 'node:path'
+
 export function parseArgs(argv, cwd = process.cwd()) {
   const result = { projectPath: path.resolve(cwd), selector: null, packageName: null, format: 'markdown', action: 'upgrade', provided: [] }
   if (argv.includes('--help')) return { ...result, action: 'help' }

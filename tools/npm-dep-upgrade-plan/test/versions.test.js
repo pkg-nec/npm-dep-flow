@@ -20,6 +20,7 @@ function spawnFixture(response, calls = []) {
     return child
   }
 }
+
 const report = { schemaVersion: 2, package: '@scope/pkg', fetchedAt: '2026-01-01T00:00:00.000Z', rows: [{ version: '2.0.0', releasedAt: null }, { version: '1.0.0', releasedAt: '2025-01-01T00:00:00.000Z' }] }
 const now = () => Date.parse('2026-01-01T00:00:01.000Z')
 test('catalog adapter forwards TTL and bypass through one public command and sorts stable rows', async () => {

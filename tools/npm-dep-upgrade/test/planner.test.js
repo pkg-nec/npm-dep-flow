@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
 import test from 'node:test'
 import { selectItem, validatePlanner, canonicalLocation } from '../src/planner.js'
+
 const location = 'node_modules/@e2e/target'
 const id = createHash('sha256').update('@e2e/target__' + location).digest('hex')
 const row = { id, package: '@e2e/target', version: '6.0.9', targetLocation: location, severity: 'high', minimumSafeVersion: '6.0.10', minimumSafeVersionReleasedAt: '2026-01-01T00:00:00.000Z', resolution: 'complete', choices: [{ strategy: 'update-within-declared-range', targetPackage: '@e2e/target', targetLocation: location, currentVersion: '6.0.9', targetVersion: '6.0.10', affectedConsumers: [{ location: '', requestedName: '@e2e/target', type: 'dependencies' }] }] }

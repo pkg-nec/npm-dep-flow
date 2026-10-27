@@ -6,6 +6,7 @@ import { runProcess } from './process.js'
 import { fail } from './errors.js'
 import { formatCommitMessage } from './commit-message.js'
 import { validateCommitArgs } from './config.js'
+
 const line = s => s.replace(/\r?\n$/, '')
 const operations = ['MERGE_HEAD', 'CHERRY_PICK_HEAD', 'REVERT_HEAD', 'rebase-merge', 'rebase-apply']
 export async function runGit(root, args) {
@@ -26,6 +27,7 @@ export async function readDependencyFiles(root) {
   }
   return files
 }
+
 async function assertNoOperation(repoRoot, phase) {
   for (const op of operations) {
     const file = line(await runGit(repoRoot, ['rev-parse', '--git-path', op]))
@@ -36,6 +38,7 @@ async function assertNoOperation(repoRoot, phase) {
     catch (error) { if (error.code !== 'ENOENT') throw error }
   }
 }
+
 async function assertRepositoryState(guard, phase, { staged = false } = {}) {
   if (line(await runGit(guard.repoRoot, ['rev-parse', 'HEAD'])) !== guard.head) fail('CONCURRENT_CHANGE', phase, 'Git HEAD changed during upgrade')
   const branch = await runProcess('git', ['symbolic-ref', '--quiet', '--short', 'HEAD'], { cwd: guard.repoRoot })
@@ -43,6 +46,7 @@ async function assertRepositoryState(guard, phase, { staged = false } = {}) {
   await assertNoOperation(guard.repoRoot, phase)
   if (!staged && (await runGit(guard.repoRoot, ['diff', '--cached', '--name-only', '-z'])).length) fail('CONCURRENT_CHANGE', phase, 'Git staging area changed; it must be empty')
 }
+
 export async function assertGitState(guard, phase, expectedFiles = guard.ownedFiles) {
   await assertRepositoryState(guard, phase)
   const files = await readDependencyFiles(guard.root)
@@ -79,6 +83,7 @@ export async function assertCommitState(guard, paths, blobs) {
   if (staged.length !== paths.length || staged.some(p => !paths.includes(p))) fail('CONCURRENT_CHANGE', 'commit', 'Hook changed staged files outside verified scope')
   for (const file of paths) if (line(await runGit(guard.repoRoot, ['rev-parse', `:${file}`])) !== blobs[file]) fail('CONCURRENT_CHANGE', 'commit', 'Hook changed verified staged content')
 }
+
 async function createCommitHooks(guard, paths, blobs, subject) {
   const directory = await mkdtemp(path.join(tmpdir(), 'npm-dep-upgrade-hooks-'))
   try {
@@ -100,6 +105,7 @@ async function createCommitHooks(guard, paths, blobs, subject) {
     throw error
   }
 }
+
 export async function commitUpgrade(guard, expectedFiles, identity, options = {}) {
   const subject = formatCommitMessage(identity, options)
   const args = options.gitCommitArgs ?? []

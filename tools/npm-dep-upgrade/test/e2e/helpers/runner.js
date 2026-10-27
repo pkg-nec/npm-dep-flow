@@ -3,6 +3,7 @@ import { readFile, mkdir, writeFile, readdir } from 'node:fs/promises'
 import path from 'node:path'
 import { createRequire } from 'node:module'
 import { command, checked } from './commands.js'
+
 export async function plan(f, format = 'json') {
   const output = await checked(f, 'npm-dep-upgrade-plan', ['.', '--format', format])
   return format === 'json' ? JSON.parse(output).rows : output
@@ -22,12 +23,14 @@ export async function assertUnchanged(f, result, pattern) {
   for (const [name, bytes] of Object.entries(f.initialFiles)) assert.deepEqual(await readFile(path.join(f.root, name)), bytes, `${name} changed`)
   assert.equal(await checked(f, 'git', ['diff', '--cached', '--name-only']), '')
 }
+
 async function noScripts(root) {
   for (const entry of await readdir(root, { withFileTypes: true })) {
     assert.notEqual(entry.name, 'SCRIPT_RAN')
     if (entry.isDirectory() && entry.name !== '.git') await noScripts(path.join(root, entry.name))
   }
 }
+
 export async function assertSuccess(f, result, version = '6.0.12', { reproduce = false, location, name } = {}) {
   assert.equal(result.code, 0, result.stderr)
   const output = JSON.parse(result.stdout)

@@ -8,6 +8,7 @@ import { consumerKey, verifyCoverage } from './coverage.js'
 import { fail } from './errors.js'
 import { PARENT_STRATEGY } from './model.js'
 import { orderChoices, parentRanges, selectParentRelease } from './parents.js'
+
 const graph = data => ({ nodes: new Map(data.nodes.map(n => [n.location, n])), edges: data.edges })
 const equal = (a, b) => a && b && a.name === b.name && a.version === b.version && a.resolved === b.resolved && a.integrity === b.integrity
 export async function executeActions(project, item, evidence, context, adapters) {

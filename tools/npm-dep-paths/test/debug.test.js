@@ -16,6 +16,7 @@ function capture() {
     return output
   } }
 }
+
 function completed(command, args, options) {
   const child = new EventEmitter()
   child.stdout = new PassThrough()

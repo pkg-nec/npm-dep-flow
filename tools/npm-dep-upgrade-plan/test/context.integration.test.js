@@ -6,6 +6,7 @@ import { mkdtemp, writeFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { readPlanningContext } from '../src/context.js'
+
 const execute = promisify(execFile)
 const runtime = process.env.NPM_DEP_UPGRADE_E2E_NPM_CLI
 

@@ -4,6 +4,7 @@ import { assertGitState } from './git.js'
 import { recordOwnedFiles } from './recovery.js'
 import { fail } from './errors.js'
 import { createScopeProbe, planScopes } from './scopes.js'
+
 function serialize(value, original) {
   const source = original.toString('utf8')
   const indent = /\n([\t ]+)"/.exec(source)?.[1]
@@ -12,6 +13,7 @@ function serialize(value, original) {
   if (newline === '\r\n') text = text.replaceAll('\n', '\r\n')
   return Buffer.from(text + (source.endsWith('\n') ? newline : ''))
 }
+
 export async function buildMutation(project, evidence, candidate, deps = {}) {
   const manifest = structuredClone(project.manifest)
   if (evidence.directDeclarations.length) {

@@ -2,6 +2,7 @@ import { readFile, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { assertGitState } from './git.js'
 import { fail } from './errors.js'
+
 export async function recordOwnedFiles(guard, files) {
   for (const [name, expected] of Object.entries(files)) {
     if (!Object.hasOwn(guard.originalFiles, name)) fail('OWNERSHIP_ERROR', 'recovery', 'Unknown dependency file')

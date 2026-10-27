@@ -3,6 +3,7 @@ import npmFetch from 'npm-registry-fetch'
 import semver from 'semver'
 import { runProcess } from './process.js'
 import { fail } from './errors.js'
+
 export function stableVersion(value) {
   if (typeof value !== 'string') return false
   const parsed = semver.parse(value)

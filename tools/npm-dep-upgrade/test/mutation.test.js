@@ -7,6 +7,7 @@ import { createScopeProbe } from '../src/scopes.js'
 import { loadProject } from '../src/project.js'
 import { loadGraph } from '../src/graph.js'
 import { gitProject } from './helpers/git-project.js'
+
 test('direct mutations preserve operators and all compatible declaration sections', async (t) => {
   const f = await gitProject(t)
   f.manifest.devDependencies = { 'e2e-target': '~6.0.8' }

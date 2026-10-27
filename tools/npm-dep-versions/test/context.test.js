@@ -4,6 +4,7 @@ import { symlink } from 'node:fs/promises'
 import { join } from 'node:path'
 import { readContext } from '../src/context.js'
 import { scratch } from './helpers/commands.js'
+
 const runner = config => async (command, args) => ({ code: 0, stdout: args[0] === '--version' ? '12.1.0' : JSON.stringify(config) })
 test('context canonicalizes directories and hashes sorted effective configuration without storing secrets', async (t) => {
   const root = await scratch(t)

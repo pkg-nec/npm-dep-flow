@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { filterRows } from '../src/filter.js'
+
 const rows = ['20.0.0', '19.1.0', '19.1.0-beta.1', '19.0.0', '19.0.0-beta.1', '18.0.0'].map(version => ({ version, releasedAt: null }))
 test('stable default and major/range intersection use semantic version bounds', () => {
   assert.deepEqual(filterRows(rows, { all: false, major: 19, range: null }).map(r => r.version), ['19.0.0', '19.1.0'])

@@ -4,6 +4,7 @@ import path from 'node:path'
 import semver from 'semver'
 import { loadGraph } from './graph.js'
 import { fail } from './errors.js'
+
 export async function createScopeProbe(project, scratchRoot = tmpdir()) {
   const before = await loadGraph(project.root)
   return async (overrides) => {
@@ -22,6 +23,7 @@ export async function createScopeProbe(project, scratchRoot = tmpdir()) {
     finally { await rm(dir, { recursive: true, force: true }) }
   }
 }
+
 // Keep one scope per selector sequence and the physical locations at its head.
 // Shared ancestry then stays a compact graph instead of becoming every route.
 function addScope(scopes, route, head, graph) {
@@ -36,6 +38,7 @@ function addScope(scopes, route, head, graph) {
   }
   scopes.get(key).heads.add(head)
 }
+
 function upstreamParents(upstream) {
   const parents = new Map()
   for (const report of upstream) for (const edge of report.edges) {
@@ -44,6 +47,7 @@ function upstreamParents(upstream) {
   }
   return parents
 }
+
 function expandScopes(scopes, parents, graph) {
   const next = new Map()
   for (const { route, heads } of scopes.values()) for (const head of heads) {
@@ -54,6 +58,7 @@ function expandScopes(scopes, parents, graph) {
   }
   return next
 }
+
 function mergeRule(base, route, target, requirement, graph) {
   const node = graph.nodes.get(route[0])
   const key = `${node.name}@${node.version}`
@@ -75,6 +80,7 @@ function mergeRule(base, route, target, requirement, graph) {
   // More specific newly introduced rules precede broad existing rules, whose relative order stays intact.
   return { [key]: value, ...Object.fromEntries(Object.entries(base).filter(([k]) => k !== key)) }
 }
+
 export async function planScopes(project, evidence, candidate, { probeScope }) {
   const { graph, item, incoming } = evidence
   if (incoming.some(e => e.requestedName !== item.package)) fail('UNSUPPORTED_SCOPE', 'scope', 'Alias override application is unsupported')

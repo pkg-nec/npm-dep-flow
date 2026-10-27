@@ -21,6 +21,7 @@ import { installProject } from './installer.js'
 import { createStagingProject } from './staging.js'
 import { verifyGraph, verifyFinalSecurity } from './verify.js'
 import { renderJson, renderMarkdown } from './report.js'
+
 const toolRoot = fileURLToPath(new URL('../', import.meta.url))
 const defaults = { clearPlannerCache, executeActions, commitSnapshots, preflightGit, assertGitState, loadProject, loadGraph, readPlanner, readEvidence, loadNpmContext, readCatalog, readCandidateAdvisories, selectCandidate, buildMutation, writeMutation, installProject, createStagingProject, verifyGraph, verifyFinalSecurity, commitUpgrade }
 export async function main(argv, io = process, overrides = {}) {

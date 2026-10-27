@@ -2,6 +2,7 @@ import semver from 'semver'
 import { runProcess } from './process.js'
 import { loadGraph } from './graph.js'
 import { fail } from './errors.js'
+
 const edgeKey = (from, to, name, type, spec) => JSON.stringify([from, to, name, type, spec])
 export async function readFreshAudit(root, run = runProcess) {
   const r = await run('npm-dep-audit', ['.', '--min-severity', 'info', '--no-cache', '--format', 'json'], { cwd: root })

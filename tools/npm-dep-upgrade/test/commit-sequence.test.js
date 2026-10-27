@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises'
 import { gitProject } from './helpers/git-project.js'
 import { preflightGit, runGit } from '../src/git.js'
 import { commitSnapshots } from '../src/commit-sequence.js'
+
 test('commits each verified dependency snapshot separately', async (t) => {
   const f = await gitProject(t), guard = await preflightGit(f.root)
   const snapshots = ['6.0.10', '6.0.12'].map((version, choiceIndex) => {

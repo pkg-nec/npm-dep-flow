@@ -22,6 +22,7 @@ function scenario(bVersions, extra = {}, rootDependencies = { b: '^1.0.0', c: '^
     },
   }
 }
+
 const rowFor = (cSpec = '^1.2.0') => ({
   package: 'a', version: '1.2.3', advisories: [{ range: '<1.2.5' }], targetLocation: 'node_modules/a',
   requirements: [

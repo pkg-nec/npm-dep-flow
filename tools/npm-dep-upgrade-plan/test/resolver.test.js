@@ -4,6 +4,7 @@ import { mkdtemp, writeFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { resolveChoices } from '../src/resolver.js'
+
 test('rejects malformed worker evidence rather than claiming coverage', async (t) => {
   const root = await mkdtemp(path.join(tmpdir(), 'resolver-contract-'))
   t.after(() => rm(root, { recursive: true, force: true }))

@@ -2,8 +2,10 @@
 import { readFile, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import path from 'node:path'
+
 const key = e => JSON.stringify([e.location ?? e.from, e.requestedName, e.type])
 const types = { prod: 'dependencies', dev: 'devDependencies', peer: 'peerDependencies', peerOptional: 'peerDependencies', optional: 'optionalDependencies' }
+
 function graph(tree) {
   const nodes = [], edges = []
   for (const n of tree.inventory.values()) {
@@ -15,7 +17,9 @@ function graph(tree) {
   }
   return { nodes, edges }
 }
+
 const equal = (a, b) => !!a && !!b && a.name === b.name && a.version === b.version && a.resolved === b.resolved && a.integrity === b.integrity
+
 function closure(g, starts) {
   const found = new Set(), pending = [...starts]
   const next = new Map()
@@ -31,6 +35,7 @@ function closure(g, starts) {
   }
   return found
 }
+
 const PARENT_STRATEGY = 'upgrade-via-parent-dependency'
 const isParent = choice => choice.strategy === PARENT_STRATEGY
 export function verifyResolution(before, after, item, choices, semver) {
@@ -126,6 +131,7 @@ export function matchesSelectedScope(before, probe, targetLocation, affectedCons
     return selected.has(key(old)) ? changed : current.to === old.to && current.effectiveSpec === old.effectiveSpec
   })
 }
+
 function mergeRule(base, route, name, version, nodes, rootEdges, semver) {
   const location = route[0], n = nodes.get(location), selector = `${n.name}@${n.version}`
   const old = base[selector]
@@ -145,7 +151,9 @@ function mergeRule(base, route, name, version, nodes, rootEdges, semver) {
   }
   return { [selector]: value, ...Object.fromEntries(Object.entries(base).filter(([k]) => k !== selector)) }
 }
+
 const DAY_MS = 86_400_000
+
 // The release-age cutoff from npm configuration: never fewer than seven days, bounded by an explicit `before`.
 function releaseCutoff(config, now = Date.now()) {
   const configured = Number(config.get('min-release-age') || 0)
@@ -154,6 +162,7 @@ function releaseCutoff(config, now = Date.now()) {
   if (!Number.isFinite(configured) || Number.isNaN(explicit)) throw new Error('Invalid release-age policy')
   return Math.min(now - Math.max(7, configured) * DAY_MS, explicit)
 }
+
 // Phase 1 lands the ancestor on exactly the tested release (npm's named update, capped at that release's publication
 // time). That cap would also hold back everything the new release brings in, so phase 2 removes those new or changed
 // installations from the tree and lets npm resolve them again under the real cutoff: the newest releases that are old
@@ -175,6 +184,7 @@ async function landAncestor({ Arborist, opts, choice, releasedAt, cutoff, load }
   await ideal.meta.save()
   return ideal
 }
+
 export async function resolveRequest(request) {
   const require = createRequire(path.join(request.npmPath, 'package.json'))
   const Arborist = require('@npmcli/arborist'), Config = require('@npmcli/config'), semver = require('semver')

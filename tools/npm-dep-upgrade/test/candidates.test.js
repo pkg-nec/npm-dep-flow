@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { selectCandidate } from '../src/candidates.js'
+
 const now = Date.parse('2026-10-20T00:00:00Z'), day = 86400000
 const item = { version: '6.0.9', minimumSafeVersion: '6.0.10', package: 'e2e-target' }
 const versions = ['6.0.9', '6.0.10', '6.0.12', '6.0.13', '6.0.14-beta.1', '6.1.0', '7.0.5']

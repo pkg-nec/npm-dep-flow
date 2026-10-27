@@ -3,6 +3,7 @@
 import { readFile } from 'node:fs/promises'
 import { runProcess } from './process.js'
 import { assertCommitState } from './git.js'
+
 try {
   const [snapshot, hook, ...args] = process.argv.slice(2)
   const data = JSON.parse(await readFile(snapshot, 'utf8'))

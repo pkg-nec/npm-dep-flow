@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { verifyCoverage, verifyInstalledGraph } from '../src/coverage.js'
+
 const before = { nodes: new Map([['old', { name: 'a', version: '1.2.3' }]]), edges: [{ from: 'b', to: 'old', requestedName: 'a', type: 'dependencies', rawSpec: '1.2.3' }, { from: 'c', to: 'old', requestedName: 'a', type: 'dependencies', rawSpec: '^1.2.0' }] }
 const item = { package: 'a', version: '1.2.3', targetLocation: 'old' }
 const evidence = { item, graph: before, incoming: before.edges, auditRows: [{ package: 'a', version: '1.2.3', advisories: [{ range: '<1.2.5' }] }] }

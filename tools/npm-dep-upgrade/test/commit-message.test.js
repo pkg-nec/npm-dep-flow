@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
+
 test('formatter supports strategy descriptions, optional scope and literal placeholders', async () => {
   const { formatCommitMessage } = await import('../src/commit-message.js')
   const identity = { package: 'joi', oldVersion: '18.2.8', newVersion: '18.2.9', strategy: 'update-within-declared-range', description: 'bump joi from 18.2.8 to 18.2.9' }

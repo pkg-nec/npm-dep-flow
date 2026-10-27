@@ -1,10 +1,13 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { consumerKey, selectWithinRangeChoices, withRootDeclarations } from '../src/coverage.js'
+
 const location = 'node_modules/a'
+
 function row(specs) {
   return { package: 'a', version: '1.2.3', advisories: [{ range: '>=1.2.3 <1.2.5' }], requirements: specs.map(([name, spec, targetLocation = location]) => ({ declaredRequirement: spec, directDependents: [{ name, version: '1.0.0', location: `node_modules/${name}`, targetLocation, requestedName: 'a', type: 'dependencies' }] })) }
 }
+
 test('selects caret consumers without forcing pinned consumers', () => {
   const choices = selectWithinRangeChoices(row([['b', '1.2.3'], ['c', '^1.2.0']]), location, ['1.2.5'])
   assert.deepEqual(choices, [{ strategy: 'update-within-declared-range', targetPackage: 'a', targetLocation: location, currentVersion: '1.2.3', targetVersion: '1.2.5', affectedConsumers: [{ location: 'node_modules/c', requestedName: 'a', type: 'dependencies' }] }])

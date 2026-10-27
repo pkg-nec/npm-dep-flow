@@ -3,6 +3,7 @@ import test from 'node:test'
 import { readEvidence } from '../src/evidence.js'
 import { loadProject } from '../src/project.js'
 import { gitProject } from './helpers/git-project.js'
+
 test('fresh evidence requires uncached matching audit and retains all incoming requirements', async (t) => {
   const f = await gitProject(t)
   const item = { package: 'e2e-target', version: '6.0.9', targetLocation: 'node_modules/e2e-target' }

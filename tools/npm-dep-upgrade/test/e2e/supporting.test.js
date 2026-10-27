@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { createProject } from './helpers/project.js'
 import { supporting, direct, ago } from './fixtures/catalog.js'
 import { plan, runUpgrade, assertSuccess, assertResolved } from './helpers/runner.js'
+
 for (const multiple of [false, true]) test(`${multiple ? 'S02' : 'S01'} supporting helper major update`, async (t) => {
   const f = await createProject(supporting(multiple), {}, t), rows = await plan(f), row = rows.find(r => r.package === 'e2e-target' && r.resolution !== 'none')
   const output = await assertSuccess(f, await runUpgrade(f, [row.id, '--format', 'json']), undefined, { reproduce: true })

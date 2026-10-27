@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { renderJson, renderMarkdown } from '../src/report.js'
+
 test('completed reports identify the selected remediation and verified commit', () => {
   const result = { schemaVersion: 3, id: 'a'.repeat(64), package: 'e2e-target', oldVersion: '6.0.9', newVersion: '6.0.12', targetLocation: 'node_modules/e2e-target', strategy: 'update-within-declared-range', releasedAt: '2026-01-01T00:00:00Z', changedFiles: ['package.json', 'package-lock.json'], supportingChanges: [], commit: { hash: 'b'.repeat(40), subject: 'deps: bump e2e-target from 6.0.9 to 6.0.12' } }
   result.resolution = 'complete'
