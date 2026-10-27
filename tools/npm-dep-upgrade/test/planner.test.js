@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
 import test from 'node:test'
-import { selectItem, validatePlanner, canonicalLocation, splitLines, splitToolchain } from '../src/planner.js'
+import { selectItem, validatePlanner, canonicalLocation, splitLines } from '../src/planner.js'
 import { TOOLCHAIN_STRATEGY } from '../src/model.js'
+import { lineOfStrategy } from '../src/angular-lines.js'
 
 const location = 'node_modules/@e2e/target'
 const id = createHash('sha256').update('@e2e/target__' + location).digest('hex')
@@ -115,11 +116,11 @@ test('the Angular toolchain strategy is accepted, selected and split out', () =>
   assert.equal(TOOLCHAIN_STRATEGY, 'upgrade-angular-toolchain')
   const r = validatePlanner(report([toolchainRow()]))
   const item = selectItem(r, id)
-  const { toolchain: found, rest } = splitToolchain(item)
-  assert.deepEqual(found, toolchain)
+  const { lines, rest } = splitLines(item)
+  assert.deepEqual(lines.map(entry => [entry.line.strategy, entry.choice]), [[TOOLCHAIN_STRATEGY, toolchain]])
   assert.deepEqual(rest.choices, [row.choices[0]])
   assert.equal(rest.id, id)
-  assert.deepEqual(splitToolchain(row), { toolchain: null, rest: row })
+  assert.deepEqual(splitLines(row), { lines: [], rest: row })
 })
 test('malformed Angular toolchain choices are rejected', () => {
   for (const choice of [
@@ -132,7 +133,7 @@ test('malformed Angular toolchain choices are rejected', () => {
     { ...toolchain, affectedConsumers: [] },
   ]) assert.throws(() => validatePlanner(report([toolchainRow(choice)])), /INVALID_PLAN|choice/i)
   assert.throws(() => validatePlanner(report([toolchainRow(toolchain, [toolchain])])), /INVALID_PLAN|consumer|toolchain/i)
-  assert.throws(() => splitToolchain({ ...row, choices: [toolchain, toolchain] }), /toolchain/i)
+  assert.throws(() => splitLines({ ...row, choices: [toolchain, toolchain] }), /toolchain/i)
 })
 
 test('splitLines returns line choices in registry order and keeps the rest in order', () => {
@@ -150,4 +151,15 @@ test('splitLines without a line choice returns the item unchanged', () => {
 })
 test('splitLines rejects two choices of one line', () => {
   assert.throws(() => splitLines({ ...row, choices: [toolchain, toolchain] }), error => error.code === 'INVALID_PLAN' && /toolchain/i.test(error.message))
+})
+test('splitLines and selectItem follow an injected line registry', () => {
+  const synthetic = { name: 'synthetic', strategy: 'upgrade-angular-synthetic' }
+  const extra = { ...toolchain, strategy: synthetic.strategy }
+  const item = { ...row, choices: [extra, row.choices[0], toolchain] }
+  assert.throws(() => selectItem({ rows: [item] }, id), /unsupported/i)
+  const registry = [lineOfStrategy(TOOLCHAIN_STRATEGY), synthetic]
+  assert.equal(selectItem({ rows: [item] }, id, null, registry), item)
+  const { lines, rest } = splitLines(item, registry)
+  assert.deepEqual(lines.map(entry => [entry.line, entry.choice]), [[registry[0], toolchain], [synthetic, extra]])
+  assert.deepEqual(rest.choices, [row.choices[0]])
 })

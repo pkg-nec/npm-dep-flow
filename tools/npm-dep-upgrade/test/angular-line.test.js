@@ -86,7 +86,7 @@ test('an absent override returns null and an object override uses its dot key', 
   assert.throws(() => setLineOverrides(line, '{"overrides":{"@angular-devkit/core":{"x":"1.0.0"}}}', '19.2.0'), error => error.code === 'UNSUPPORTED_OVERRIDE')
 })
 
-test('an object-form devkit override updated by setDevkitOverride passes the manifest check; a changed sibling fails', () => {
+test('an object-form devkit override updated by setLineOverrides passes the manifest check; a changed sibling fails', () => {
   const text = '{"overrides":{"@angular-devkit/core":{".":"19.0.0","x":"1.0.0"}}}'
   const updated = setLineOverrides(line, text, '19.2.0')
   assert.equal(check(line, JSON.parse(text), JSON.parse(updated), '19.2.0'), undefined)

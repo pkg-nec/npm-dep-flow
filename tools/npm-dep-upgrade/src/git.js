@@ -52,9 +52,9 @@ export async function assertGitState(guard, phase, expectedFiles = guard.ownedFi
   const files = await readDependencyFiles(guard.root)
   for (const name of Object.keys(files)) if (!files[name].equals(expectedFiles[name])) fail('CONCURRENT_CHANGE', phase, `${name} changed outside this operation`)
 }
-// The toolchain migration runs in the real project, so nothing may be staged, modified or untracked anywhere.
-export async function assertCleanWorkingTree(guard) {
-  if ((await runGit(guard.repoRoot, ['status', '--porcelain', '--untracked-files=all'])).length) fail('GIT_PRECONDITION', 'git', 'Angular toolchain migration requires a clean working tree (no staged, unstaged or untracked changes)')
+// An Angular line migration runs in the real project, so nothing may be staged, modified or untracked anywhere.
+export async function assertCleanWorkingTree(guard, lineName = 'toolchain') {
+  if ((await runGit(guard.repoRoot, ['status', '--porcelain', '--untracked-files=all'])).length) fail('GIT_PRECONDITION', 'git', `Angular ${lineName} migration requires a clean working tree (no staged, unstaged or untracked changes)`)
 }
 const filteredBlob = async (root, file) => line(await runGit(root, ['hash-object', `--path=${file}`, file]))
 export async function preflightGit(projectRoot) {

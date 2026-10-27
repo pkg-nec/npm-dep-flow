@@ -8,25 +8,17 @@ import { loadGraph } from './graph.js'
 import { verifyFinalSecurity } from './verify.js'
 import { consumerKey, verifyCoverage } from './coverage.js'
 import { checkManifestChanges, selectLineRelease, setLineOverrides } from './angular-line.js'
-import { lineOfStrategy } from './angular-lines.js'
-import { TOOLCHAIN_STRATEGY } from './model.js'
 import { fail } from './errors.js'
 
-// Temporary adapters until this module is line-parameterized.
-const TOOLCHAIN_LINE = lineOfStrategy(TOOLCHAIN_STRATEGY)
-const selectToolchainRelease = (...args) => selectLineRelease(TOOLCHAIN_LINE, ...args)
-const setDevkitOverride = (...args) => setLineOverrides(TOOLCHAIN_LINE, ...args)
-
-const CLI = '@angular/cli'
 const MIGRATIONS = 'migrations.json'
-const line = s => s.replace(/\r?\n$/, '')
+const trimLine = s => s.replace(/\r?\n$/, '')
 // Arguments are fixed tokens, semantic versions and npm-context flags; anything else is refused before a shell sees it.
 const SHELL_SAFE = /^[\w@./:=+-]+$/
 
 // Windows runs the npm/npx .cmd launchers through a shell as one command string; Unix-like systems spawn directly.
-function launch(run, platform, name, args, options) {
+function launch(run, platform, stage, name, args, options) {
   if (platform !== 'win32') return run(name, args, { ...options, shell: false })
-  if (args.some(arg => !SHELL_SAFE.test(arg))) fail('UNSAFE_ARGUMENT', 'toolchain', `Refusing to pass a shell metacharacter to ${name}.cmd`)
+  if (args.some(arg => !SHELL_SAFE.test(arg))) fail('UNSAFE_ARGUMENT', stage, `Refusing to pass a shell metacharacter to ${name}.cmd`)
   return run(`${name}.cmd ${args.join(' ')}`, [], { ...options, shell: true })
 }
 
@@ -72,11 +64,11 @@ function parseJson(bytes, name) {
   catch { fail('INVALID_PROJECT', 'verification', `Invalid ${name}`) }
 }
 
-function verifyManifest(beforeManifest, afterText, version) {
+function verifyManifest(line, beforeManifest, afterText, version) {
   const after = parseJson(afterText, 'package.json')
-  checkManifestChanges(TOOLCHAIN_LINE, beforeManifest, after, version)
-  const field = ['devDependencies', 'dependencies'].find(name => Object.hasOwn(beforeManifest[name] || {}, CLI))
-  if (!field || after[field]?.[CLI] !== version) fail('UNEXPECTED_MANIFEST_CHANGE', 'verification', `${CLI} was not migrated to ${version}`)
+  checkManifestChanges(line, beforeManifest, after, version)
+  const field = ['devDependencies', 'dependencies'].find(name => Object.hasOwn(beforeManifest[name] || {}, line.anchor))
+  if (!field || after[field]?.[line.anchor] !== version) fail('UNEXPECTED_MANIFEST_CHANGE', 'verification', `${line.anchor} was not migrated to ${version}`)
 }
 
 const entryName = (location, entry) => entry.name || location.slice(location.lastIndexOf('node_modules/') + 'node_modules/'.length)
@@ -92,19 +84,19 @@ function lockDiff(before, after) {
 }
 
 // Fresh security for every changed version, then the finding's own consumers must be cleared in the new lockfile.
-async function verifyFreshAudit({ item, choice, version, before, after, beforeGraph, advisories, context, root, adapters }) {
+async function verifyFreshAudit({ line, item, choice, version, before, after, beforeGraph, advisories, context, root, adapters }) {
   const diff = lockDiff(parseJson(before['package-lock.json'], 'package-lock.json').packages || {}, parseJson(after['package-lock.json'], 'package-lock.json').packages || {})
   await verifyFinalSecurity({ item }, { version }, diff, { ...context, projectRoot: root }, adapters)
   const afterGraph = await (adapters.loadGraph || loadGraph)(root)
   const evidence = { item, graph: beforeGraph, incoming: beforeGraph.edges.filter(edge => edge.to === item.targetLocation), auditRows: [{ package: item.package, version: item.version, advisories: advisories.get(item.package) || [] }] }
   const cleared = new Set(verifyCoverage(evidence, afterGraph).clearedConsumers.map(consumerKey))
-  if (choice.affectedConsumers.some(consumer => !cleared.has(consumerKey(consumer)))) fail('TOOLCHAIN_NOT_CLEARED', 'verification', `Migrating to ${version} did not clear the finding's affected consumers`)
+  if (choice.affectedConsumers.some(consumer => !cleared.has(consumerKey(consumer)))) fail(`${line.key.toUpperCase()}_NOT_CLEARED`, 'verification', `Migrating to ${version} did not clear the finding's affected consumers`)
 }
 
-async function assertSameCommit(guard) {
-  if (line(await runGit(guard.repoRoot, ['rev-parse', 'HEAD'])) !== guard.head) fail('CONCURRENT_CHANGE', 'recovery', 'Git HEAD changed during the toolchain migration')
+async function assertSameCommit(guard, name) {
+  if (trimLine(await runGit(guard.repoRoot, ['rev-parse', 'HEAD'])) !== guard.head) fail('CONCURRENT_CHANGE', 'recovery', `Git HEAD changed during the ${name} migration`)
   const branch = await runProcess('git', ['symbolic-ref', '--quiet', '--short', 'HEAD'], { cwd: guard.repoRoot })
-  if (branch.code || line(branch.stdout) !== guard.branch) fail('CONCURRENT_CHANGE', 'recovery', 'Git branch changed during the toolchain migration')
+  if (branch.code || trimLine(branch.stdout) !== guard.branch) fail('CONCURRENT_CHANGE', 'recovery', `Git branch changed during the ${name} migration`)
 }
 
 const DEPENDENCY_FILES = ['package.json', 'package-lock.json']
@@ -122,8 +114,8 @@ async function readOrNull(file) {
 
 // The run owns only the two dependency files (as it last wrote or observed them) and the migrations.json it may have
 // caused. Anything else that changed, whether nx, npm or the user changed it, is left in place and named.
-async function revertWorkingTree(guard, owned) {
-  await assertSameCommit(guard)
+async function revertWorkingTree(guard, owned, name) {
+  await assertSameCommit(guard, name)
   const left = []
   for (const name of DEPENDENCY_FILES) {
     const file = path.join(guard.root, name)
@@ -140,10 +132,11 @@ async function revertWorkingTree(guard, owned) {
   if (left.length) fail('RECOVERY_INCOMPLETE', 'recovery', `left in place for you to inspect: ${[...new Set(left)].join(', ')}`)
 }
 
-export async function migrateToolchain({ guard, project, item, choice, context, options = {}, adapters = {} }) {
+// Migrates one Angular line (its anchor drives nx migrate, release age and the commit) in the real project.
+export async function migrateLine({ line, guard, project, item, choice, context, options = {}, adapters = {} }) {
   const run = adapters.run || runProcess
   const platform = adapters.platform || process.platform
-  const select = adapters.selectToolchainRelease || selectToolchainRelease
+  const select = adapters.selectLineRelease || selectLineRelease
   const verify = adapters.verifyFreshAudit || verifyFreshAudit
   const commit = adapters.commitUpgrade || commitUpgrade
   const root = project.root
@@ -155,18 +148,18 @@ export async function migrateToolchain({ guard, project, item, choice, context, 
   }
   const step = async (name, args, extra = {}) => {
     try {
-      return await launch(run, platform, name, args, { ...io, ...extra })
+      return await launch(run, platform, line.name, name, args, { ...io, ...extra })
     }
     finally { await observe() }
   }
-  await assertCleanWorkingTree(guard)
-  await assertGitState(guard, 'toolchain')
+  await assertCleanWorkingTree(guard, line.name)
+  await assertGitState(guard, line.name)
   if (await exists(path.join(root, MIGRATIONS))) fail('GIT_PRECONDITION', 'git', `${MIGRATIONS} already exists; finish or remove the previous migration first`)
-  const catalog = await (adapters.readCatalog || readCatalog)(root, CLI, context)
-  const queried = new Map([[CLI, catalog.versions]])
+  const catalog = await (adapters.readCatalog || readCatalog)(root, line.anchor, context)
+  const queried = new Map([[line.anchor, catalog.versions]])
   if (item) queried.set(item.package, [...new Set([...(queried.get(item.package) || []), item.version])])
   const advisories = await (adapters.readCandidateAdvisories || readCandidateAdvisories)(queried, context)
-  const release = select(choice, { ...catalog, minAgeDays: context.minAgeDays, cutoffMs: context.cutoffMs }, advisories.get(CLI) || [], Date.now())
+  const release = select(line, choice, { ...catalog, minAgeDays: context.minAgeDays, cutoffMs: context.cutoffMs }, advisories.get(line.anchor) || [], Date.now())
   const version = release.version
   const before = guard.originalFiles
   const beforeManifest = parseJson(before['package.json'], 'package.json')
@@ -180,13 +173,13 @@ export async function migrateToolchain({ guard, project, item, choice, context, 
     const installed = await readDependencyFiles(root)
     for (const name of Object.keys(installed)) if (!installed[name].equals(before[name])) fail('LOCK_OUT_OF_SYNC', 'clean-install', `npm ci changed ${name}; package.json and package-lock.json are out of sync`)
     // npx starts nx, which may install packages itself; scripts stay disabled for anything it runs.
-    if ((await step('npx', ['--no', 'nx', 'migrate', `${CLI}@${version}`], { env: { ...process.env, npm_config_ignore_scripts: 'true' } })).code) fail('MIGRATION_FAILED', 'migration', 'nx migrate failed; inspect nx diagnostics')
+    if ((await step('npx', ['--no', 'nx', 'migrate', `${line.anchor}@${version}`], { env: { ...process.env, npm_config_ignore_scripts: 'true' } })).code) fail('MIGRATION_FAILED', 'migration', 'nx migrate failed; inspect nx diagnostics')
     if (await exists(path.join(root, MIGRATIONS))) fail('MIGRATIONS_GENERATED', 'migration', `nx migrate generated ${MIGRATIONS}; migrate to ${version} manually`)
     await expectChanged(guard, ['package.json'], 'UNEXPECTED_FILE_CHANGE', 'migration')
     const manifestPath = path.join(root, 'package.json')
     const migrated = await readFile(manifestPath, 'utf8')
-    verifyManifest(beforeManifest, migrated, version)
-    const overridden = setDevkitOverride(migrated, version)
+    verifyManifest(line, beforeManifest, migrated, version)
+    const overridden = setLineOverrides(line, migrated, version)
     if (overridden !== null) {
       owned['package.json'] = Buffer.from(overridden)
       await writeFile(manifestPath, overridden)
@@ -198,11 +191,11 @@ export async function migrateToolchain({ guard, project, item, choice, context, 
     }
     await expectChanged(guard, ['package.json', 'package-lock.json'], 'UNEXPECTED_FILE_CHANGE', 'install')
     const after = await readDependencyFiles(root)
-    verifyManifest(beforeManifest, after['package.json'].toString('utf8'), version)
-    if (parseJson(after['package-lock.json'], 'package-lock.json').packages?.[choice.targetLocation]?.version !== version) fail('TARGET_MISMATCH', 'verification', `${CLI} did not install at ${version}`)
-    await verify({ item, choice, version, before, after, beforeGraph, advisories, context, root, adapters })
+    verifyManifest(line, beforeManifest, after['package.json'].toString('utf8'), version)
+    if (parseJson(after['package-lock.json'], 'package-lock.json').packages?.[choice.targetLocation]?.version !== version) fail('TARGET_MISMATCH', 'verification', `${line.anchor} did not install at ${version}`)
+    await verify({ line, item, choice, version, before, after, beforeGraph, advisories, context, root, adapters })
     await recordOwnedFiles(guard, after)
-    const committed = await commit(guard, after, { package: CLI, oldVersion: choice.currentVersion, newVersion: version, strategy: TOOLCHAIN_STRATEGY, description: `migrate Angular toolchain to ${version}` }, options)
+    const committed = await commit(guard, after, { package: line.anchor, oldVersion: choice.currentVersion, newVersion: version, strategy: line.strategy, description: line.description(version) }, options)
     guard.head = committed.hash
     guard.originalFiles = { ...after }
     guard.ownedFiles = { ...after }
@@ -211,10 +204,10 @@ export async function migrateToolchain({ guard, project, item, choice, context, 
   catch (error) {
     // A commit Git already created is never undone; the caller reports it.
     if (error.createdCommit) throw error
-    error.stage ??= 'toolchain'
+    error.stage ??= line.name
     const separator = /[.!?]$/.test(error.message) ? ' ' : '. '
     try {
-      await revertWorkingTree(guard, owned)
+      await revertWorkingTree(guard, owned, line.name)
       error.message += `${separator}Working tree restored.`
       error.workingTreeRestored = true
     }

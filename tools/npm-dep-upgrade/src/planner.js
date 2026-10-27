@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto'
 import semver from 'semver'
 import { runProcess } from './process.js'
 import { fail } from './errors.js'
-import { PARENT_STRATEGY, STRATEGY, TOOLCHAIN_STRATEGY } from './model.js'
+import { PARENT_STRATEGY, STRATEGY } from './model.js'
 import { ANGULAR_LINES, lineOfStrategy } from './angular-lines.js'
 
 const namePattern = /^(?:@[a-z0-9][a-z0-9._~-]*\/)?[a-z0-9][a-z0-9._~-]*$/i
@@ -55,31 +55,25 @@ export function validatePlanner(report) {
   }
   return report
 }
-export function selectItem(report, selector, packageName = null) {
+export function selectItem(report, selector, packageName = null, lines = ANGULAR_LINES) {
   const found = report.rows.filter(row => row.id.startsWith(selector) && (!packageName || row.package === packageName))
   if (!found.length) fail('TARGET_NOT_FOUND', 'selection', 'Target not found in the current planner report')
   if (found.length !== 1) fail('AMBIGUOUS_TARGET', 'selection', `Ambiguous target; use a longer ID or --package:\n${found.map(r => `${r.id} ${r.package}@${r.version} ${r.targetLocation}`).join('\n')}`)
   const row = found[0]
   if (row.resolution === 'none') fail('INELIGIBLE_TARGET', 'selection', 'Selected target is ineligible')
-  if (!Array.isArray(row.choices) || row.choices.some(choice => ![STRATEGY, PARENT_STRATEGY, ...ANGULAR_LINES.map(line => line.strategy)].includes(choice.strategy))) fail('UNSUPPORTED_STRATEGY', 'selection', 'Selected strategy is unsupported')
+  if (!Array.isArray(row.choices) || row.choices.some(choice => ![STRATEGY, PARENT_STRATEGY, ...lines.map(line => line.strategy)].includes(choice.strategy))) fail('UNSUPPORTED_STRATEGY', 'selection', 'Selected strategy is unsupported')
   return row
 }
 // Line choices are executed separately in registry order; the rest keeps its order for parent/within-range ordering.
-export function splitLines(item) {
+export function splitLines(item, registry = ANGULAR_LINES) {
   const lines = []
-  for (const line of ANGULAR_LINES) {
+  for (const line of registry) {
     const found = item.choices.filter(choice => choice.strategy === line.strategy)
     if (found.length > 1) fail('INVALID_PLAN', 'planner', `More than one Angular ${line.name} choice`)
     if (found.length) lines.push({ line, choice: found[0] })
   }
   if (!lines.length) return { lines, rest: item }
   return { lines, rest: { ...item, choices: item.choices.filter(choice => !lines.some(entry => entry.choice === choice)) } }
-}
-// Temporary adapter until the CLI is rewired to splitLines.
-export function splitToolchain(item) {
-  const { lines, rest } = splitLines(item)
-  const entry = lines.find(({ line }) => line.strategy === TOOLCHAIN_STRATEGY)
-  return { toolchain: entry ? entry.choice : null, rest }
 }
 export async function readPlanner(root, run = runProcess, { clearCache = false } = {}) {
   const r = await run('npm-dep-upgrade-plan', ['.', '--format', 'json', ...(clearCache ? ['--clear-cache'] : [])], { cwd: root })

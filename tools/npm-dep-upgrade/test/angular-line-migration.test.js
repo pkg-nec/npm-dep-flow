@@ -8,7 +8,8 @@ import { gitProject, git } from './helpers/git-project.js'
 import { preflightGit } from '../src/git.js'
 import { runProcess } from '../src/process.js'
 import { TOOLCHAIN_STRATEGY } from '../src/model.js'
-import { migrateToolchain } from '../src/toolchain-migration.js'
+import { lineOfStrategy } from '../src/angular-lines.js'
+import { migrateLine } from '../src/angular-line-migration.js'
 
 const OLD = '21.2.26', NEW = '21.2.27'
 const DAY = 86_400_000
@@ -124,7 +125,8 @@ async function assertRestored(f, error, pattern) {
   assert.equal(await readFile(path.join(f.root, 'package.json'), 'utf8'), json(f.originalManifest))
 }
 
-const migrate = (f, a) => migrateToolchain({ guard: f.guard, project: f.project, item, choice, context, options, adapters: a.value })
+const line = lineOfStrategy(TOOLCHAIN_STRATEGY)
+const migrate = (f, a) => migrateLine({ line, guard: f.guard, project: f.project, item, choice, context, options, adapters: a.value })
 
 async function rejectsRestored(f, a, predicate) {
   let failure
@@ -477,4 +479,21 @@ test('Unix launches npm and npx directly', async (t) => {
   assert.deepEqual(spawned.map(s => s.command), ['npm', 'npx', 'npm'])
   assert.deepEqual(spawned[1].args, ['--no', 'nx', 'migrate', `@angular/cli@${NEW}`])
   assert.ok(spawned.every(s => s.shell === false))
+})
+
+test('the line drives the commit description, strategy and messages', async (t) => {
+  const renamed = { ...line, name: 'renamed', strategy: 'upgrade-angular-renamed', description: version => `migrate renamed line to ${version}` }
+  const f = await fixture(t), a = adapters(f)
+  let committed
+  a.value.commitUpgrade = async (...args) => {
+    committed = args[2]
+    const { commitUpgrade } = await import('../src/git.js')
+    return commitUpgrade(...args)
+  }
+  const result = await migrateLine({ line: renamed, guard: f.guard, project: f.project, item, choice, context, options, adapters: a.value })
+  assert.equal(result.commit.subject, `deps(webapp): migrate renamed line to ${NEW}`)
+  assert.deepEqual(committed, { package: '@angular/cli', oldVersion: OLD, newVersion: NEW, strategy: 'upgrade-angular-renamed', description: `migrate renamed line to ${NEW}` })
+  assert.deepEqual(a.fake.calls[1].args, ['--no', 'nx', 'migrate', `@angular/cli@${NEW}`])
+  await writeFile(path.join(f.root, 'scratch.txt'), 'x\n')
+  await assert.rejects(migrateLine({ line: renamed, guard: f.guard, project: f.project, item, choice, context, options, adapters: adapters(f).value }), /Angular renamed migration requires a clean working tree/)
 })
