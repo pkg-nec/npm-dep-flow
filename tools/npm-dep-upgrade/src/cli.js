@@ -193,7 +193,9 @@ Upgrade one partial or complete planner installation in the selected project and
     // lists them itself once it has committed something. Dependency files are never restored over them.
     const created = phase && error.createdCommit ? { line: phase, commit: error.createdCommit } : undefined
     const kept = created ? [...lineCommits, created] : lineCommits
-    if (kept.length && !error.committed?.length) error.message += `; completed commits: ${kept.map(entry => entry.commit.hash).join(', ')}.`
+    // A later line phase ends its message with its own recovery sentence; continue it as a sentence.
+    const sentence = phase && lineCommits.length && /[.!?]$/.test(error.message)
+    if (kept.length && !error.committed?.length) error.message += `${sentence ? ' Completed' : '; completed'} commits: ${kept.map(entry => entry.commit.hash).join(', ')}.`
     if (mutated && (!committing || (error.committed && error.committed.length === 0))) {
       try {
         const result = await restoreDependencyFiles(guard)
@@ -203,6 +205,8 @@ Upgrade one partial or complete planner installation in the selected project and
     }
     else if (committing) recovery = ' Verified dependency changes may remain uncommitted; inspect Git state.'
     else if (created) recovery = ` Dependency files were not restored over the ${created.line.name} commit; inspect Git state.`
+    // A later phase whose own revert failed left changes in place; its message already says what to inspect.
+    else if (phase && error.workingTreeRestored === false) recovery = ''
     else if (lineCommits.length) recovery = ` Dependency files were not changed after the ${lineCommits.at(-1).line.name} commit.`
     else if (staging) recovery = ' Original dependency files were not changed by this operation.'
     // A line migration installs into the real project and never restores node_modules.

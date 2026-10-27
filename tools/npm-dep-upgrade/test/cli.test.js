@@ -515,3 +515,29 @@ test('a later line choice keeps only consumers still on the target and is skippe
   assert.deepEqual(result.actions[1].affectedConsumers, [goneConsumer])
   assert.deepEqual(result.commits.map(c => c.actionIndex), [0, 2])
 })
+
+async function secondPhaseFails(t, failure) {
+  const x = await twoLineFixture(t, { choices: [toolchainChoice, syntheticChoice, withinChoice] })
+  const base = x.deps.migrateLine
+  x.deps.migrateLine = async (args) => {
+    if (args.line !== syntheticLine) return base(args)
+    args.guard.installedTreeMayHaveChanged = true
+    throw failure()
+  }
+  x.deps.readEvidence = () => assert.fail('must not read evidence')
+  assert.equal(await main([x.item.id], x.c.io, x.deps), 1)
+  assert.equal(x.c.out(), '')
+  return x
+}
+
+test('a second-phase message ending in a period continues with the completed commits as a sentence', async (t) => {
+  const x = await secondPhaseFails(t, () => Object.assign(new Error('nx migrate failed; inspect nx diagnostics. Working tree restored.'), { stage: 'migration', workingTreeRestored: true }))
+  assert.equal(x.c.err(), `npm-dep-upgrade: migration: nx migrate failed; inspect nx diagnostics. Working tree restored. Completed commits: ${x.seen.toolchainCommit.hash}. Dependency files were not changed after the toolchain commit. node_modules may have changed.\n`)
+})
+
+test('a second phase whose revert failed does not claim the dependency files are unchanged', async (t) => {
+  const x = await secondPhaseFails(t, () => Object.assign(new Error('nx migrate failed; inspect nx diagnostics. Working tree could not be fully restored: left in place for you to inspect: package.json (changed outside this run); inspect Git state.'), { stage: 'migration', workingTreeRestored: false }))
+  assert.equal(x.c.err(), `npm-dep-upgrade: migration: nx migrate failed; inspect nx diagnostics. Working tree could not be fully restored: left in place for you to inspect: package.json (changed outside this run); inspect Git state. Completed commits: ${x.seen.toolchainCommit.hash}. node_modules may have changed.\n`)
+  assert.doesNotMatch(x.c.err(), /were not changed after/)
+  assert.equal(await headOf(x.f.root), x.seen.toolchainCommit.hash)
+})
