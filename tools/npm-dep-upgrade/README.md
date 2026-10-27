@@ -151,7 +151,7 @@ On any failure, with HEAD and the branch unchanged, the run restores `package.js
 - Override: `@angular/platform-browser-dynamic`, updated to the target only if the project already has it, either as a string or in object form (`.`); it is never added.
 - Command: `npx --no nx migrate @angular/core@<version>`. Description: `bump Angular runtime to <version>`, so the default subject is `deps(webapp): bump Angular runtime to <version>` with `--module webapp`.
 - Allowlist: the seven runtime members and the `@angular/platform-browser-dynamic` override. Every one that changes must equal the target; there is no unchecked member. Any other package changing, such as `@angular/cli`, aborts the run.
-- Real Angular packages peer on each other with exact or tightly bounded ranges, so the plain install after a runtime bump commonly fails with a peer conflict. The `-f` install followed by the plain install is therefore the normal path for runtime bumps, not an exception. This is why the post-install check that every declared member sits at the target matters.
+- Angular's runtime packages peer on each other with exact or tight ranges (the e2e fixtures model this shape, and manual runs have hit the same ERESOLVE), so the plain install after a runtime bump is expected to fail often and the `-f` step to be the usual path. Hence the post-install check that every declared member sits at the target.
 
 ## Fresh security checks on changed versions
 
