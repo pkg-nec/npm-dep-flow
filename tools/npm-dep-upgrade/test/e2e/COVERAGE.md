@@ -80,3 +80,16 @@ Planner and upgrade output use schema version 3; audit/paths/versions remain ver
 | Release-age policy | what a parent release brings in resolves to the newest release old enough under a 7-day and a 30-day `min-release-age`; a parent release younger than the policy is never planned |
 
 Resolver-level cases (removal, reintroduction, exact-version landing, dedupe, grandparent) also run against real npm in the planner's `resolver-parent.integration.test.js`.
+
+## Angular toolchain migrations
+
+`toolchain.test.js` runs on both configured npm runtimes against the real planner, paths, audit, versions and upgrade executables. The fixture has the webapp's shape: exact-pinned `@angular/cli` and `@angular/build` in `devDependencies`, an `@angular-devkit/core` override, and a vulnerable package two levels below `@angular/build` that the next toolchain patch fixes. A fake `nx` package from the local registry is installed in the project. Its `migrate @angular/cli@<v>` bin rewrites the two members in `package.json`, and in one variant it also writes `migrations.json`. `npx` comes from the same pinned npm runtime.
+
+| Behavior | Case |
+| --- | --- |
+| Planning | exact pins do not block the strategy; the finding is `complete` with a single `upgrade-angular-toolchain` choice for `@angular/cli` that clears the depth-two consumer |
+| Migration | exit 0, one commit `deps: migrate Angular toolchain to <v>` holding only `package.json` and `package-lock.json`; both members and the override at `<v>`; clean tree; separate clean `npm ci` reproduces the tree; the finding is gone on replanning |
+| Module scope | `--module webapp` gives `deps(webapp): migrate Angular toolchain to <v>` |
+| `migrations.json` | exit 1 with the dedicated diagnostic, `git status --porcelain` empty (the generated file is removed), HEAD and dependency bytes unchanged |
+| Release age | a target whose `@angular/cli` release becomes younger than seven days after planning: exit 1, no change |
+| Mixed choices | toolchain plus within-range for one finding: two commits, toolchain first, then within-range; `complete` |
