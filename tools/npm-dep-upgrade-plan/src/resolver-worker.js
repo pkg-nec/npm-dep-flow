@@ -1,7 +1,8 @@
-// Standalone worker: only npm's in-memory resolver and private lock serialization.
+// Standalone worker: only npm's in-memory resolver, private lock serialization, and the toolchain constants.
 import { readFile, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import path from 'node:path'
+import { TOOLCHAIN_MEMBERS, TOOLCHAIN_STRATEGY } from './toolchain.js'
 
 const key = e => JSON.stringify([e.location ?? e.from, e.requestedName, e.type])
 const types = { prod: 'dependencies', dev: 'devDependencies', peer: 'peerDependencies', peerOptional: 'peerDependencies', optional: 'optionalDependencies' }
@@ -38,19 +39,37 @@ function closure(g, starts) {
 
 const PARENT_STRATEGY = 'upgrade-via-parent-dependency'
 const isParent = choice => choice.strategy === PARENT_STRATEGY
+const isToolchain = choice => choice.strategy === TOOLCHAIN_STRATEGY
+const isAncestor = choice => isParent(choice) || isToolchain(choice)
+// The root declarations of the toolchain members, as edges of the given graph.
+const memberEdges = g => g.edges.filter(e => e.from === '' && TOOLCHAIN_MEMBERS.includes(e.requestedName))
+
+// Toolchain and parent choices are both ancestor changes: their closures before and after are in scope.
 export function verifyResolution(before, after, item, choices, semver) {
-  const withinRange = choices.filter(c => !isParent(c)), parents = choices.filter(isParent)
+  const withinRange = choices.filter(c => !isAncestor(c)), parents = choices.filter(isParent), ancestors = choices.filter(isAncestor)
   const oldNodes = new Map(before.nodes.map(n => [n.location, n])), nodes = new Map(after.nodes.map(n => [n.location, n]))
   const selected = new Map(withinRange.flatMap(c => c.affectedConsumers.map(e => [key(e), c])))
-  const parentSelected = new Set(parents.flatMap(c => c.affectedConsumers.map(key)))
+  const parentSelected = new Set(ancestors.flatMap(c => c.affectedConsumers.map(key)))
   for (const choice of parents) {
     const old = oldNodes.get(choice.targetLocation), landed = nodes.get(choice.targetLocation)
     if (!old || old.name !== choice.targetPackage || old.version !== choice.currentVersion) throw new Error('Ancestor installation changed since planning')
     if (!landed || landed.name !== choice.targetPackage || landed.version !== choice.targetVersion) throw new Error('Ancestor did not resolve to the tested version')
     for (const n of before.nodes) if (n.name === choice.targetPackage && n.location !== choice.targetLocation && !equal(n, nodes.get(n.location))) throw new Error('Another ancestor installation changed')
   }
+  const toolchainBefore = [], toolchainAfter = []
+  if (choices.some(isToolchain)) {
+    for (const old of memberEdges(before)) {
+      const choice = choices.find(isToolchain), current = after.edges.find(e => key(e) === key(old))
+      const oldNode = oldNodes.get(old.to), landed = nodes.get(current?.to)
+      if (oldNode?.name !== old.requestedName || oldNode.version !== choice.currentVersion) throw new Error('Toolchain installation changed since planning')
+      if (landed?.name !== old.requestedName || landed.version !== choice.targetVersion) throw new Error('Toolchain member did not resolve to the tested version')
+      toolchainBefore.push(old.to)
+      toolchainAfter.push(current.to)
+    }
+    if (!toolchainBefore.length) throw new Error('Toolchain installation changed since planning')
+  }
   const parentLocations = parents.map(c => c.targetLocation)
-  const parentClosureBefore = closure(before, parentLocations), parentClosureAfter = closure(after, parentLocations)
+  const parentClosureBefore = closure(before, [...parentLocations, ...toolchainBefore]), parentClosureAfter = closure(after, [...parentLocations, ...toolchainAfter])
   const scoped = new Set([...closure(before, [item.targetLocation]), ...parentClosureBefore, ...parentClosureAfter])
   const oldIncoming = before.edges.filter(e => e.to === item.targetLocation)
   for (const n of before.nodes) if (n.location && n.name !== item.package && !equal(n, nodes.get(n.location)) && !scoped.has(n.location)) throw new Error('Unrelated parent installation changed')
@@ -67,11 +86,11 @@ export function verifyResolution(before, after, item, choices, semver) {
         continue
       }
       // After an ancestor upgrade a consumer may declare a different range than before; judge it by what it declares now.
-      const declared = parents.length && current ? current.rawSpec : old.rawSpec
+      const declared = ancestors.length && current ? current.rawSpec : old.rawSpec
       if (!currentNode || currentNode.name !== item.package || !semver.validRange(declared) || !semver.satisfies(currentNode.version, declared)) throw new Error('Original consumer requirement not satisfied')
       // An ancestor's new closure may let npm dedupe the shared installation upward; moving a consumer to a newer
       // valid release of the same installation is permitted then, but never to an older one or to another location.
-      const upgradedInPlace = parents.length > 0 && !choice && current.to === old.to && semver.gt(currentNode.version, oldNode.version)
+      const upgradedInPlace = ancestors.length > 0 && !choice && current.to === old.to && semver.gt(currentNode.version, oldNode.version)
       if (choice ? currentNode.version !== choice.targetVersion : !equal(oldNode, currentNode) && !upgradedInPlace) throw new Error('Consumer resolved outside intended scope')
     }
     else if (oldNode?.name === item.package && !equal(oldNode, currentNode) && !parentClosureBefore.has(old.from)) throw new Error('Another target installation changed')
@@ -90,9 +109,14 @@ export function computeCoverage(before, after, item, semver) {
   const clearedConsumers = [], remainingConsumers = []
   for (const e of before.edges.filter(e => e.to === item.targetLocation)) {
     const holder = oldNodes.get(e.from), here = nodes.get(e.from)
-    const holders = here && holder && here.name === holder.name
-      ? [e.from]
-      : after.nodes.filter(n => n.location && holder && n.name === holder.name && oldNodes.get(n.location)?.name !== holder.name).map(n => n.location)
+    // The root's declaration of a toolchain member is judged from the member's new installation: everything else
+    // the root reaches belongs to other branches, such as another member's closure.
+    const rootMember = e.from === '' && TOOLCHAIN_MEMBERS.includes(item.package)
+    const landed = rootMember ? after.edges.find(x => key(x) === key(e))?.to : null
+    let holders
+    if (rootMember) holders = landed ? [landed] : []
+    else if (here && holder && here.name === holder.name) holders = [e.from]
+    else holders = after.nodes.filter(n => n.location && holder && n.name === holder.name && oldNodes.get(n.location)?.name !== holder.name).map(n => n.location)
     const known = closure({ edges: before.edges.filter(x => x !== e) }, [e.from])
     // Another original consumer's edge into the target is that consumer's own branch, not a route of this one.
     const others = new Set(before.edges.filter(x => x.to === item.targetLocation && x.from !== e.from).map(key))
@@ -150,6 +174,33 @@ function mergeRule(base, route, name, version, nodes, rootEdges, semver) {
     value[name] = value[name] && typeof value[name] === 'object' ? { ...value[name], '.': requirement } : requirement
   }
   return { [selector]: value, ...Object.fromEntries(Object.entries(base).filter(([k]) => k !== selector)) }
+}
+
+// Serializes an edited manifest with the original file's indentation, line endings and trailing newline.
+function serializeManifest(manifest, original) {
+  const text = original.toString()
+  const indent = /\n([\t ]+)"/.exec(text)?.[1]
+  const newline = text.includes('\r\n') ? '\r\n' : '\n'
+  return Buffer.from(JSON.stringify(manifest, null, indent).replaceAll('\n', newline) + (text.endsWith('\n') ? newline : ''))
+}
+
+// Every toolchain member the root declares moves to exactly the tested version in the field that declares it, and an
+// existing @angular-devkit/core override follows. No other declaration or override is touched or added.
+function toolchainManifest(manifest, choice) {
+  const fields = ['dependencies', 'devDependencies']
+  if (!fields.some(field => Object.hasOwn(manifest[field] || {}, choice.targetPackage))) throw new Error('Toolchain is not declared by the project')
+  for (const name of TOOLCHAIN_MEMBERS) {
+    const field = fields.find(f => Object.hasOwn(manifest[f] || {}, name))
+    if (field) manifest[field][name] = choice.targetVersion
+  }
+  const overrides = manifest.overrides
+  if (overrides && typeof overrides === 'object' && Object.hasOwn(overrides, '@angular-devkit/core')) {
+    const override = overrides['@angular-devkit/core']
+    if (typeof override === 'string') overrides['@angular-devkit/core'] = choice.targetVersion
+    else if (override && typeof override === 'object' && typeof override['.'] === 'string') override['.'] = choice.targetVersion
+    else throw new Error('Unsupported override scope')
+  }
+  return manifest
 }
 
 const DAY_MS = 86_400_000
@@ -215,6 +266,26 @@ export async function resolveRequest(request) {
     choiceIndex < request.choices.length;
     choiceIndex++) {
     const choice = request.choices[choiceIndex], startFiles = await Promise.all(['package.json', 'package-lock.json'].map(n => readFile(path.join(request.root, n))))
+    if (isToolchain(choice)) {
+      // Later actions are judged against the tree the toolchain bump leaves, so it must be resolved first.
+      if (choiceIndex !== 0) throw new Error('Toolchain choice must be resolved first')
+      let after
+      try {
+        await writeFile(path.join(request.root, 'package.json'), serializeManifest(toolchainManifest(JSON.parse(startFiles[0]), choice), startFiles[0]))
+        const tree = await new Arborist(opts).buildIdealTree()
+        await tree.meta.save()
+        after = graph(tree)
+        verifyResolution(before, after, request.item, [choice], semver)
+      }
+      catch (error) {
+        await Promise.all(['package.json', 'package-lock.json'].map((n, i) => writeFile(path.join(request.root, n), startFiles[i])))
+        if (request.strict) throw error
+        continue
+      }
+      accepted.push(choice)
+      snapshots.push({ choiceIndex, graph: after, files: Object.fromEntries(await Promise.all(['package.json', 'package-lock.json'].map(async n => [n, (await readFile(path.join(request.root, n))).toString('base64')]))) })
+      continue
+    }
     if (isParent(choice)) {
       // npm's named update under the original declarations, capped at the tested release's publication time so
       // the ancestor lands on exactly that version. No overrides, no declaration edits.
@@ -259,9 +330,7 @@ export async function resolveRequest(request) {
         if (!/^[~^]\s*\d/.test(spec)) throw new Error('Unsupported direct declaration')
         manifest[e.type][e.requestedName] = spec.trim()[0] + choice.targetVersion
       }
-      const indent = /\n([\t ]+)"/.exec(startFiles[0].toString())?.[1]
-      const newline = startFiles[0].includes('\r\n') ? '\r\n' : '\n'
-      finalManifest = Buffer.from(JSON.stringify(manifest, null, indent).replaceAll('\n', newline) + (startFiles[0].toString().endsWith('\n') ? newline : ''))
+      finalManifest = serializeManifest(manifest, startFiles[0])
       mutation = structuredClone(manifest)
       for (const e of choice.affectedConsumers.filter(e => e.location === '')) mutation[e.type][e.requestedName] = choice.targetVersion.includes('+') ? `>=${choice.targetVersion} <=${choice.targetVersion}` : choice.targetVersion
     }
