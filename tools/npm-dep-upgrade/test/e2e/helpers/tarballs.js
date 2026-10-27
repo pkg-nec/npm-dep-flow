@@ -2,9 +2,9 @@ import { gzipSync } from 'node:zlib'
 import { createHash } from 'node:crypto'
 
 // A deterministic POSIX ustar archive: no platform tar executable or npm pack scripts.
-export function tarball(manifest) {
+export function tarball(manifest, files = {}) {
   const chunks = []
-  for (const [name, body] of [['package/package.json', JSON.stringify(manifest)], ['package/index.js', `module.exports = ${JSON.stringify({ name: manifest.name, version: manifest.version })}\n`]]) {
+  for (const [name, body] of [['package/package.json', JSON.stringify(manifest)], ['package/index.js', `module.exports = ${JSON.stringify({ name: manifest.name, version: manifest.version })}\n`], ...Object.entries(files).map(([name, body]) => ['package/' + name, body])]) {
     const data = Buffer.from(body), header = Buffer.alloc(512)
     const put = (s, start, size) => header.write(s, start, size, 'ascii')
     const oct = (n, start, size) => put(n.toString(8).padStart(size - 1, '0') + '\0', start, size)

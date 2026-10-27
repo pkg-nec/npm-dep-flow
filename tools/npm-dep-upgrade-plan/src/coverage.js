@@ -2,6 +2,26 @@ import { safeStableVersions, declaredRange } from './strategies.js'
 import semver from 'semver'
 
 export const consumerKey = consumer => JSON.stringify([consumer.location, consumer.requestedName, consumer.type])
+export const choiceKey = choice => JSON.stringify([choice.strategy, choice.targetPackage, choice.targetLocation, choice.targetVersion])
+export const compareText = (a, b) => (Number(a > b) - Number(a < b))
+
+// The audited consumers of one target installation, keyed by consumer identity, with the dependent that declares it.
+export function consumersOf(row, targetLocation) {
+  const consumers = new Map()
+  for (const requirement of row.requirements) for (const dependent of requirement.directDependents) {
+    if (dependent.targetLocation !== targetLocation) continue
+    const consumer = { location: dependent.location, requestedName: dependent.requestedName, type: dependent.type }
+    consumers.set(consumerKey(consumer), { consumer, dependent })
+  }
+  return consumers
+}
+
+// Adds a catalog's publication times to the resolver's `name@version` release-time map.
+export function releaseTimesOf(name, catalog, into) {
+  const entries = catalog.releaseTimes instanceof Map ? catalog.releaseTimes : Object.entries(catalog.releaseTimes || {})
+  for (const [version, time] of entries) into[`${name}@${version}`] = time
+}
+
 export function selectWithinRangeChoices(row, targetLocation, catalog) {
   const consumers = new Map()
   for (const requirement of row.requirements) for (const dependent of requirement.directDependents) {

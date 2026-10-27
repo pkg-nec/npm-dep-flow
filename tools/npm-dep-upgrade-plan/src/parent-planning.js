@@ -1,24 +1,7 @@
-import { consumerKey, selectResidualChoices } from './coverage.js'
+import { choiceKey, compareText, consumerKey, consumersOf, releaseTimesOf, selectResidualChoices } from './coverage.js'
 import { PARENT_STRATEGY } from './ancestors.js'
 
 const isParent = choice => choice.strategy === PARENT_STRATEGY
-const choiceKey = choice => JSON.stringify([choice.strategy, choice.targetPackage, choice.targetLocation, choice.targetVersion])
-const compareText = (a, b) => (Number(a > b) - Number(a < b))
-
-function consumersOf(row, targetLocation) {
-  const consumers = new Map()
-  for (const requirement of row.requirements) for (const dependent of requirement.directDependents) {
-    if (dependent.targetLocation !== targetLocation) continue
-    const consumer = { location: dependent.location, requestedName: dependent.requestedName, type: dependent.type }
-    consumers.set(consumerKey(consumer), { consumer, dependent })
-  }
-  return consumers
-}
-
-function releaseTimesOf(name, catalog, into) {
-  const entries = catalog.releaseTimes instanceof Map ? catalog.releaseTimes : Object.entries(catalog.releaseTimes || {})
-  for (const [version, time] of entries) into[`${name}@${version}`] = time
-}
 
 // Adds ancestor upgrades for the consumer branches within-range actions did not cover, then takes the final
 // resolution from the jointly resolved action set. Returns the oldest source freshness it relied on.

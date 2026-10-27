@@ -1,6 +1,6 @@
 import { executeActions } from './transaction.js'
 import { commitSnapshots } from './commit-sequence.js'
-import { verifyCoverage, verifyInstalledGraph } from './coverage.js'
+import { consumerKey, verifyCoverage, verifyInstalledGraph } from './coverage.js'
 import { runDebug } from './debug.js'
 import { readFile, writeFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
@@ -11,7 +11,8 @@ import { preflightGit, assertGitState, readDependencyFiles, commitUpgrade } from
 import { restoreDependencyFiles } from './recovery.js'
 import { loadProject } from './project.js'
 import { loadGraph } from './graph.js'
-import { clearPlannerCache, readPlanner, selectItem } from './planner.js'
+import { clearPlannerCache, readPlanner, selectItem, splitToolchain } from './planner.js'
+import { migrateToolchain } from './toolchain-migration.js'
 import { readEvidence } from './evidence.js'
 import { loadNpmContext } from './npm-context.js'
 import { readCatalog, readCandidateAdvisories } from './registry.js'
@@ -23,7 +24,7 @@ import { verifyGraph, verifyFinalSecurity } from './verify.js'
 import { renderJson, renderMarkdown } from './report.js'
 
 const toolRoot = fileURLToPath(new URL('../', import.meta.url))
-const defaults = { clearPlannerCache, executeActions, commitSnapshots, preflightGit, assertGitState, loadProject, loadGraph, readPlanner, readEvidence, loadNpmContext, readCatalog, readCandidateAdvisories, selectCandidate, buildMutation, writeMutation, installProject, createStagingProject, verifyGraph, verifyFinalSecurity, commitUpgrade }
+const defaults = { clearPlannerCache, migrateToolchain, executeActions, commitSnapshots, preflightGit, assertGitState, loadProject, loadGraph, readPlanner, readEvidence, loadNpmContext, readCatalog, readCandidateAdvisories, selectCandidate, buildMutation, writeMutation, installProject, createStagingProject, verifyGraph, verifyFinalSecurity, commitUpgrade }
 export async function main(argv, io = process, overrides = {}) {
   try {
     const options = await resolveOptions(parseArgs(argv))
@@ -37,7 +38,7 @@ export async function main(argv, io = process, overrides = {}) {
 
 async function mainWithDebug(options, io = process, overrides = {}) {
   const d = { ...defaults, ...overrides }
-  let guard, staging, mutated = false, committing = false, stage = 'arguments'
+  let guard, staging, toolchainCommit, mutated = false, committing = false, stage = 'arguments'
   try {
     if (options.action !== 'upgrade') {
       const pkg = JSON.parse(await readFile(path.join(toolRoot, 'package.json'), 'utf8'))
@@ -75,17 +76,67 @@ Upgrade one partial or complete planner installation in the selected project and
     }
     stage = 'preflight'
     guard = await d.preflightGit(options.projectPath)
-    const project = await d.loadProject(guard.root)
+    let project = await d.loadProject(guard.root)
     stage = 'planner'
     const item = selectItem(await d.readPlanner(project.root, undefined, { clearCache: options.clearCache === true }), options.selector, options.packageName)
-    stage = 'evidence'
-    const evidence = await d.readEvidence(project, item)
     stage = 'configuration'
     const context = await d.loadNpmContext(project.root)
     context.projectRoot = project.root
+    const { toolchain, rest } = splitToolchain(item)
+    const done = { actions: [], commits: [] }
+    const render = (resolution, actions, commits) => {
+      const result = { schemaVersion: 3, id: item.id, package: item.package, oldVersion: item.version, targetLocation: item.targetLocation, resolution, actions, commits }
+      io.stdout.write(options.format === 'json' ? renderJson(result) : renderMarkdown(result))
+      return 0
+    }
+    const satisfied = (choice, graph) => {
+      const targetLocations = [...new Set(choice.affectedConsumers.map(consumer => graph.edges.find(edge => consumerKey(edge) === consumerKey(consumer))?.to).filter(Boolean))]
+      return { ...choice, outcome: 'already-satisfied', targetLocations, releasedAt: null, supportingChanges: [] }
+    }
+    if (toolchain) {
+      // The toolchain migration runs in the real project and commits first; it reverts its own changes on failure.
+      stage = 'toolchain'
+      const migrated = await d.migrateToolchain({ guard, project, item, choice: toolchain, context, options, adapters: { stderr: io.stderr, loadGraph: d.loadGraph, readCatalog: d.readCatalog, readCandidateAdvisories: d.readCandidateAdvisories, commitUpgrade: d.commitUpgrade } })
+      toolchainCommit = migrated.commit
+      done.actions.push(migrated.action)
+      done.commits.push({ ...migrated.commit, actionIndex: 0 })
+      stage = 'project'
+      project = await d.loadProject(guard.root)
+      const graph = await d.loadGraph(project.root)
+      const target = graph.nodes.get(item.targetLocation)
+      const present = !!target && target.name === item.package && target.version === item.version
+      // With the target installation gone nothing remains to clear; otherwise the planner's resolution still applies.
+      if (!rest.choices.length || !present) return render(present ? item.resolution : 'complete', [...done.actions, ...rest.choices.map(choice => satisfied(choice, graph))], done.commits)
+    }
+    stage = 'evidence'
+    const evidence = await d.readEvidence(project, rest)
+    // After the toolchain, consumers it moved off the target are already handled: trim them, and report a choice
+    // left with none as already satisfied. slots[i] is the staged index of rest.choices[i], or null when skipped.
+    const skipped = new Map(), slots = [], active = []
+    if (toolchain) {
+      const incoming = new Set(evidence.incoming.map(consumerKey))
+      rest.choices.forEach((choice, index) => {
+        const affectedConsumers = choice.affectedConsumers.filter(consumer => incoming.has(consumerKey(consumer)))
+        if (affectedConsumers.length) {
+          slots.push(active.length)
+          active.push({ ...choice, affectedConsumers })
+        }
+        else {
+          slots.push(null)
+          skipped.set(index, satisfied(choice, evidence.graph))
+        }
+      })
+      if (!active.length) return render(item.resolution, [...done.actions, ...skipped.values()], done.commits)
+    }
+    else {
+      active.push(...rest.choices)
+      slots.push(...rest.choices.keys())
+    }
+    const remaining = { ...rest, choices: active }
+    stage = 'configuration'
     staging = await d.createStagingProject(project, context)
     stage = 'resolution'
-    const transaction = await d.executeActions(project, item, evidence, context, { ...d, staging })
+    const transaction = await d.executeActions(project, remaining, evidence, context, { ...d, staging })
     const installContext = current => ({ ...current, installArgs: ['ci', ...current.installArgs.slice(1)] })
     const verifySnapshot = async (snapshot, root, currentContext) => {
       await d.installProject(root, installContext(currentContext), { stderr: io.stderr })
@@ -111,16 +162,23 @@ Upgrade one partial or complete planner installation in the selected project and
     stage = 'commit'
     mutated = true
     committing = true
-    const commits = await d.commitSnapshots(guard, transaction.snapshots, transaction.actions, context, options, { commitUpgrade: d.commitUpgrade, prepareSnapshot: async (snapshot) => {
+    const commits = await d.commitSnapshots(guard, transaction.snapshots, transaction.actions, context, options, { commitUpgrade: d.commitUpgrade, completedCommits: done.commits, prepareSnapshot: async (snapshot) => {
       guard.installedTreeMayHaveChanged = true
       await verifySnapshot(snapshot, project.root, context)
     } })
-    const result = { schemaVersion: 3, id: item.id, package: item.package, oldVersion: item.version, targetLocation: item.targetLocation, resolution: transaction.coverage.resolution, actions: transaction.actions, commits }
-    io.stdout.write(options.format === 'json' ? renderJson(result) : renderMarkdown(result))
-    return 0
+    // Staged action indexes refer to the staged choices; the combined list is the toolchain action, then rest in order.
+    const offset = done.actions.length
+    const actions = [...done.actions, ...slots.map((slot, index) => (slot === null ? skipped.get(index) : transaction.actions[slot]))]
+    const combinedIndex = new Map(slots.map((slot, index) => [slot, index + offset]))
+    return render(transaction.coverage.resolution, actions, [...done.commits, ...commits.map(commit => ({ ...commit, actionIndex: combinedIndex.get(commit.actionIndex) }))])
   }
   catch (error) {
     let recovery = ''
+    // A toolchain commit is kept, including one Git created before the migration's own checks failed; the commit
+    // sequence lists it itself once it has committed something. Dependency files are never restored over it.
+    const createdToolchain = !toolchainCommit && stage === 'toolchain' ? error.createdCommit : undefined
+    const kept = toolchainCommit || createdToolchain
+    if (kept && !error.committed?.length) error.message += `; completed commits: ${kept.hash}.`
     if (mutated && (!committing || (error.committed && error.committed.length === 0))) {
       try {
         const result = await restoreDependencyFiles(guard)
@@ -129,7 +187,11 @@ Upgrade one partial or complete planner installation in the selected project and
       catch (e) { recovery = ` Recovery could not restore dependency files: ${e.message}. node_modules may have changed.` }
     }
     else if (committing) recovery = ' Verified dependency changes may remain uncommitted; inspect Git state.'
+    else if (createdToolchain) recovery = ' Dependency files were not restored over the toolchain commit; inspect Git state.'
+    else if (toolchainCommit) recovery = ' Dependency files were not changed after the toolchain commit.'
     else if (staging) recovery = ' Original dependency files were not changed by this operation.'
+    // The toolchain migration installs into the real project and never restores node_modules.
+    if (stage === 'toolchain' && guard?.installedTreeMayHaveChanged && !recovery.includes('node_modules')) recovery += ' node_modules may have changed.'
     io.stderr.write(`npm-dep-upgrade: ${error.stage || stage}: ${error.message}${recovery}\n`)
     return 1
   }

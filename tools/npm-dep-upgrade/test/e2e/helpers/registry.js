@@ -9,7 +9,7 @@ export async function startRegistry(scenario) {
     state.phase = p
   }
   const calls = [], unexpected = [], archives = new Map()
-  for (const [name, versions] of Object.entries(scenario.packages)) for (const [version, p] of Object.entries(versions)) archives.set(`${name}@${version}`, tarball(p.manifest))
+  for (const [name, versions] of Object.entries(scenario.packages)) for (const [version, p] of Object.entries(versions)) archives.set(`${name}@${version}`, tarball(p.manifest, p.files))
   const server = http.createServer(async (req, res) => {
     try {
       const chunks = []

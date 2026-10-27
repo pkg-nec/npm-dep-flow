@@ -17,6 +17,7 @@ import { readUpstream } from './paths.js'
 import { readReleasePolicy } from './policy.js'
 import { findParentChoices } from './ancestors.js'
 import { planParentChoices } from './parent-planning.js'
+import { planToolchainChoices } from './toolchain-planning.js'
 
 const defaults = { loadProject, readPlanningContext, runNpmDepAudit, runNpmDepVersions, resolveChoices, renderJson, renderMarkdown }
 const packageDir = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -99,6 +100,13 @@ async function mainWithDebug(argv, io = process, deps = defaults) {
         const row = auditReport.rows.find(candidate => candidate.package === finding.package && candidate.version === finding.version)
         const parents = await planParentChoices({ finding, row, project, options, controls: { noCache: options.noCache, ...clearControl }, adapters })
         freshAt = Math.min(freshAt, parents.freshAt)
+      }
+      // The toolchain bump covers what within-range and parent actions left, and is resolved ahead of them.
+      for (const finding of findings) {
+        if (finding.resolution === 'complete') continue
+        const row = auditReport.rows.find(candidate => candidate.package === finding.package && candidate.version === finding.version)
+        const toolchain = await planToolchainChoices({ finding, row, project, options, controls: { noCache: options.noCache, ...clearControl }, adapters })
+        freshAt = Math.min(freshAt, toolchain.freshAt)
       }
       // `none` means no action clears a branch, so it never carries choices (the executor rejects the mismatch).
       for (const finding of findings) if (finding.resolution === 'none') finding.choices = []

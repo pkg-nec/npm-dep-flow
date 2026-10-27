@@ -149,3 +149,22 @@ test('parent names are escaped and the finding id and JSON choices are unchanged
   assert.equal(mixed.id, plain.id)
   assert.deepEqual(mixed.choices[1], { strategy: 'upgrade-via-parent-dependency', targetPackage: 'nx', targetLocation: 'node_modules/nx', currentVersion: '1.0.0', targetVersion: '1.1.0', affectedConsumers: [{ location: 'node_modules/nx', requestedName: 'brace-expansion', type: 'dependencies' }] })
 })
+
+const toolchainChoice = (from = '21.2.26', to = '21.2.27') => ({
+  strategy: 'upgrade-angular-toolchain', targetPackage: '@angular/cli', currentVersion: from, targetVersion: to, targetLocation: 'node_modules/@angular/cli',
+  affectedConsumers: [{ location: 'node_modules/@angular/build', requestedName: 'brace-expansion', type: 'dependencies' }],
+})
+
+test('the toolchain transition follows other labels and parent transitions in the Strategy cell', () => {
+  const [within] = row().choices
+  const markdown = renderMarkdown([row({ resolution: 'partial', choices: [toolchainChoice(), parentChoice('nx', '23.1.2', '23.2.0'), within] })])
+  const line = markdown.split('\n').find(item => item.startsWith('| ') && item.includes('brace-expansion |'))
+  assert.match(line, /\| Update within declared range; Upgrade via parent dependency: nx@23\.1\.2 → nx@23\.2\.0; Upgrade Angular toolchain: @angular\/cli@21\.2\.26 → @angular\/cli@21\.2\.27 \|$/)
+  const alone = renderMarkdown([row({ choices: [toolchainChoice()] })])
+  assert.match(alone, /\| Upgrade Angular toolchain: @angular\/cli@21\.2\.26 → @angular\/cli@21\.2\.27 \|\n$/)
+})
+
+test('JSON passes a toolchain choice through unchanged', () => {
+  const [json] = JSON.parse(renderJson([row({ choices: [toolchainChoice()] })], '2026-10-01T00:00:00.000Z')).rows
+  assert.deepEqual(json.choices, [toolchainChoice()])
+})

@@ -6,6 +6,8 @@ The strategy is `update-within-declared-range`. It groups compatible incoming co
 
 When consumers remain that no within-range action can cover, the planner also searches up to two ancestor levels for a parent release that clears the branch (strategy `upgrade-via-parent-dependency`). The Strategy cell then shows the within-range label once, followed by each parent transition, for example `Upgrade via parent dependency: B@1.0.1 → B@1.1.0`. Parent choices use the same schema 3 fields as other choices: `targetPackage`, `targetLocation`, `currentVersion` and `targetVersion` describe the ancestor, and `affectedConsumers` lists the finding's branches the upgrade clears. See [Parent upgrades](#parent-upgrades-schema-decision).
 
+Branches that neither of those strategies covers can finally be handled by `upgrade-angular-toolchain` (label `Upgrade Angular toolchain`), which bumps the exact-pinned Angular CLI toolchain as one unit. See [Angular toolchain](#angular-toolchain).
+
 ## Requirements and installation
 
 - Node.js 20 or newer.
@@ -146,6 +148,35 @@ Planner JSON uses `schemaVersion: 3`, with no compatibility reader or migration 
 Each ID is the full lowercase SHA-256 of `package + "__" + targetLocation`; Markdown shows seven characters. Version, resolution, and action count do not change this identity. Another installation location gets another ID even for the same package/version.
 
 The old `status` and singular `strategy` fields are removed. No choice IDs, ancestor-search fields, or complete-resolution option groups are emitted. An empty report has `rows: []`; completed reports exit 0, including all-`none` reports. Findings omit full advisory details and declarations, which remain available from audit.
+
+## Angular toolchain
+
+Projects that pin `@angular/cli` (and usually `@angular/build`) to exact versions cannot be fixed by a within-range update, and the parent strategy never upgrades the project root. The `upgrade-angular-toolchain` strategy is evaluated after the other two and covers only the consumer branches they left uncovered, like parent upgrades. Other strategies' choices stay in the same finding and the action set is resolved together.
+
+It applies only when all of these hold:
+
+- `@angular/cli` is a direct dependency of the project root. `@angular/build` is also a member when the root declares it; a declared member must be installed.
+- All members share the CLI's installed version; otherwise the strategy does not apply.
+- The vulnerable installation is a member or at most two levels below one (taken from the same `npm-dep-paths --upstream-of` answer used for parent upgrades).
+
+Candidates come from the `npm-dep-versions` catalog of `@angular/cli`: stable releases newer than the installed one within the same major. The lowest candidate that wins is the one for which the read-only resolver keeps every existing action and clears at least one uncovered in-scope branch; the resolver sets every member to that version (and the `@angular-devkit/core` entry in `overrides` too, if present) in a private scratch project. A major bump is never proposed, and the Angular runtime packages (`@angular/core` and friends) are not part of the toolchain. The planner applies no release-age filter, like the other strategies; `npm-dep-upgrade` enforces the seven-day rule when it executes.
+
+The Strategy cell shows the choice as `Upgrade Angular toolchain: @angular/cli@X → @angular/cli@Y`, after any within-range and parent text. In JSON the choice uses the usual schema 3 fields, with `targetPackage` naming the CLI, `targetLocation` its installation and `affectedConsumers` the branches cleared:
+
+```json
+{
+  "strategy": "upgrade-angular-toolchain",
+  "targetPackage": "@angular/cli",
+  "targetLocation": "node_modules/@angular/cli",
+  "currentVersion": "20.3.1",
+  "targetVersion": "20.3.4",
+  "affectedConsumers": [
+    { "location": "node_modules/@angular/cli", "requestedName": "@angular-devkit/schematics", "type": "dependencies" }
+  ]
+}
+```
+
+Cache identity, TTL and freshness follow the parent strategy: a cached plan expires no later than the oldest catalog or audit source. Planner JSON stays at `schemaVersion: 3`, since the new strategy value is additive; install the planner and `npm-dep-upgrade` releases together.
 
 ## Supported projects
 

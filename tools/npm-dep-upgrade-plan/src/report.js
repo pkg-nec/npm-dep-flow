@@ -86,16 +86,23 @@ function renderSeverity(value) {
 }
 
 const PARENT_STRATEGY = 'upgrade-via-parent-dependency'
+const TOOLCHAIN_STRATEGY = 'upgrade-angular-toolchain'
 
-// Within-range actions share one label; parent upgrades keep their package and version transition.
+const compareChoices = (a, b) => compareText(a.targetLocation, b.targetLocation) || compareText(a.targetPackage, b.targetPackage) || compareVersion(a.currentVersion, b.currentVersion) || compareVersion(a.targetVersion, b.targetVersion)
+
+function transitionsOf(choices, strategy, label) {
+  const selected = choices.filter(choice => choice.strategy === strategy).sort(compareChoices)
+  return [...new Set(selected.map(choice => `${label}: ${escapeMarkdown(choice.targetPackage)}@${escapeMarkdown(choice.currentVersion)} → ${escapeMarkdown(choice.targetPackage)}@${escapeMarkdown(choice.targetVersion)}`))]
+}
+
+// Within-range actions share one label; parent and toolchain upgrades keep their package and version transition.
 function renderStrategies(choices) {
   if (choices.length === 0) return '—'
-  const parents = choices.filter(choice => choice.strategy === PARENT_STRATEGY)
-    .sort((a, b) => compareText(a.targetLocation, b.targetLocation) || compareText(a.targetPackage, b.targetPackage) || compareVersion(a.currentVersion, b.currentVersion) || compareVersion(a.targetVersion, b.targetVersion))
-  const others = choices.filter(choice => choice.strategy !== PARENT_STRATEGY)
+  const others = choices.filter(choice => choice.strategy !== PARENT_STRATEGY && choice.strategy !== TOOLCHAIN_STRATEGY)
   const labels = [...new Set(others.map(choice => escapeMarkdown(strategyLabels.get(choice.strategy) ?? choice.strategy)))]
-  const transitions = [...new Set(parents.map(choice => `Upgrade via parent dependency: ${escapeMarkdown(choice.targetPackage)}@${escapeMarkdown(choice.currentVersion)} → ${escapeMarkdown(choice.targetPackage)}@${escapeMarkdown(choice.targetVersion)}`))]
-  return [...labels, ...transitions].join('; ')
+  const parents = transitionsOf(choices, PARENT_STRATEGY, 'Upgrade via parent dependency')
+  const toolchain = transitionsOf(choices, TOOLCHAIN_STRATEGY, 'Upgrade Angular toolchain')
+  return [...labels, ...parents, ...toolchain].join('; ')
 }
 
 export function renderMarkdown(rows) {

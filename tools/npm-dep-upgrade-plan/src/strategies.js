@@ -2,7 +2,7 @@ import semver from 'semver'
 
 const strategyId = 'update-within-declared-range'
 
-function strictStableVersion(value) {
+export function strictStableVersion(value) {
   const parsed = semver.parse(value)
   if (!parsed || parsed.prerelease.length > 0) return false
   const buildMetadata = value.includes('+') ? value.slice(value.indexOf('+')) : ''

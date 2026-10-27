@@ -750,3 +750,64 @@ test('ancestor catalog freshness bounds the cached plan', async (t) => {
   assert.equal(await main(['/project', '--format', 'json', '--cache-ttl', '30m'], createIo().io, deps), 0)
   assert.ok(calls.versions.length > before, 'a shorter TTL refreshes because the oldest source is too old')
 })
+
+function toolchainDeps(calls, root = path.join(scratchRoot, 'toolchain-flow')) {
+  const requirement = (spec, name, version) => ({ declaredRequirement: spec, directDependents: [{ name, version, location: `node_modules/${name}`, targetLocation: 'node_modules/brace-expansion', type: 'dependencies', requestedName: 'brace-expansion' }] })
+  const report = { schemaVersion: 2, auditedAt: new Date().toISOString(), rows: [vulnerableRow('brace-expansion', '5.0.9', 'high', [requirement('5.0.9', 'nx', '23.1.2'), requirement('5.0.9', '@angular/cli', '21.2.26'), requirement('^5.0.5', 'plain', '1.0.0')])] }
+  const deps = injectedDeps(report, new Map(), { renderJson: findings => JSON.stringify(findings) })
+  const manifest = { name: 'app', version: '1.0.0', dependencies: { nx: '^23.0.0', plain: '^1.0.0' }, devDependencies: { '@angular/cli': '21.2.26' } }
+  const lock = { lockfileVersion: 3, packages: { '': { name: 'app' }, 'node_modules/@angular/cli': { version: '21.2.26' } } }
+  deps.loadProject = async () => ({ root, manifestBytes: Buffer.from(JSON.stringify(manifest)), lockBytes: Buffer.from(JSON.stringify(lock)) })
+  deps.clearCache = async () => {}
+  const catalogs = { 'brace-expansion': ['5.0.9', '5.0.12'], 'nx': ['23.1.2', '23.2.0'], '@angular/cli': ['21.2.26', '21.2.27'] }
+  deps.runNpmDepVersions = async (_root, name) => {
+    calls.versions.push(name)
+    return { versions: catalogs[name], releaseTimes: new Map(), fetchedAt: new Date(Date.now() - (calls.cliAgeMs && name === '@angular/cli' ? calls.cliAgeMs : 0)).toISOString() }
+  }
+  const nx = { strategy: 'upgrade-via-parent-dependency', targetPackage: 'nx', targetLocation: 'node_modules/nx', currentVersion: '23.1.2', targetVersion: '23.2.0', affectedConsumers: [{ location: 'node_modules/nx', requestedName: 'brace-expansion', type: 'dependencies' }] }
+  deps.findParentChoices = async (request) => {
+    await request.evaluate([...request.accepted, nx])
+    return [nx]
+  }
+  deps.readUpstream = async () => ({ nodes: new Map(), edges: [{ from: '', to: 'node_modules/@angular/cli' }] })
+  deps.resolveChoices = async (_project, _item, choices) => {
+    calls.resolves.push(choices.map(c => c.strategy))
+    const consumer = location => ({ location, requestedName: 'brace-expansion', type: 'dependencies' })
+    const cleared = [consumer('node_modules/plain')]
+    if (choices.some(c => c.strategy === 'upgrade-via-parent-dependency')) cleared.push(consumer('node_modules/nx'))
+    if (choices.some(c => c.strategy === 'upgrade-angular-toolchain')) cleared.push(consumer('node_modules/@angular/cli'))
+    return { choices, graph: { nodes: [], edges: [] }, coverage: { resolution: cleared.length === 3 ? 'complete' : 'partial', clearedConsumers: cleared, remainingConsumers: [] }, freshAt: Date.now() }
+  }
+  return deps
+}
+
+test('the toolchain step runs after the parent step and completes the finding', async () => {
+  const calls = { versions: [], resolves: [] }
+  const io = createIo()
+  assert.equal(await main(['/project', '--no-cache', '--format', 'json'], io.io, toolchainDeps(calls)), 0, io.stderr)
+  const [finding] = JSON.parse(io.stdout)
+  assert.equal(finding.resolution, 'complete')
+  assert.deepEqual(finding.choices.map(c => `${c.strategy}:${c.targetPackage}@${c.targetVersion}`), [
+    'upgrade-angular-toolchain:@angular/cli@21.2.27',
+    'upgrade-via-parent-dependency:nx@23.2.0',
+    'update-within-declared-range:brace-expansion@5.0.12',
+  ])
+  const firstToolchain = calls.resolves.findIndex(strategies => strategies.includes('upgrade-angular-toolchain'))
+  assert.ok(firstToolchain > 0)
+  assert.ok(calls.resolves.slice(0, firstToolchain).some(strategies => strategies.includes('upgrade-via-parent-dependency')))
+  assert.ok(calls.resolves.slice(firstToolchain).every(strategies => strategies[0] === 'upgrade-angular-toolchain'))
+})
+
+test('the @angular/cli catalog freshness bounds the cached plan', async (t) => {
+  const root = mkdtempSync(path.join(tmpdir(), 'planner-toolchain-fresh-'))
+  t.after(() => rmSync(root, { recursive: true, force: true }))
+  const calls = { versions: [], resolves: [], cliAgeMs: 50 * 60000 }
+  const deps = toolchainDeps(calls, root)
+  deps.readPlanningContext = async () => ({ fixture: 'toolchain-fresh' })
+  assert.equal(await main(['/project', '--format', 'json'], createIo().io, deps), 0)
+  const before = calls.versions.length
+  assert.equal(await main(['/project', '--format', 'json'], createIo().io, deps), 0)
+  assert.equal(calls.versions.length, before, 'a one-hour TTL reuses the cached plan')
+  assert.equal(await main(['/project', '--format', 'json', '--cache-ttl', '30m'], createIo().io, deps), 0)
+  assert.ok(calls.versions.length > before, 'a shorter TTL refreshes because the @angular/cli catalog is too old')
+})
