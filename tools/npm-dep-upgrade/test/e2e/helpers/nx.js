@@ -8,8 +8,8 @@ const LINES = {
   '@angular/core': { members: RUNTIME, overrides: ['@angular/platform-browser-dynamic'] },
 }
 
-// A stand-in for `nx migrate <package>@<v>` served by the local registry as nx@1.0.0. Like real nx it writes the exact
-// version for every root-declared member of the named line in the field that declares it and leaves `overrides` alone.
+// A stand-in for `nx migrate <package>@<v>` served by the local registry as nx@1.0.0. It writes the exact
+// version (real nx behavior for a member declared with a range is an unverified assumption) for every root-declared member of the named line in the field that declares it and leaves `overrides` alone.
 // Variants: `migrations` also writes migrations.json as a real migration with code changes would; `overrides` also sets
 // the line's overrides that exist; `extra` sets further root declarations to the given versions; `keepRange` keeps a
 // member's `^`/`~` operator in front of the new version.

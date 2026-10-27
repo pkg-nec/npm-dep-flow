@@ -162,7 +162,7 @@ for (const npmCli of runtimes) {
     await assertMigrated(f)
   })
 
-  test(`runtime: a member declared with ^ is pinned to the target as nx writes it (${npmCli})`, async (t) => {
+  test(`runtime: a member declared with ^ is pinned to the exact target the fixture nx writes; real nx behavior unverified (${npmCli})`, async (t) => {
     const f = await createProject(runtime({ range: '@angular/forms' }), { npmCli }, t)
     assert.equal(JSON.parse(f.initialFiles['package.json']).dependencies['@angular/forms'], `^${current}`)
     const row = finding(await plan(f))

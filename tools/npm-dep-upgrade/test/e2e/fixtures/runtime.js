@@ -40,7 +40,7 @@ const fixed = version => (version === current ? '1.0.0' : '1.0.1')
 // override and a stale @angular/platform-browser-dynamic override (no lockfile entry, nothing depends on it).
 // @angular/core pins mid, which pins the vulnerable kid two levels below the runtime; the next runtime patch brings a
 // mid on the fixed kid. With `both`, @angular/build also reaches kid through toolMid, fixed by the next toolchain patch,
-// so one finding needs both lines. `range` declares that member with `^`; `nx` selects the fake nx variant.
+// so one finding needs both lines. `range` declares that member with `^` (the fixture nx then writes the exact version; real nx behavior for ranges is unverified); `nx` selects the fake nx variant.
 export function runtime({ nx = {}, both = false, range, pbdOverride = true } = {}) {
   const dependencies = Object.fromEntries(RUNTIME.filter(name => name !== compilerCli).map(name => [name, name === range ? `^${current}` : current]))
   const overrides = { [devkit]: current, ...(pbdOverride ? { [dynamic]: current } : {}) }
