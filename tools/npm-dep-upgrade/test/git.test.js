@@ -147,3 +147,19 @@ for (const mutation of ['subject', 'index', 'dependency']) test(`no-verify retai
   await assert.rejects(commitUpgrade(guard, guard.ownedFiles, { package: 'e2e-target', oldVersion: '6.0.9', newVersion: '6.0.12' }, { module: 'api', gitCommitArgs: ['--no-verify'] }), /commit|subject|staged/i)
   assert.equal((await git(f.repo, ['rev-parse', 'HEAD'])).trim(), guard.head)
 })
+
+test('clean working tree check accepts a clean repository', async (t) => {
+  const { assertCleanWorkingTree } = await import('../src/git.js')
+  const f = await gitProject(t, { nested: true }), guard = await preflightGit(f.root)
+  await assertCleanWorkingTree(guard)
+})
+for (const variant of ['staged', 'unstaged', 'untracked']) test(`clean working tree check rejects ${variant} work without changing it`, async (t) => {
+  const { assertCleanWorkingTree } = await import('../src/git.js')
+  const f = await gitProject(t, { nested: true }), guard = await preflightGit(f.root)
+  if (variant === 'untracked') await writeFile(path.join(f.repo, 'new file.txt'), 'new\n')
+  else await writeFile(path.join(f.repo, 'unrelated.txt'), 'user edit\n')
+  if (variant === 'staged') await git(f.repo, ['add', 'unrelated.txt'])
+  const before = await git(f.repo, ['status', '--porcelain', '--untracked-files=all'])
+  await assert.rejects(assertCleanWorkingTree(guard), error => error.code === 'GIT_PRECONDITION' && /clean/i.test(error.message))
+  assert.equal(await git(f.repo, ['status', '--porcelain', '--untracked-files=all']), before)
+})

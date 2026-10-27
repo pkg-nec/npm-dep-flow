@@ -1,11 +1,11 @@
 import { debugSpawn } from './debug.js'
 import crossSpawn from 'cross-spawn'
 
-export function runProcess(command, args, { cwd, env = process.env, spawnImpl = crossSpawn, onStderr, maxBytes = 32 * 1024 * 1024 } = {}) {
+export function runProcess(command, args, { cwd, env = process.env, spawnImpl = crossSpawn, onStderr, shell = false, maxBytes = 32 * 1024 * 1024 } = {}) {
   return new Promise((resolve, reject) => {
     let child
     try {
-      child = debugSpawn(spawnImpl, command, args, { cwd, env, stdio: ['ignore', 'pipe', 'pipe'], shell: false, windowsHide: true })
+      child = debugSpawn(spawnImpl, command, args, { cwd, env, stdio: ['ignore', 'pipe', 'pipe'], shell, windowsHide: true })
     }
     catch (error) {
       reject(error)
