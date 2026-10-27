@@ -4,6 +4,7 @@ import path from 'node:path'
 import { mkdtemp, writeFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { main } from '../src/cli.js'
+
 async function fixture(t, value) {
   const root = await mkdtemp(path.join(tmpdir(), 'upgrade-config-'))
   t.after(() => rm(root, { recursive: true, force: true }))
@@ -11,6 +12,7 @@ async function fixture(t, value) {
   await writeFile(file, JSON.stringify(value))
   return { root, file }
 }
+
 test('configured project reaches preflight and positional project overrides it', async (t) => {
   const f = await fixture(t, { project: './nested app', module: 'webapp' }), seen = [], cwd = process.cwd()
   const io = { stdout: { write() {} }, stderr: { write() {} } }

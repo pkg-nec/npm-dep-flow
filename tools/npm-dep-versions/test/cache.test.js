@@ -18,6 +18,7 @@ async function fixture(t) {
   }
   return { options, compute, time, calls: () => calls, file: async () => join(cacheRoot, (await readdir(cacheRoot)).find(n => n.startsWith('catalog-'))) }
 }
+
 test('catalog TTL is measured from original fetch and bypass leaves old bytes untouched', async (t) => {
   const f = await fixture(t)
   const first = await cachedCatalog(f.options, f.compute)

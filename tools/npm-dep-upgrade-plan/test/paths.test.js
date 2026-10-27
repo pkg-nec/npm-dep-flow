@@ -24,6 +24,7 @@ function response(parent, { nodes, edges, dependents } = {}) {
     },
   }
 }
+
 const runner = (responses, calls = []) => async (command, args, cwd, spawnImpl, platform) => {
   calls.push({ command, args, cwd, spawnImpl, platform })
   const next = responses.shift()

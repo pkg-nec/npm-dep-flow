@@ -1,6 +1,7 @@
 import { mkdtemp, writeFile, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
+
 // npm owns this private project. Real project bytes are never inferred from npm's
 // semantic output: they must still match the Git guard before publication.
 export async function createStagingProject(project, context) {

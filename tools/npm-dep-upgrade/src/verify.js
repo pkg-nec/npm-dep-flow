@@ -3,6 +3,7 @@ import { fail } from './errors.js'
 import { DAY_MS } from './model.js'
 import { readCandidateAdvisories, readCatalog, normalizeTimestamp } from './registry.js'
 import { readFreshAudit } from './evidence.js'
+
 export function closure(graph, start) {
   const found = new Set(), queue = [start]
   for (let i = 0; i < queue.length; i++) {

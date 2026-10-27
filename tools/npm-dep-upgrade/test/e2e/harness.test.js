@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { createProject } from './helpers/project.js'
 import { direct } from './fixtures/catalog.js'
 import { plan, runUpgrade, assertSuccess } from './helpers/runner.js'
+
 test('harness D01 real registry, npm, audit, planner, Git and clean reproduction', async (t) => {
   const f = await createProject(direct(), {}, t)
   assert.match(f.npmVersion, /^12\.1\.0$/)

@@ -6,6 +6,7 @@ import { createProject } from './helpers/project.js'
 import { direct, transitive, leaf, ago } from './fixtures/catalog.js'
 import { plan, runUpgrade, assertUnchanged, assertSuccess } from './helpers/runner.js'
 import { installCheckpoints, checked } from './helpers/commands.js'
+
 for (const variant of ['tarball', 'integrity', 'peer']) test(`F02 G04 ${variant} install failure recovery`, async (t) => {
   const s = direct()
   if (variant === 'peer') {

@@ -1,7 +1,9 @@
 import semver from 'semver'
 import { fail } from './errors.js'
+
 export const consumerKey = e => JSON.stringify([e.location ?? e.from, e.requestedName, e.type])
 const sameInstall = (a, b) => !!a && !!b && a.name === b.name && a.version === b.version && a.resolved === b.resolved && a.integrity === b.integrity
+
 function closure(edges, starts) {
   const next = new Map()
   for (const edge of edges) {
@@ -16,6 +18,7 @@ function closure(edges, starts) {
   }
   return found
 }
+
 // A consumer branch is cleared when nothing reachable from where the consumer now lives is still an affected
 // installation of the package: removing a dependency clears it, a descendant that reintroduces the vulnerability
 // does not. Affected installations the consumer already reached by another route belong to other findings.

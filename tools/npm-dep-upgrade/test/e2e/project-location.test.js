@@ -6,6 +6,7 @@ import { createProject } from './helpers/project.js'
 import { direct, transitive } from './fixtures/catalog.js'
 import { plan, assertSuccess } from './helpers/runner.js'
 import { command, checked } from './helpers/commands.js'
+
 for (const relative of [false, true]) for (const trans of [false, true]) test(`project argument ${relative ? 'relative' : 'absolute'} ${trans ? 'transitive' : 'direct'} upgrades only the target repository`, async (t) => {
   const f = await createProject(trans ? transitive() : direct(), { nested: true }, t), [row] = await plan(f)
   const caller = path.join(f.scratch, 'caller project & dollar $')

@@ -1,5 +1,6 @@
 import Arborist from '@npmcli/arborist'
 import { DEPENDENCY_FIELDS } from './model.js'
+
 const types = { prod: 'dependencies', dev: 'devDependencies', peer: 'peerDependencies', peerOptional: 'peerDependencies', optional: 'optionalDependencies' }
 export async function loadGraph(projectRoot, { actual = false } = {}) {
   const arb = new Arborist({ path: projectRoot, ignoreScripts: true })

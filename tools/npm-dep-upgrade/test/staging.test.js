@@ -5,6 +5,7 @@ import path from 'node:path'
 import { gitProject } from './helpers/git-project.js'
 import { loadProject } from '../src/project.js'
 import { createStagingProject } from '../src/staging.js'
+
 test('private npm project preserves config and anchored path options', async (t) => {
   const f = await gitProject(t), project = await loadProject(f.root), cache = path.join(f.root, 'relative-cache')
   await writeFile(path.join(f.root, '.npmrc'), 'registry=https://registry.example/\ncache=./relative-cache\n')

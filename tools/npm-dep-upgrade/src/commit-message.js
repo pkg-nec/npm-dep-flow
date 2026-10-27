@@ -1,4 +1,5 @@
 import { fail } from './errors.js'
+
 const fields = new Set(['module', 'description', 'package', 'oldVersion', 'newVersion', 'strategy'])
 export function validateCommitTemplate(template, module) {
   if (typeof template !== 'string' || !template.trim() || template !== template.trim() || /\p{Cc}/u.test(template)) fail('INVALID_CONFIG', 'configuration', 'Commit message template must be a nonempty single line without surrounding whitespace')

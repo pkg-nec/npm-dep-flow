@@ -2,6 +2,7 @@ import { writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { assertGitState, commitUpgrade } from './git.js'
 import { recordOwnedFiles } from './recovery.js'
+
 export async function commitSnapshots(guard, snapshots, actions, context, options, adapters) {
   const commits = []
   let activeSnapshot

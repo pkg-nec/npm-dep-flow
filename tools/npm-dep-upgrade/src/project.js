@@ -5,6 +5,7 @@ import { DEPENDENCY_FIELDS } from './model.js'
 import { canonicalLocation } from './planner.js'
 import { fail } from './errors.js'
 import { loadGraph } from './graph.js'
+
 const object = value => value && typeof value === 'object' && !Array.isArray(value)
 export async function loadProject(root) {
   root = await realpath(root)
@@ -43,6 +44,7 @@ export async function loadProject(root) {
 
 function validateLegacy(lock, graph) {
   const seen = new Set()
+
   function visit(entries, parent = '') {
     if (!object(entries)) fail('INVALID_PROJECT', 'project', 'Missing or inconsistent v2 legacy dependencies')
     for (const [name, legacy] of Object.entries(entries)) {
@@ -60,6 +62,7 @@ function validateLegacy(lock, graph) {
       if (legacy.dependencies !== undefined) visit(legacy.dependencies, location)
     }
   }
+
   visit(lock.dependencies)
   if (Object.keys(lock.packages).some(location => location && !seen.has(location))) fail('INVALID_PROJECT', 'project', 'Missing v2 legacy installation')
 }

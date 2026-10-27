@@ -4,6 +4,7 @@ import { readFile, realpath, access } from 'node:fs/promises'
 import path from 'node:path'
 import { runProcess } from './process.js'
 import { fail } from './errors.js'
+
 export async function resolveNpmPath(env = process.env) {
   const candidates = []
   for (const directory of (env.PATH || env.Path || '').split(path.delimiter)) {

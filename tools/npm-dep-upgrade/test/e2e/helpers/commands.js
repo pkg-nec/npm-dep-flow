@@ -2,6 +2,7 @@ import { mkdir, writeFile, symlink, readFile } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { runProcess } from '../../../src/process.js'
+
 export const toolsRoot = fileURLToPath(new URL('../../../../', import.meta.url))
 export async function createCommandPath(runtime, toolRoots = toolsRoot) {
   const bin = path.join(runtime.scratch, 'bin')

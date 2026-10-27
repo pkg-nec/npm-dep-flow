@@ -5,6 +5,7 @@ import { readFile } from 'node:fs/promises'
 import { createProject } from './helpers/project.js'
 import { direct, transitive, base, versions, leaf, ago, target } from './fixtures/catalog.js'
 import { plan, runUpgrade, assertSuccess, assertUnchanged, assertResolved } from './helpers/runner.js'
+
 const collisions = JSON.parse(await readFile(new URL('./fixtures/collisions.json', import.meta.url)))
 const hash = (name, location) => createHash('sha256').update(`${name}__${location}`).digest('hex')
 test('H01 full SHA256 IDs and Markdown abbreviations', async (t) => {

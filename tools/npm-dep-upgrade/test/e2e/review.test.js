@@ -6,6 +6,7 @@ import { createProject } from './helpers/project.js'
 import { direct, leaf, ago, supporting } from './fixtures/catalog.js'
 import { plan, runUpgrade, assertSuccess, assertUnchanged } from './helpers/runner.js'
 import { installCheckpoints, checked } from './helpers/commands.js'
+
 test('review concurrent lock metadata is preserved and never committed', async (t) => {
   const s = direct(), f = await createProject(s, {}, t), [row] = await plan(f)
   s.checkpoint = async ({ stage, count }) => {

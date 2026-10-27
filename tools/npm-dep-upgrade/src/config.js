@@ -2,11 +2,13 @@ import { readFile } from 'node:fs/promises'
 import path from 'node:path'
 import { fail } from './errors.js'
 import { validateCommitTemplate } from './commit-message.js'
+
 const keys = { project: 'projectPath', package: 'packageName', format: 'format', debug: 'debug', module: 'module', commitMessageTemplate: 'commitMessageTemplate', gitCommitArgs: 'gitCommitArgs' }
 const invalid = message => fail('INVALID_CONFIG', 'configuration', message)
 export function validateCommitArgs(args) {
   if (!Array.isArray(args) || args.some(arg => typeof arg !== 'string' || !/^(?:--no-verify|--signoff|--no-gpg-sign|--gpg-sign(?:=[a-zA-Z0-9@._+/-]+)?)$/.test(arg))) invalid('gitCommitArgs must be an array of supported flags: --no-verify, --signoff, --gpg-sign[=<key>], --no-gpg-sign')
 }
+
 function validate(values) {
   for (const key of ['projectPath', 'packageName', 'module']) {
     if (values[key] !== undefined && (typeof values[key] !== 'string' || !values[key].trim() || /\p{Cc}/u.test(values[key]))) invalid(`${key} must be a nonempty string without control characters`)
@@ -19,6 +21,7 @@ function validate(values) {
   // A module can be supplied by CLI while its template lives in the file.
   if (values.commitMessageTemplate !== undefined) validateCommitTemplate(values.commitMessageTemplate, values.module ?? 'validation')
 }
+
 export async function resolveOptions(cli) {
   if (cli.action !== 'upgrade') return cli
   const configured = {}

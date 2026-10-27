@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { main } from '../src/cli.js'
 import { renderJson } from '../src/report.js'
+
 test('planner verifies split coverage and propagates resolver failures without partial stdout', async () => {
   const row = { package: 'a', version: '1.2.3', severity: 'high', advisories: [{ range: '<1.2.5' }], requirements: ['1.2.3', '^1.2.0'].map((spec, i) => ({ declaredRequirement: spec, directDependents: [{ location: `node_modules/p${i}`, targetLocation: 'node_modules/a', requestedName: 'a', type: 'dependencies' }] })) }
   let stdout = '', stderr = '', seen = []

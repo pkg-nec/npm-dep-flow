@@ -3,6 +3,7 @@ import semver from 'semver'
 import { runProcess } from './process.js'
 import { fail } from './errors.js'
 import { PARENT_STRATEGY, STRATEGY } from './model.js'
+
 const namePattern = /^(?:@[a-z0-9][a-z0-9._~-]*\/)?[a-z0-9][a-z0-9._~-]*$/i
 export function canonicalLocation(value) {
   const name = '(?:@[a-z0-9][a-z0-9._~-]*/)?[a-z0-9][a-z0-9._~-]*'

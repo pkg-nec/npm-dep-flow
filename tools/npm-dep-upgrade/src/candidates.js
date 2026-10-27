@@ -2,6 +2,7 @@ import semver from 'semver'
 import { stableVersion, normalizeTimestamp } from './registry.js'
 import { fail } from './errors.js'
 import { DAY_MS } from './model.js'
+
 export function selectCandidate(item, requirements, catalog, advisories, nowMs) {
   if (!requirements.length || requirements.some(r => !semver.validRange(r))) fail('UNSUPPORTED_REQUIREMENT', 'selection', 'Unsupported original requirement')
   const ageCutoff = nowMs - (catalog.minAgeDays || 7) * DAY_MS

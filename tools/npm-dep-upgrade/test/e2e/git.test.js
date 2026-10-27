@@ -6,6 +6,7 @@ import { createProject } from './helpers/project.js'
 import { direct, transitive } from './fixtures/catalog.js'
 import { plan, runUpgrade, assertSuccess, assertUnchanged } from './helpers/runner.js'
 import { checked, installCheckpoints } from './helpers/commands.js'
+
 for (const trans of [false, true]) test(`G02 G03 ${trans ? 'transitive' : 'direct'} nested project preserves unrelated work`, async (t) => {
   const f = await createProject(trans ? transitive() : direct(), { nested: true }, t)
   await writeFile(path.join(f.repoRoot, 'notes.txt'), 'baseline\n')

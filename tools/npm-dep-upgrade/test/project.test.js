@@ -5,6 +5,7 @@ import test from 'node:test'
 import { loadProject } from '../src/project.js'
 import { loadGraph } from '../src/graph.js'
 import { gitProject } from './helpers/git-project.js'
+
 test('graph preserves all root declarations and physical target identity', async (t) => {
   const f = await gitProject(t)
   f.manifest.devDependencies = { 'e2e-target': '~6.0.8' }

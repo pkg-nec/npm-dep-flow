@@ -4,6 +4,7 @@ import path from 'node:path'
 import { readFile, access } from 'node:fs/promises'
 import { resolveChoices } from '../src/resolver.js'
 import { selectWithinRangeChoices } from '../src/coverage.js'
+
 for (const npmCli of [process.env.NPM_DEP_UPGRADE_E2E_NPM_CLI, process.env.NPM_DEP_UPGRADE_E2E_COMPAT_NPM_CLI].filter(Boolean)) test(`read-only splitting survives override cleanup: ${npmCli}`, async (t) => {
   const { createProject } = await import('../../npm-dep-upgrade/test/e2e/helpers/project.js')
   const { shared } = await import('../../npm-dep-upgrade/test/e2e/fixtures/catalog.js')

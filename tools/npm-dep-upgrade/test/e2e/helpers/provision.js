@@ -4,6 +4,7 @@ import path from 'node:path'
 import os from 'node:os'
 import { fileURLToPath } from 'node:url'
 import crossSpawn from 'cross-spawn'
+
 const scratch = path.resolve(process.env.NPM_DEP_FLOW_TEST_TMPDIR || path.join(os.tmpdir(), 'npm-dep-upgrade-tests'))
 await mkdir(scratch, { recursive: true })
 const root = path.join(scratch, 'runtimes'), versions = process.platform === 'win32' ? ['12.1.0'] : ['12.1.0', '11.10.0']

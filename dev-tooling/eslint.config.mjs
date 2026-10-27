@@ -29,6 +29,12 @@ export default defineConfig([
     ],
     // Additional readability rules; these never override a rule from the recommended sets above.
     rules: {
+      '@stylistic/padding-line-between-statements': ['error',
+        { blankLine: 'always', prev: 'import', next: '*' },
+        { blankLine: 'any', prev: 'import', next: 'import' },
+        { blankLine: 'always', prev: '*', next: 'function' },
+        { blankLine: 'always', prev: 'function', next: '*' },
+      ],
       'default-case-last': 'error',
       'default-param-last': 'error',
       'dot-notation': 'error',

@@ -3,6 +3,7 @@ import { createProject } from './helpers/project.js'
 import { direct, supporting, ago } from './fixtures/catalog.js'
 import { plan, runUpgrade, assertUnchanged, assertSuccess } from './helpers/runner.js'
 import { installCheckpoints } from './helpers/commands.js'
+
 for (const variant of ['R02', 'R03 missing all', 'R03 invalid all', 'R04 B', 'candidate-only advisory', 'S03']) test(`${variant} security and release-age rejection`, async (t) => {
   const s = variant === 'S03' ? supporting() : direct()
   if (variant === 'R02') for (const v of ['6.0.10', '6.0.12']) s.packages['e2e-target'][v].releasedAt = ago(1)

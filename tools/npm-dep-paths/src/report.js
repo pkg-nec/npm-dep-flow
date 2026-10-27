@@ -102,12 +102,14 @@ function focusedText(upstream) {
   const lines = [nodeLabel(byLocation.get(upstream.rootLocation))]
   const seen = new Set([upstream.rootLocation])
   const stack = []
+
   function pushChildren(location, prefix) {
     const edges = children.get(location) || []
     for (let i = edges.length - 1; i >= 0; i--) {
       stack.push({ edge: edges[i], prefix, last: i === edges.length - 1 })
     }
   }
+
   pushChildren(upstream.rootLocation, '')
   while (stack.length) {
     const { edge, prefix, last } = stack.pop()

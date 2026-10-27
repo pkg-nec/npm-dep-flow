@@ -5,6 +5,7 @@ import path from 'node:path'
 import { createProject } from './helpers/project.js'
 import { transitive, shared, separate, ancestor, sharedAncestry, parentVersions, repeated, existingOverride } from './fixtures/catalog.js'
 import { plan, runUpgrade, assertSuccess, assertResolved, assertUnchanged } from './helpers/runner.js'
+
 export async function apply(t, s, runtime = {}) {
   const f = await createProject(s, runtime, t), rows = await plan(f), row = rows.find(r => r.resolution !== 'none')
   assert.ok(row, JSON.stringify(rows))

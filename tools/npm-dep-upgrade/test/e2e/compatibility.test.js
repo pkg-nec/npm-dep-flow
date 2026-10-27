@@ -1,6 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { runCase } from './helpers/runner.js'
+
 for (const caseId of ['D01', 'D01 tilde', 'T01', 'T02', 'T05', 'T06', 'T07', 'O01', 'O03', 'R01', 'R02', 'R05', 'F05', 'F06', 'H02', 'G03', 'S01']) test(`compat npm11.10.0 ${caseId}`, async (t) => {
   const npmCli = process.env.NPM_DEP_UPGRADE_E2E_COMPAT_NPM_CLI
   assert.ok(npmCli, 'Provision npm11.10.0 and set NPM_DEP_UPGRADE_E2E_COMPAT_NPM_CLI; requested compatibility cases cannot silently skip')

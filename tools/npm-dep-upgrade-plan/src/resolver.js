@@ -5,6 +5,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { debugSpawn } from './debug.js'
 import { readResolverRuntime } from './npm-runtime.js'
+
 export async function runWorker(args, { env = process.env } = {}) {
   return new Promise((resolve, reject) => {
     const child = debugSpawn(spawn, process.execPath, args, { env, stdio: ['ignore', 'pipe', 'pipe'] })

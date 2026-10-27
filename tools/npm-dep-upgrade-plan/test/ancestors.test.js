@@ -33,6 +33,7 @@ function harness({ catalogs = {}, clears = () => false, releases = {} } = {}) {
     },
   }
 }
+
 const find = (h, overrides = {}) => findParentChoices({ row, targetLocation: 'node_modules/a', unresolvedConsumers: [consumer('node_modules/b')], graph: chain(), readCatalog: h.readCatalog, evaluate: h.evaluate, ...overrides })
 const clearsWhen = (predicate, consumers = [consumer('node_modules/b')]) => choices => (choices.some(predicate) ? consumers : [])
 

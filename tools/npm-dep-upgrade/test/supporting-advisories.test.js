@@ -17,6 +17,7 @@ function deps(advisories, requested = [], rows = []) {
     readFreshAudit: async () => rows,
   }
 }
+
 const run = (diff, advisories, requested, rows) => verifyFinalSecurity(evidence, candidate, { ...diff }, context, deps(advisories, requested, rows))
 const sameSet = [{ id: 1, range: '>=5.0.0 <7.0.5' }, { id: 2, range: '<=7.0.2' }]
 

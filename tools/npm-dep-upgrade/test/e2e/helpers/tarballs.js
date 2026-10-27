@@ -1,5 +1,6 @@
 import { gzipSync } from 'node:zlib'
 import { createHash } from 'node:crypto'
+
 // A deterministic POSIX ustar archive: no platform tar executable or npm pack scripts.
 export function tarball(manifest) {
   const chunks = []

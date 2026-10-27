@@ -2,6 +2,7 @@ import http from 'node:http'
 import { gunzipSync } from 'node:zlib'
 import semver from 'semver'
 import { tarball } from './tarballs.js'
+
 export async function startRegistry(scenario) {
   const state = { phase: 'seed', url: '' }
   const setPhase = (p) => {

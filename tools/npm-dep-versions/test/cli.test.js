@@ -14,6 +14,7 @@ function capture() {
     stderr += s
   } }, output: () => ({ stdout, stderr }) }
 }
+
 test('empty contexts need no dependency files and filtering never mutates inputs', async (t) => {
   const root = await scratch(t)
   const canonicalRoot = await realpath(root)
