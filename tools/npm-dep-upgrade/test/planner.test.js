@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
 import test from 'node:test'
-import { selectItem, validatePlanner, canonicalLocation } from '../src/planner.js'
+import { selectItem, validatePlanner, canonicalLocation, splitToolchain } from '../src/planner.js'
+import { TOOLCHAIN_STRATEGY } from '../src/model.js'
 
 const location = 'node_modules/@e2e/target'
 const id = createHash('sha256').update('@e2e/target__' + location).digest('hex')
@@ -106,4 +107,30 @@ test('an ancestor upgrade and a follow-up within-range action may cover the same
   validatePlanner(mixed([within, parent({ affectedConsumers: shared })]))
   assert.throws(() => validatePlanner(mixed([within, { ...within, targetVersion: '6.0.13' }])), /duplicate/i)
   assert.throws(() => validatePlanner(mixed([parent({ affectedConsumers: shared }), parent({ targetPackage: 'other-parent', targetLocation: 'node_modules/other-parent', affectedConsumers: shared })])), /duplicate/i)
+})
+
+const toolchain = { strategy: TOOLCHAIN_STRATEGY, targetPackage: '@angular/cli', targetLocation: 'node_modules/@angular/cli', currentVersion: '19.0.0', targetVersion: '19.2.1', affectedConsumers: [{ location: '', requestedName: '@angular/cli', type: 'devDependencies' }] }
+const toolchainRow = (choice = toolchain, extra = []) => ({ ...row, resolution: 'partial', choices: [row.choices[0], ...extra, choice] })
+test('the Angular toolchain strategy is accepted, selected and split out', () => {
+  assert.equal(TOOLCHAIN_STRATEGY, 'upgrade-angular-toolchain')
+  const r = validatePlanner(report([toolchainRow()]))
+  const item = selectItem(r, id)
+  const { toolchain: found, rest } = splitToolchain(item)
+  assert.deepEqual(found, toolchain)
+  assert.deepEqual(rest.choices, [row.choices[0]])
+  assert.equal(rest.id, id)
+  assert.deepEqual(splitToolchain(row), { toolchain: null, rest: row })
+})
+test('malformed Angular toolchain choices are rejected', () => {
+  for (const choice of [
+    { ...toolchain, targetVersion: '20.0.0' },
+    { ...toolchain, targetVersion: '18.9.0' },
+    { ...toolchain, targetVersion: '19.0.0' },
+    { ...toolchain, targetPackage: '@angular/core' },
+    { ...toolchain, targetLocation: 'node_modules/x/node_modules/@angular/cli' },
+    { ...toolchain, currentVersion: 'bad' },
+    { ...toolchain, affectedConsumers: [] },
+  ]) assert.throws(() => validatePlanner(report([toolchainRow(choice)])), /INVALID_PLAN|choice/i)
+  assert.throws(() => validatePlanner(report([toolchainRow(toolchain, [toolchain])])), /INVALID_PLAN|consumer|toolchain/i)
+  assert.throws(() => splitToolchain({ ...row, choices: [toolchain, toolchain] }), /toolchain/i)
 })
