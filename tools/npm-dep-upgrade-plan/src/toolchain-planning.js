@@ -1,22 +1,11 @@
-import { consumerKey } from './coverage.js'
+import { choiceKey, compareText, consumerKey, consumersOf, releaseTimesOf } from './coverage.js'
 import { PARENT_STRATEGY } from './ancestors.js'
 import { TOOLCHAIN_STRATEGY, inToolchainScope, toolchainCandidateVersions, toolchainMembers } from './toolchain.js'
 
 const isParent = choice => choice.strategy === PARENT_STRATEGY
 const isToolchain = choice => choice.strategy === TOOLCHAIN_STRATEGY
-const choiceKey = choice => JSON.stringify([choice.strategy, choice.targetPackage, choice.targetLocation, choice.targetVersion])
-const compareText = (a, b) => (Number(a > b) - Number(a < b))
 const parse = bytes => (bytes ? JSON.parse(bytes.toString()) : null)
-
-function consumersOf(row, targetLocation) {
-  const consumers = new Map()
-  for (const requirement of row.requirements) for (const dependent of requirement.directDependents) {
-    if (dependent.targetLocation !== targetLocation) continue
-    const consumer = { location: dependent.location, requestedName: dependent.requestedName, type: dependent.type }
-    consumers.set(consumerKey(consumer), { consumer, dependent })
-  }
-  return consumers
-}
+const sameKeys = (left, right) => left.size === right.size && [...left].every(key => right.has(key))
 
 // Parent actions in the executor order (ancestor level, then location, name, version), then the others as given.
 function executionOrder(choices) {
@@ -51,29 +40,38 @@ export async function planToolchainChoices({ finding, row, project, options, con
   const choiceFor = (targetVersion, affectedConsumers) => ({ strategy: TOOLCHAIN_STRATEGY, targetPackage: '@angular/cli', targetLocation: cli.location, currentVersion: toolchain.version, targetVersion, affectedConsumers })
   const item = { ...row, targetLocation: finding.targetLocation }
   const existing = executionOrder(finding.choices)
-  // The toolchain bump must be resolved first: later actions are judged against the tree it leaves.
-  const resolve = async (choice) => {
-    const choices = [choice, ...existing]
-    const verified = await adapters.resolveChoices(project, item, choices, options)
-    freshAt = Math.min(freshAt, verified.freshAt)
-    const accepted = new Set(verified.choices.map(choiceKey))
-    return { verified, kept: choices.every(candidate => accepted.has(choiceKey(candidate))) }
+  // The worker lands an existing parent action only on a release whose publication time it knows.
+  const releaseTimes = {}
+  for (const name of new Set(existing.filter(isParent).map(choice => choice.targetPackage))) {
+    const parentCatalog = await adapters.readCatalog(name)
+    freshAt = Math.min(freshAt, Date.parse(parentCatalog.fetchedAt))
+    releaseTimesOf(name, parentCatalog, releaseTimes)
   }
   const uncoveredKeys = new Set(uncovered.map(entry => consumerKey(entry.consumer)))
   const inScopeKeys = new Set(inScope.map(entry => consumerKey(entry.consumer)))
+  // The toolchain bump must be resolved first: later actions are judged against the tree it leaves. A result counts
+  // only when every action survives and an in-scope uncovered branch is cleared.
+  const resolve = async (choice) => {
+    const choices = [choice, ...existing]
+    const verified = await adapters.resolveChoices(project, item, choices, { ...options, releaseTimes })
+    freshAt = Math.min(freshAt, verified.freshAt)
+    const accepted = new Set(verified.choices.map(choiceKey))
+    const cleared = verified.coverage.clearedConsumers.filter(consumer => uncoveredKeys.has(consumerKey(consumer)))
+    const suitable = choices.every(candidate => accepted.has(choiceKey(candidate))) && cleared.some(consumer => inScopeKeys.has(consumerKey(consumer)))
+    return { verified, suitable, cleared: cleared.map(consumer => ({ location: consumer.location, requestedName: consumer.requestedName, type: consumer.type })) }
+  }
+  const keysOf = consumers => new Set(consumers.map(consumerKey))
 
   for (const version of toolchainCandidateVersions(toolchain.version, catalog.versions)) {
     const tentative = choiceFor(version, inScope.map(entry => entry.consumer))
     let result = await resolve(tentative)
-    if (!result.kept) continue
-    const cleared = result.verified.coverage.clearedConsumers.filter(consumer => uncoveredKeys.has(consumerKey(consumer)))
-    if (!cleared.some(consumer => inScopeKeys.has(consumerKey(consumer)))) continue
-    const choice = choiceFor(version, cleared.map(consumer => ({ location: consumer.location, requestedName: consumer.requestedName, type: consumer.type })))
-    const sameConsumers = choice.affectedConsumers.length === tentative.affectedConsumers.length
-      && choice.affectedConsumers.every(consumer => inScopeKeys.has(consumerKey(consumer)))
-    if (!sameConsumers) {
+    if (!result.suitable) continue
+    const choice = choiceFor(version, result.cleared)
+    if (!sameKeys(keysOf(choice.affectedConsumers), inScopeKeys)) {
+      // The recorded consumers take part in the worker's verification, so the final choice is resolved again and must
+      // clear exactly the consumers it records.
       result = await resolve(choice)
-      if (!result.kept) continue
+      if (!result.suitable || !sameKeys(keysOf(result.cleared), keysOf(choice.affectedConsumers))) continue
     }
     const parents = finding.choices.filter(isParent).sort((a, b) => compareText(a.targetLocation, b.targetLocation))
     finding.choices = [choice, ...parents, ...finding.choices.filter(candidate => !isParent(candidate))]

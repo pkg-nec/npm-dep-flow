@@ -167,3 +167,80 @@ test('returns the @angular/cli catalog freshness and forwards cache controls to 
   const none = adapters({ clearsAt: null })
   assert.equal((await planToolchainChoices({ ...base, project: project(), finding: finding(), row, adapters: none.adapters })).freshAt, Date.parse(catalogFetchedAt))
 })
+
+// A scripted resolver: `plan(toolchain, call)` says which consumers the toolchain bump clears and whether existing
+// choices survive. Parent choices without a known release time are skipped, as the worker skips them.
+function scripted(plan, catalogs = {}) {
+  const calls = { resolves: [], catalogs: [] }
+  const all = [consumer(BUILD), consumer(CORE), consumer('node_modules/x'), consumer('node_modules/c')]
+  const a = {
+    readUpstream: async () => upstream,
+    readCatalog: async (name) => {
+      calls.catalogs.push(name)
+      return catalogs[name] ?? { versions: ['21.2.27', '21.2.28'], releaseTimes: new Map(), fetchedAt: catalogFetchedAt }
+    },
+    resolveChoices: async (p, item, choices, options) => {
+      calls.resolves.push({ choices: structuredClone(choices), options })
+      const toolchain = choices.find(c => c.strategy === 'upgrade-angular-toolchain')
+      const { clears = [], drop = false } = plan(toolchain, calls.resolves.length)
+      const survivors = choices.filter(c => (c.strategy !== 'upgrade-via-parent-dependency' || Object.hasOwn(options.releaseTimes ?? {}, `${c.targetPackage}@${c.targetVersion}`))
+        && !(drop && c.strategy === 'update-within-declared-range'))
+      const cleared = [...survivors.filter(c => c.strategy !== 'upgrade-angular-toolchain').flatMap(c => c.affectedConsumers), ...clears.map(location => consumer(location))]
+      const remaining = all.filter(c => !cleared.some(d => consumerKey(d) === consumerKey(c)))
+      return { choices: survivors, graph: { nodes: [], edges: [] }, coverage: { resolution: remaining.length ? 'partial' : 'complete', clearedConsumers: cleared, remainingConsumers: remaining }, freshAt: Date.now() }
+    },
+  }
+  return { calls, adapters: a }
+}
+
+test('existing parent choices reach the resolver with their release times and their catalog bounds freshness', async () => {
+  const parentFetchedAt = iso(0.04)
+  const { calls, adapters: a } = scripted(() => ({ clears: [BUILD, CORE] }), { x: { versions: ['1.0.0', '1.1.0'], releaseTimes: new Map([['1.1.0', iso(30)]]), fetchedAt: parentFetchedAt } })
+  const f = finding([withinRange, parentChoice])
+  const result = await planToolchainChoices({ ...base, project: project(), finding: f, row, adapters: a })
+  assert.deepEqual(f.choices.map(c => c.strategy), ['upgrade-angular-toolchain', 'upgrade-via-parent-dependency', 'update-within-declared-range'])
+  assert.equal(f.choices[0].targetVersion, '21.2.27')
+  assert.equal(f.resolution, 'complete')
+  assert.ok(Object.hasOwn(calls.resolves[0].options.releaseTimes, 'x@1.1.0'))
+  assert.equal(calls.resolves[0].options.ttlMs, 3600000)
+  assert.deepEqual(calls.catalogs.sort(), ['@angular/cli', 'x'])
+  assert.equal(result.freshAt, Date.parse(parentFetchedAt))
+})
+
+test('a bump that clears only some in-scope consumers is resolved again with exactly those consumers', async () => {
+  const { calls, adapters: a } = scripted(() => ({ clears: [BUILD] }))
+  const f = finding()
+  await planToolchainChoices({ ...base, project: project(), finding: f, row, adapters: a })
+  assert.equal(calls.resolves.length, 2)
+  assert.deepEqual(calls.resolves[0].choices[0].affectedConsumers, [consumer(BUILD), consumer(CORE)])
+  assert.deepEqual(calls.resolves[1].choices[0].affectedConsumers, [consumer(BUILD)])
+  assert.deepEqual(f.choices[0].affectedConsumers, [consumer(BUILD)])
+  assert.equal(f.choices[0].targetVersion, '21.2.27')
+})
+
+test('an out-of-scope uncovered consumer the bump also clears is recorded after a second resolution', async () => {
+  const { calls, adapters: a } = scripted(() => ({ clears: [BUILD, CORE, 'node_modules/x'] }))
+  const f = finding()
+  await planToolchainChoices({ ...base, project: project(), finding: f, row, adapters: a })
+  assert.equal(calls.resolves.length, 2)
+  assert.deepEqual(f.choices[0].affectedConsumers, [consumer(BUILD), consumer(CORE), consumer('node_modules/x')])
+  assert.equal(f.resolution, 'complete')
+})
+
+test('a candidate whose second resolution drops an existing choice is rejected and the next one is tried', async () => {
+  const { calls, adapters: a } = scripted((toolchain, call) => ({ clears: [BUILD], drop: call === 2 }))
+  const f = finding()
+  await planToolchainChoices({ ...base, project: project(), finding: f, row, adapters: a })
+  assert.deepEqual(calls.resolves.map(c => c.choices[0].targetVersion), ['21.2.27', '21.2.27', '21.2.28', '21.2.28'])
+  assert.equal(f.choices[0].targetVersion, '21.2.28')
+  assert.deepEqual(f.choices.slice(1), [withinRange])
+})
+
+test('a second resolution that clears a different set than the recorded consumers is rejected', async () => {
+  const shifted = { 2: [CORE], 4: [] }
+  const { calls, adapters: a } = scripted((toolchain, call) => ({ clears: shifted[call] ?? [BUILD] }))
+  const f = finding()
+  await planToolchainChoices({ ...base, project: project(), finding: f, row, adapters: a })
+  assert.equal(calls.resolves.length, 4)
+  assert.deepEqual(f, finding())
+})
