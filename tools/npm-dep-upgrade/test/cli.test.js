@@ -140,7 +140,7 @@ const toolchainChoice = { strategy: 'upgrade-angular-toolchain', targetPackage: 
 const withinChoice = { strategy: 'update-within-declared-range', targetPackage: 'e2e-target', targetLocation: 'node_modules/e2e-target', currentVersion: '6.0.9', targetVersion: '6.0.12', affectedConsumers: [{ location: '', requestedName: 'e2e-target', type: 'dependencies' }] }
 
 // A real Git fixture whose stubbed toolchain migration commits real bytes, so the guard, recovery and reload are exercised.
-async function toolchainFixture(t, { choices, targetGone = false }) {
+async function toolchainFixture(t, { choices, targetGone = false, resolution = 'complete' }) {
   const { gitProject } = await import('./helpers/git-project.js')
   const { preflightGit, commitUpgrade, readDependencyFiles } = await import('../src/git.js')
   const { recordOwnedFiles } = await import('../src/recovery.js')
@@ -148,7 +148,7 @@ async function toolchainFixture(t, { choices, targetGone = false }) {
   const { itemId } = await import('../src/planner.js')
   const { writeFile } = await import('node:fs/promises'), path = await import('node:path')
   const f = await gitProject(t), guard = await preflightGit(f.root), start = guard.head, events = [], seen = {}
-  const item = { id: itemId('e2e-target', 'node_modules/e2e-target'), package: 'e2e-target', version: '6.0.9', targetLocation: 'node_modules/e2e-target', minimumSafeVersion: '6.0.10', resolution: 'complete', choices }
+  const item = { id: itemId('e2e-target', 'node_modules/e2e-target'), package: 'e2e-target', version: '6.0.9', targetLocation: 'node_modules/e2e-target', minimumSafeVersion: '6.0.10', resolution, choices }
   const manifest = { ...f.manifest, devDependencies: { '@angular/cli': '21.2.27' } }, lock = structuredClone(f.lock)
   lock.packages[''] = manifest
   lock.packages['node_modules/@angular/cli'] = { version: '21.2.27', dev: true }
@@ -183,7 +183,8 @@ async function toolchainFixture(t, { choices, targetGone = false }) {
     readEvidence: async (project, selected) => {
       events.push('evidence')
       seen.evidenceItem = selected
-      return { item: selected, graph: await loadGraph(project.root), auditRows: [], incoming: [], directDeclarations: [], upstream: [] }
+      const graph = await loadGraph(project.root)
+      return { item: selected, graph, auditRows: [], incoming: graph.edges.filter(edge => edge.to === selected.targetLocation), directDeclarations: [], upstream: [] }
     },
     createStagingProject: async (project, context) => {
       events.push('staging')
@@ -325,4 +326,64 @@ test('the commit sequence receives the toolchain commit so later failures list i
   }
   assert.equal(await main([x.item.id], x.c.io, x.deps), 0, x.c.err())
   assert.deepEqual(completed.map(c => [c.hash, c.actionIndex]), [[x.seen.toolchainCommit.hash, 0]])
+})
+
+test('a toolchain-only finding keeps the planned resolution while the target installation remains', async (t) => {
+  const x = await toolchainFixture(t, { choices: [toolchainChoice], resolution: 'partial' })
+  assert.equal(await main([x.item.id, '--format', 'json'], x.c.io, x.deps), 0, x.c.err())
+  assert.equal(JSON.parse(x.c.out()).resolution, 'partial')
+})
+
+test('a removed target reports complete even for a partial plan', async (t) => {
+  const x = await toolchainFixture(t, { choices: [toolchainChoice, withinChoice], targetGone: true, resolution: 'partial' })
+  assert.equal(await main([x.item.id, '--format', 'json'], x.c.io, x.deps), 0, x.c.err())
+  assert.equal(JSON.parse(x.c.out()).resolution, 'complete')
+})
+
+test('a toolchain commit Git created before the migration failed is named and not restored over', async (t) => {
+  const { readFile } = await import('node:fs/promises'), path = await import('node:path')
+  const x = await toolchainFixture(t, { choices: [toolchainChoice, withinChoice] })
+  const base = x.deps.migrateToolchain
+  x.deps.migrateToolchain = async (args) => {
+    const { commit } = await base(args)
+    throw Object.assign(new Error('Dependency files changed after commit'), { stage: 'commit', createdCommit: commit })
+  }
+  x.deps.readEvidence = () => assert.fail('must not read evidence')
+  assert.equal(await main([x.item.id], x.c.io, x.deps), 1)
+  assert.equal(x.c.out(), '')
+  assert.equal(x.c.err(), `npm-dep-upgrade: commit: Dependency files changed after commit; completed commits: ${x.seen.toolchainCommit.hash}. Dependency files were not restored over the toolchain commit; inspect Git state.\n`)
+  assert.equal(await headOf(x.f.root), x.seen.toolchainCommit.hash)
+  assert.deepEqual(await readFile(path.join(x.f.root, 'package.json')), x.toolchainFiles['package.json'])
+})
+
+const goneConsumer = { location: 'node_modules/e2e-gone', requestedName: 'e2e-target', type: 'dependencies' }
+test('a remaining choice whose consumers the toolchain moved is already satisfied and not executed', async (t) => {
+  const gone = { ...withinChoice, targetVersion: '6.0.10', affectedConsumers: [goneConsumer] }
+  const x = await toolchainFixture(t, { choices: [gone, toolchainChoice, withinChoice] })
+  assert.equal(await main([x.item.id, '--format', 'json'], x.c.io, x.deps), 0, x.c.err())
+  assert.deepEqual(x.seen.executeItem.choices, [withinChoice])
+  const result = JSON.parse(x.c.out())
+  assert.deepEqual(result.actions.map(a => [a.strategy, a.targetVersion, a.outcome]), [['upgrade-angular-toolchain', '21.2.27', 'applied'], ['update-within-declared-range', '6.0.10', 'already-satisfied'], ['update-within-declared-range', '6.0.12', 'applied']])
+  assert.deepEqual(result.actions[1].affectedConsumers, [goneConsumer])
+  assert.deepEqual(result.commits.map(c => c.actionIndex), [0, 2])
+})
+
+test('a remaining choice keeps only the consumers still on the target', async (t) => {
+  const mixed = { ...withinChoice, affectedConsumers: [...withinChoice.affectedConsumers, goneConsumer] }
+  const x = await toolchainFixture(t, { choices: [toolchainChoice, mixed] })
+  assert.equal(await main([x.item.id, '--format', 'json'], x.c.io, x.deps), 0, x.c.err())
+  assert.deepEqual(x.seen.executeItem.choices, [withinChoice])
+  assert.deepEqual(JSON.parse(x.c.out()).commits.map(c => c.actionIndex), [0, 1])
+})
+
+test('no staging is created when every remaining choice lost its consumers', async (t) => {
+  const gone = { ...withinChoice, affectedConsumers: [goneConsumer] }
+  const x = await toolchainFixture(t, { choices: [toolchainChoice, gone], resolution: 'partial' })
+  x.deps.createStagingProject = () => assert.fail('must not stage')
+  x.deps.executeActions = () => assert.fail('must not execute')
+  assert.equal(await main([x.item.id, '--format', 'json'], x.c.io, x.deps), 0, x.c.err())
+  const result = JSON.parse(x.c.out())
+  assert.equal(result.resolution, 'partial')
+  assert.deepEqual(result.actions.map(a => a.outcome), ['applied', 'already-satisfied'])
+  assert.equal(result.commits.length, 1)
 })
