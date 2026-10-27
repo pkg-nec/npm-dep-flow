@@ -10,6 +10,13 @@ import { loosensPin, bringsIn, chain, swapsAffectedHelper, constrained, grandNam
 
 const runtimes = [process.env.NPM_DEP_UPGRADE_E2E_NPM_CLI, process.env.NPM_DEP_UPGRADE_E2E_COMPAT_NPM_CLI].filter(Boolean)
 const subjects = async f => (await checked(f, 'git', ['log', '--format=%s', `${f.initialHead}..HEAD`])).split('\n').filter(Boolean).reverse()
+// The manifest after an upgrade: the initial one with only the named root declarations raised, and never an override.
+const manifestWith = (f, raised, field = 'dependencies') => {
+  const manifest = JSON.parse(f.initialFiles['package.json'])
+  Object.assign(manifest[field], raised)
+  return manifest
+}
+const readManifest = async f => JSON.parse(await readFile(path.join(f.root, 'package.json'), 'utf8'))
 const finding = rows => rows.find(row => row.package === target)
 
 for (const npmCli of runtimes) {
@@ -24,7 +31,7 @@ for (const npmCli of runtimes) {
     assert.equal(output.resolution, 'partial')
     assert.deepEqual(output.actions.map(a => [a.targetPackage, a.outcome]), [[pb, 'applied']])
     assert.deepEqual(await subjects(f), [`deps: bump ${pb} from 1.0.1 to 1.1.0`])
-    assert.deepEqual(JSON.parse(await readFile(path.join(f.root, 'package.json'), 'utf8')), JSON.parse(f.initialFiles['package.json']), 'no override or declaration edit')
+    assert.deepEqual(await readManifest(f), manifestWith(f, { [pb]: '^1.1.0' }), 'only the parent range is raised')
     await assertResolved(f, `node_modules/${pb}`, target, '6.0.12')
     await assertResolved(f, `node_modules/${pc}`, target, '6.0.9')
   })
@@ -109,7 +116,7 @@ for (const npmCli of runtimes) {
     assert.equal(result.code, 0, result.stderr)
     assert.deepEqual(await subjects(f), [`deps: bump ${grandName} from 1.0.0 to 1.1.0`])
     await assertResolved(f, `node_modules/${pb}`, target, '6.0.12')
-    assert.deepEqual(JSON.parse(await readFile(path.join(f.root, 'package.json'), 'utf8')), JSON.parse(f.initialFiles['package.json']), 'no override or declaration edit')
+    assert.deepEqual(await readManifest(f), manifestWith(f, { [grandName]: '^1.1.0' }), 'only the grandparent range is raised')
   })
 
   test(`a safe release only three levels up is never searched: no solution within two levels (${npmCli})`, async (t) => {
@@ -190,7 +197,7 @@ for (const npmCli of runtimes) {
     assert.deepEqual(JSON.parse(await readFile(path.join(first, 'package.json'), 'utf8')).overrides, undefined)
     const second = await snapshotAt(f, output.commits[1].hash, 'child')
     await assertResolved(f, `node_modules/${pc}`, target, '6.0.12', second)
-    assert.deepEqual(JSON.parse(await readFile(path.join(second, 'package.json'), 'utf8')), JSON.parse(f.initialFiles['package.json']))
+    assert.deepEqual(JSON.parse(await readFile(path.join(second, 'package.json'), 'utf8')), manifestWith(f, { [pb]: '^1.1.0' }))
   })
 
   test(`a hook rejecting the second commit keeps the first commit and every outside edit (${npmCli})`, async (t) => {
@@ -302,7 +309,7 @@ for (const npmCli of runtimes) {
     const output = JSON.parse(result.stdout)
     assert.deepEqual(output.actions.map(a => [a.targetPackage, a.outcome]), [[pb, 'applied'], [target, 'applied']])
     assert.deepEqual(await subjects(f), [`deps: bump ${pb} from 1.0.1 to 1.1.0`, `deps: bump ${target} from 6.0.9 to 6.0.12`])
-    assert.deepEqual(JSON.parse(await readFile(path.join(f.root, 'package.json'), 'utf8')), JSON.parse(f.initialFiles['package.json']), 'no override or declaration edit')
+    assert.deepEqual(await readManifest(f), manifestWith(f, { [pb]: '^1.1.0' }), 'only the parent range is raised')
     await assertResolved(f, `node_modules/${pb}`, target, '6.0.12')
     assert.equal((await plan(f)).filter(r => r.package === target).length, 0)
   })
@@ -331,5 +338,40 @@ for (const npmCli of runtimes) {
     assert.equal(result.stdout, '')
     assert.match(result.stderr, /age|release/i)
     await unchanged(f)
+  })
+}
+
+const directParent = async (t, npmCli, { spec, field = 'dependencies' }) => {
+  const scenario = parents({ pcSpec: '6.0.9' })
+  delete scenario.manifest.dependencies[pb]
+  scenario.manifest[field] = { ...scenario.manifest[field], [pb]: spec }
+  const f = await createProject(scenario, { npmCli }, t)
+  const row = finding(await plan(f))
+  const result = await runUpgrade(f, [row.id, '--format', 'json'])
+  assert.equal(result.code, 0, result.stderr)
+  return f
+}
+const lockRoot = async f => JSON.parse(await readFile(path.join(f.root, 'package-lock.json'), 'utf8')).packages['']
+
+for (const npmCli of runtimes) {
+  test(`a direct dev dependency parent has its range raised in the manifest and the lockfile root (${npmCli})`, async (t) => {
+    const f = await directParent(t, npmCli, { spec: '^1.0.0', field: 'devDependencies' })
+    assert.deepEqual((await readManifest(f)).devDependencies, { [pb]: '^1.1.0' })
+    assert.deepEqual((await lockRoot(f)).devDependencies, { [pb]: '^1.1.0' })
+    assert.equal((await readManifest(f)).overrides, undefined)
+    await assertResolved(f, `node_modules/${pb}`, target, '6.0.12')
+  })
+
+  test(`the lockfile root records a raised caret range (${npmCli})`, async (t) => {
+    const f = await directParent(t, npmCli, { spec: '^1.0.0' })
+    assert.deepEqual((await lockRoot(f)).dependencies[pb], '^1.1.0')
+    await checked(f, 'npm', ['ci', '--ignore-scripts'])
+  })
+
+  test(`a direct parent declared with a wider range is upgraded and its declaration stays as written (${npmCli})`, async (t) => {
+    const f = await directParent(t, npmCli, { spec: '>=1.0.0' })
+    assert.equal((await readManifest(f)).dependencies[pb], '>=1.0.0')
+    assert.deepEqual(await subjects(f), [`deps: bump ${pb} from 1.0.1 to 1.1.0`])
+    await assertResolved(f, `node_modules/${pb}`, target, '6.0.12')
   })
 }

@@ -157,6 +157,25 @@ async function landAncestor({ Arborist, opts, choice, releasedAt, cutoff, load }
   await ideal.meta.save()
   return ideal
 }
+const raisable = /^[~^]\s*\d+\.\d+\.\d+(?:[+-][\w.+-]+)?\s*$/
+// A direct declaration of the upgraded ancestor follows the release it now installs: ^1.0.0 becomes ^1.1.0, keeping the
+// operator. Other forms (aliases, tags, wider ranges) still admit the release and stay as written. Null means no change.
+export function raiseDirectRanges(manifestBytes, after, choice, semver) {
+  const installed = after.nodes.find(n => n.location === choice.targetLocation)?.version
+  if (!installed) return null
+  const manifest = JSON.parse(manifestBytes)
+  let changed = false
+  for (const e of after.edges) {
+    if (e.from !== '' || e.to !== choice.targetLocation || !['dependencies', 'devDependencies', 'optionalDependencies'].includes(e.type)) continue
+    const spec = manifest[e.type]?.[e.requestedName]
+    if (typeof spec !== 'string' || !raisable.test(spec) || !semver.gt(installed, semver.minVersion(spec.trim().slice(1)))) continue
+    manifest[e.type][e.requestedName] = spec.trim()[0] + installed
+    changed = true
+  }
+  if (!changed) return null
+  const text = manifestBytes.toString(), indent = /\n([\t ]+)"/.exec(text)?.[1], newline = text.includes('\r\n') ? '\r\n' : '\n'
+  return Buffer.from(JSON.stringify(manifest, null, indent).replaceAll('\n', newline) + (text.endsWith('\n') ? newline : ''))
+}
 export async function resolveRequest(request) {
   const require = createRequire(path.join(request.npmPath, 'package.json'))
   const Arborist = require('@npmcli/arborist'), Config = require('@npmcli/config'), semver = require('semver')
@@ -190,10 +209,20 @@ export async function resolveRequest(request) {
       const releasedAt = Date.parse(request.releaseTimes?.[`${choice.targetPackage}@${choice.targetVersion}`])
       const cutoff = releaseCutoff(config)
       if (!Number.isFinite(releasedAt) || releasedAt > cutoff) throw new Error('Ancestor release is not old enough under the release-age policy')
-      const after = graph(await landAncestor({ Arborist, opts, choice, releasedAt, cutoff, load }))
+      let after = graph(await landAncestor({ Arborist, opts, choice, releasedAt, cutoff, load }))
       try {
         if (!(await readFile(path.join(request.root, 'package.json'))).equals(startFiles[0])) throw new Error('Ancestor update changed the manifest')
         verifyResolution(before, after, request.item, [...accepted, choice], semver)
+        const raised = raiseDirectRanges(startFiles[0], after, choice, semver)
+        if (raised) {
+          // Re-save so the lockfile's root entry carries the raised range; the installed tree must not move.
+          await writeFile(path.join(request.root, 'package.json'), raised)
+          const tree = await new Arborist(opts).buildIdealTree()
+          await tree.meta.save()
+          const resaved = graph(tree)
+          if (resaved.nodes.length !== after.nodes.length || resaved.nodes.some(n => !equal(after.nodes.find(old => old.location === n.location), n))) throw new Error('Raising the declared range changed the installed tree')
+          after = resaved
+        }
       }
       catch (error) {
         await restore()

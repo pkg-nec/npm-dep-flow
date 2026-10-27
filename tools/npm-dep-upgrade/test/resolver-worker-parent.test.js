@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import semver from 'semver'
-import { choiceSatisfied, computeCoverage, verifyResolution } from '../src/resolver-worker.js'
+import { choiceSatisfied, computeCoverage, raiseDirectRanges, verifyResolution } from '../src/resolver-worker.js'
 
 const node = (location, name, version) => ({ location, name, version })
 const edge = (from, to, requestedName, rawSpec, extra = {}) => ({ from, to, requestedName, type: 'dependencies', rawSpec, effectiveSpec: rawSpec, valid: true, ...extra })
@@ -169,4 +169,43 @@ test('a within-range action for a consumer whose declaration the parent upgrade 
   const tooHigh = { ...chained, nodes: chained.nodes.map(n => (n.name === 'a' ? { ...n, version: '2.0.0' } : n)) }
   assert.throws(() => verifyResolution(pinned, tooHigh, item, [parentChoice(), residual], semver), /requirement|scope/i)
   assert.throws(() => verifyResolution(pinned, chained, item, [residual], semver), /requirement|changed/i)
+})
+
+const manifestOf = (fields, tail = '\n', indent = 2) => Buffer.from(JSON.stringify({ name: 'app', version: '1.0.0', ...fields }, null, indent) + tail)
+const landed = (version, edges) => ({ nodes: [node('', 'app', '1.0.0'), node('node_modules/b', 'b', version)], edges })
+const rootEdge = (rawSpec, type = 'dependencies') => edge('', 'node_modules/b', 'b', rawSpec, { type })
+
+test('a root declaration of the upgraded ancestor keeps its operator and follows the installed version', () => {
+  for (const [type, spec, expected] of [['dependencies', '^1.0.0', '^1.1.0'], ['devDependencies', '~1.0.1', '~1.1.0'], ['optionalDependencies', '^1.0.0', '^1.1.0']]) {
+    const bytes = raiseDirectRanges(manifestOf({ [type]: { b: spec, z: '^9.0.0' } }), landed('1.1.0', [rootEdge(spec, type)]), parentChoice(), semver)
+    assert.deepEqual(JSON.parse(bytes)[type], { b: expected, z: '^9.0.0' })
+  }
+})
+
+test('the manifest keeps its indentation and line endings', () => {
+  const original = manifestOf({ dependencies: { b: '^1.0.0' } }, '\n', 4).toString().replaceAll('\n', '\r\n')
+  const bytes = raiseDirectRanges(Buffer.from(original), landed('1.1.0', [rootEdge('^1.0.0')]), parentChoice(), semver)
+  assert.equal(bytes.toString(), original.replace('^1.0.0', '^1.1.0'))
+})
+
+test('every root declaration of the ancestor is raised', () => {
+  const bytes = raiseDirectRanges(manifestOf({ dependencies: { b: '^1.0.0' }, devDependencies: { b: '^1.0.0' } }), landed('1.1.0', [rootEdge('^1.0.0'), rootEdge('^1.0.0', 'devDependencies')]), parentChoice(), semver)
+  assert.deepEqual([JSON.parse(bytes).dependencies.b, JSON.parse(bytes).devDependencies.b], ['^1.1.0', '^1.1.0'])
+})
+
+test('declarations that already admit newer releases in another form, or that need no change, are left alone', () => {
+  for (const spec of ['>=1.0.0', '1.x', '*', '^1 || ^2', 'npm:b@^1.0.0', 'latest', '^1.1.0', '^1.2.0', '1.0.1']) {
+    assert.equal(raiseDirectRanges(manifestOf({ dependencies: { b: spec } }), landed('1.1.0', [rootEdge(spec)]), parentChoice(), semver), null, spec)
+  }
+})
+
+test('nothing changes when the ancestor is not declared at the root, or only a different copy is', () => {
+  const nested = { nodes: [node('', 'app', '1.0.0'), node('node_modules/b', 'b', '1.1.0')], edges: [edge('node_modules/g', 'node_modules/b', 'b', '^1.0.0')] }
+  assert.equal(raiseDirectRanges(manifestOf({ dependencies: { g: '^1.0.0' } }), nested, parentChoice(), semver), null)
+  const otherCopy = { nodes: [node('', 'app', '1.0.0'), node('node_modules/b', 'b', '1.1.0'), node('node_modules/x/node_modules/b', 'b', '2.0.0')], edges: [edge('', 'node_modules/x/node_modules/b', 'b', '^2.0.0')] }
+  assert.equal(raiseDirectRanges(manifestOf({ dependencies: { b: '^2.0.0' } }), otherCopy, parentChoice(), semver), null)
+})
+
+test('a peer declaration is never rewritten', () => {
+  assert.equal(raiseDirectRanges(manifestOf({ peerDependencies: { b: '^1.0.0' } }), landed('1.1.0', [rootEdge('^1.0.0', 'peerDependencies')]), parentChoice(), semver), null)
 })
