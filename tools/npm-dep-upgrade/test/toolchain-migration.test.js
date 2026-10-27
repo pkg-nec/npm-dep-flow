@@ -233,7 +233,32 @@ test('nx migrate failure is reverted', async (t) => {
   await rejectsRestored(f, a, error => error.code === 'MIGRATION_FAILED')
 })
 
-test('files outside package.json changed by nx are restored and new files deleted', async (t) => {
+const writeInstalledLock = async (root) => {
+  const manifest = JSON.parse(await readFile(path.join(root, 'package.json'), 'utf8'))
+  await writeFile(path.join(root, 'package-lock.json'), json(lockFor(manifest, NEW, '1.0.1')))
+  return { code: 0, stdout: '', stderr: '' }
+}
+const failed = async () => ({ code: 1, stdout: '', stderr: 'ERESOLVE' })
+
+// Only the dependency files and migrations.json belong to the run; anything else is left in place and named.
+async function rejectsLeaving(f, a, predicate, paths) {
+  let failure
+  try {
+    await migrate(f, a)
+  }
+  catch (error) { failure = error }
+  assert.ok(failure, 'migration should fail')
+  assert.ok(predicate(failure), failure.message)
+  assert.match(failure.message, /Working tree could not be fully restored: left in place for you to inspect: /)
+  for (const file of paths) assert.ok(failure.message.includes(file), `${file} is named`)
+  assert.equal((await git(f.repo, ['rev-parse', 'HEAD'])).trim(), f.guard.head)
+  assert.equal(await readFile(path.join(f.root, 'package.json'), 'utf8'), json(f.originalManifest))
+  assert.deepEqual(await readFile(path.join(f.root, 'package-lock.json')), f.guard.originalFiles['package-lock.json'])
+  assert.deepEqual((await status(f)).split('\n').filter(Boolean).map(entry => entry.slice(3)).sort(), [...paths].sort())
+  return failure
+}
+
+test('files outside package.json changed by nx are left in place and named', async (t) => {
   const f = await fixture(t)
   const a = adapters(f, { steps: { migrate: async (root) => {
     await writeFile(path.join(root, 'package.json'), migratedManifest(await readFile(path.join(root, 'package.json'), 'utf8')))
@@ -241,9 +266,59 @@ test('files outside package.json changed by nx are restored and new files delete
     await writeFile(path.join(root, 'angular.json'), '{}\n')
     return { code: 0, stdout: '', stderr: '' }
   } } })
-  await rejectsRestored(f, a, error => error.code === 'UNEXPECTED_FILE_CHANGE')
-  assert.equal(await readFile(path.join(f.root, 'unrelated.txt'), 'utf8'), 'original\n')
-  await assert.rejects(access(path.join(f.root, 'angular.json')))
+  await rejectsLeaving(f, a, error => error.code === 'UNEXPECTED_FILE_CHANGE', ['unrelated.txt', 'angular.json'])
+  assert.equal(await readFile(path.join(f.root, 'unrelated.txt'), 'utf8'), 'edited by nx\n')
+  assert.equal(await readFile(path.join(f.root, 'angular.json'), 'utf8'), '{}\n')
+})
+
+test('concurrent user work survives a failed run byte for byte', async (t) => {
+  const f = await fixture(t)
+  const a = adapters(f, { steps: { install1: async (root) => {
+    await writeFile(path.join(root, 'unrelated.txt'), 'user edit in the IDE\n')
+    await writeFile(path.join(root, 'new-user-file.txt'), 'draft\n')
+    return { code: 1, stdout: '', stderr: 'ERESOLVE' }
+  }, install2: failed } })
+  await rejectsLeaving(f, a, error => error.code === 'INSTALL_FAILED', ['unrelated.txt', 'new-user-file.txt'])
+  assert.equal(await readFile(path.join(f.root, 'unrelated.txt'), 'utf8'), 'user edit in the IDE\n')
+  assert.equal(await readFile(path.join(f.root, 'new-user-file.txt'), 'utf8'), 'draft\n')
+})
+
+test('a dependency file changed outside the run is left and reported', async (t) => {
+  const f = await fixture(t)
+  const foreign = '{"edited":"by someone else"}\n'
+  const a = adapters(f, { adapters: { verifyFreshAudit: async ({ root }) => {
+    await writeFile(path.join(root, 'package.json'), foreign)
+    throw Object.assign(new Error('audit failed'), { code: 'AUDIT_FAILED', stage: 'audit' })
+  } } })
+  let failure
+  try {
+    await migrate(f, a)
+  }
+  catch (error) { failure = error }
+  assert.equal(failure?.code, 'AUDIT_FAILED')
+  assert.match(failure.message, /^audit failed\. Working tree could not be fully restored: left in place for you to inspect: package\.json \(changed outside this run\); inspect Git state\.$/)
+  assert.equal(await readFile(path.join(f.root, 'package.json'), 'utf8'), foreign)
+  assert.deepEqual(await readFile(path.join(f.root, 'package-lock.json')), f.guard.originalFiles['package-lock.json'])
+  assert.equal(await status(f), ' M package.json\n')
+  assert.equal((await git(f.repo, ['rev-parse', 'HEAD'])).trim(), f.guard.head)
+})
+
+test('recovery suffix is separated from the original message', async (t) => {
+  const f = await fixture(t)
+  const a = adapters(f, { steps: { ci: async () => ({ code: 1, stdout: '', stderr: 'boom' }) } })
+  await rejectsRestored(f, a, error => error.message === 'npm ci failed; inspect npm diagnostics. Working tree restored.')
+})
+
+test('nx migrate runs with lifecycle scripts disabled and the caller environment kept', async (t) => {
+  const f = await fixture(t), a = adapters(f), envs = []
+  const inner = a.value.run
+  a.value.run = async (command, args, opts) => {
+    envs.push(opts.env)
+    return inner(command, args, opts)
+  }
+  await migrate(f, a)
+  assert.equal(envs[1].npm_config_ignore_scripts, 'true')
+  assert.equal(envs[1].PATH, process.env.PATH)
 })
 
 for (const [label, edit] of [
@@ -260,13 +335,6 @@ for (const [label, edit] of [
   await rejectsRestored(f, a, error => error.code === 'UNEXPECTED_MANIFEST_CHANGE')
   assert.equal(a.fake.calls.length, 2)
 })
-
-const writeInstalledLock = async (root) => {
-  const manifest = JSON.parse(await readFile(path.join(root, 'package.json'), 'utf8'))
-  await writeFile(path.join(root, 'package-lock.json'), json(lockFor(manifest, NEW, '1.0.1')))
-  return { code: 0, stdout: '', stderr: '' }
-}
-const failed = async () => ({ code: 1, stdout: '', stderr: 'ERESOLVE' })
 
 test('plain install failure retries with -f and then plain install must pass', async (t) => {
   const f = await fixture(t)
@@ -290,14 +358,15 @@ test('plain install failing after the -f retry is reverted', async (t) => {
   assert.equal(a.fake.calls.length, 5)
 })
 
-test('install that changes files beyond the dependency files is reverted', async (t) => {
+test('install that creates files beyond the dependency files leaves them in place and named', async (t) => {
   const f = await fixture(t)
   const a = adapters(f, { steps: { install1: async (root) => {
     await writeInstalledLock(root)
     await writeFile(path.join(root, '.npmrc-generated'), 'x\n')
     return { code: 0, stdout: '', stderr: '' }
   } } })
-  await rejectsRestored(f, a, error => error.code === 'UNEXPECTED_FILE_CHANGE')
+  await rejectsLeaving(f, a, error => error.code === 'UNEXPECTED_FILE_CHANGE', ['.npmrc-generated'])
+  assert.equal(await readFile(path.join(f.root, '.npmrc-generated'), 'utf8'), 'x\n')
 })
 
 test('finding consumers still affected after the migration is reverted', async (t) => {
@@ -335,7 +404,7 @@ test('revert refuses to touch the tree when HEAD moved and says so', async (t) =
     return { code: 0, stdout: '', stderr: '' }
   } } })
   const concurrent = async () => (await git(f.repo, ['rev-parse', 'HEAD'])).trim()
-  await assert.rejects(migrate(f, a), error => /Working tree could not be restored: .*HEAD changed/.test(error.message) && !/Working tree restored/.test(error.message))
+  await assert.rejects(migrate(f, a), error => /Working tree could not be fully restored: .*HEAD changed/.test(error.message) && !/Working tree restored/.test(error.message))
   assert.notEqual(await concurrent(), f.guard.head)
   assert.equal((await git(f.repo, ['log', '-1', '--format=%s'])).trim(), 'test: concurrent work')
   assert.match(await status(f), /package\.json/)

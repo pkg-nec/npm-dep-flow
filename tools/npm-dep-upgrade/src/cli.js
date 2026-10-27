@@ -190,6 +190,8 @@ Upgrade one partial or complete planner installation in the selected project and
     else if (createdToolchain) recovery = ' Dependency files were not restored over the toolchain commit; inspect Git state.'
     else if (toolchainCommit) recovery = ' Dependency files were not changed after the toolchain commit.'
     else if (staging) recovery = ' Original dependency files were not changed by this operation.'
+    // The toolchain migration installs into the real project and never restores node_modules.
+    if (stage === 'toolchain' && guard?.installedTreeMayHaveChanged && !recovery.includes('node_modules')) recovery += ' node_modules may have changed.'
     io.stderr.write(`npm-dep-upgrade: ${error.stage || stage}: ${error.message}${recovery}\n`)
     return 1
   }

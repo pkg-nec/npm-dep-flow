@@ -276,13 +276,14 @@ test('remaining actions are already satisfied when the toolchain removes the tar
 
 test('a failed toolchain migration exits 1 with its stage and runs nothing after it', async (t) => {
   const x = await toolchainFixture(t, { choices: [toolchainChoice, withinChoice] })
-  x.deps.migrateToolchain = async () => {
-    throw Object.assign(new Error('nx migrate failed; inspect nx diagnostics Working tree restored.'), { stage: 'migration' })
+  x.deps.migrateToolchain = async ({ guard }) => {
+    guard.installedTreeMayHaveChanged = true
+    throw Object.assign(new Error('nx migrate failed; inspect nx diagnostics. Working tree restored.'), { stage: 'migration' })
   }
   x.deps.readEvidence = () => assert.fail('must not read evidence')
   assert.equal(await main([x.item.id], x.c.io, x.deps), 1)
   assert.equal(x.c.out(), '')
-  assert.equal(x.c.err(), 'npm-dep-upgrade: migration: nx migrate failed; inspect nx diagnostics Working tree restored.\n')
+  assert.equal(x.c.err(), 'npm-dep-upgrade: migration: nx migrate failed; inspect nx diagnostics. Working tree restored. node_modules may have changed.\n')
   assert.equal(await headOf(x.f.root), x.start)
 })
 

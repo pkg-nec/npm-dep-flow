@@ -101,29 +101,37 @@ async function assertSameCommit(guard) {
   if (branch.code || line(branch.stdout) !== guard.branch) fail('CONCURRENT_CHANGE', 'recovery', 'Git branch changed during the toolchain migration')
 }
 
-async function literalGit(repoRoot, args) {
-  const r = await runProcess('git', args, { cwd: repoRoot, env: { ...process.env, GIT_LITERAL_PATHSPECS: '1' } })
-  if (r.code) fail('GIT_ERROR', 'recovery', `git ${args[0]} failed: ${r.stderr.trim() || `exit ${r.code}`}`)
+const DEPENDENCY_FILES = ['package.json', 'package-lock.json']
+const sameBytes = (a, b) => (a === null ? b === null : !!b && a.equals(b))
+
+async function readOrNull(file) {
+  try {
+    return await readFile(file)
+  }
+  catch (error) {
+    if (error.code === 'ENOENT') return null
+    throw error
+  }
 }
 
-// The tree was clean when the migration started, so every listed path was changed by this run. Restore only those
-// paths; HEAD, the branch and node_modules are never touched.
-async function revertWorkingTree(guard) {
+// The run owns only the two dependency files (as it last wrote or observed them) and the migrations.json it may have
+// caused. Anything else that changed, whether nx, npm or the user changed it, is left in place and named.
+async function revertWorkingTree(guard, owned) {
   await assertSameCommit(guard)
-  for (const { code, file } of await changedPaths(guard)) {
-    if (file.split('/').includes('node_modules')) continue
-    const tracked = !(await runProcess('git', ['cat-file', '-e', `HEAD:${file}`], { cwd: guard.repoRoot })).code
-    if (tracked) await literalGit(guard.repoRoot, ['checkout', 'HEAD', '--', file])
-    else {
-      if (code[0] !== '?' && code[0] !== ' ') await literalGit(guard.repoRoot, ['rm', '--cached', '--quiet', '--ignore-unmatch', '--', file])
-      await rm(path.join(guard.repoRoot, file), { force: true })
-    }
+  const left = []
+  for (const name of DEPENDENCY_FILES) {
+    const file = path.join(guard.root, name)
+    const current = await readOrNull(file)
+    if (sameBytes(current, guard.originalFiles[name])) continue
+    if (sameBytes(current, owned[name])) await writeFile(file, guard.originalFiles[name])
+    else left.push(`${guard.projectPrefix ? `${guard.projectPrefix}/` : ''}${name} (changed outside this run)`)
   }
-  // migrations.json was absent at the start; remove it even when Git ignores it.
+  // migrations.json was absent at the start, so one present now was created during the run; remove it even when ignored.
   await rm(path.join(guard.root, MIGRATIONS), { force: true })
-  const left = await changedPaths(guard)
-  if (left.length) fail('RECOVERY_INCOMPLETE', 'recovery', `Paths remain changed: ${left.map(entry => entry.file).join(', ')}`)
-  guard.ownedFiles = { ...guard.originalFiles }
+  if (!left.length) guard.ownedFiles = { ...guard.originalFiles }
+  const restored = new Set(guard.dependencyPaths)
+  left.push(...(await changedPaths(guard)).map(entry => entry.file).filter(file => !restored.has(file)))
+  if (left.length) fail('RECOVERY_INCOMPLETE', 'recovery', `left in place for you to inspect: ${[...new Set(left)].join(', ')}`)
 }
 
 export async function migrateToolchain({ guard, project, item, choice, context, options = {}, adapters = {} }) {
@@ -134,6 +142,17 @@ export async function migrateToolchain({ guard, project, item, choice, context, 
   const commit = adapters.commitUpgrade || commitUpgrade
   const root = project.root
   const io = { cwd: root, onStderr: chunk => adapters.stderr?.write(chunk) }
+  // The dependency files as this run last wrote or observed them; revert restores a file only while it still matches.
+  const owned = { ...guard.originalFiles }
+  const observe = async () => {
+    for (const name of DEPENDENCY_FILES) owned[name] = await readOrNull(path.join(root, name))
+  }
+  const step = async (name, args, extra = {}) => {
+    try {
+      return await launch(run, platform, name, args, { ...io, ...extra })
+    }
+    finally { await observe() }
+  }
   await assertCleanWorkingTree(guard)
   await assertGitState(guard, 'toolchain')
   if (await exists(path.join(root, MIGRATIONS))) fail('GIT_PRECONDITION', 'git', `${MIGRATIONS} already exists; finish or remove the previous migration first`)
@@ -150,19 +169,23 @@ export async function migrateToolchain({ guard, project, item, choice, context, 
   if (item && (!finding || finding.name !== item.package || finding.version !== item.version)) fail('STALE_RECOMMENDATION', 'evidence', 'Target installation changed; recommendation is stale')
   try {
     guard.installedTreeMayHaveChanged = true
-    if ((await launch(run, platform, 'npm', ['ci', ...context.installArgs.slice(1)], io)).code) fail('INSTALL_FAILED', 'clean-install', 'npm ci failed; inspect npm diagnostics')
+    if ((await step('npm', ['ci', ...context.installArgs.slice(1)])).code) fail('INSTALL_FAILED', 'clean-install', 'npm ci failed; inspect npm diagnostics')
     await expectChanged(guard, [], 'LOCK_OUT_OF_SYNC', 'clean-install')
     const installed = await readDependencyFiles(root)
     for (const name of Object.keys(installed)) if (!installed[name].equals(before[name])) fail('LOCK_OUT_OF_SYNC', 'clean-install', `npm ci changed ${name}; package.json and package-lock.json are out of sync`)
-    if ((await launch(run, platform, 'npx', ['--no', 'nx', 'migrate', `${CLI}@${version}`], io)).code) fail('MIGRATION_FAILED', 'migration', 'nx migrate failed; inspect nx diagnostics')
+    // npx starts nx, which may install packages itself; scripts stay disabled for anything it runs.
+    if ((await step('npx', ['--no', 'nx', 'migrate', `${CLI}@${version}`], { env: { ...process.env, npm_config_ignore_scripts: 'true' } })).code) fail('MIGRATION_FAILED', 'migration', 'nx migrate failed; inspect nx diagnostics')
     if (await exists(path.join(root, MIGRATIONS))) fail('MIGRATIONS_GENERATED', 'migration', `nx migrate generated ${MIGRATIONS}; migrate to ${version} manually`)
     await expectChanged(guard, ['package.json'], 'UNEXPECTED_FILE_CHANGE', 'migration')
     const manifestPath = path.join(root, 'package.json')
     const migrated = await readFile(manifestPath, 'utf8')
     verifyManifest(beforeManifest, migrated, version)
     const overridden = setDevkitOverride(migrated, version)
-    if (overridden !== null) await writeFile(manifestPath, overridden)
-    const install = args => launch(run, platform, 'npm', args, io)
+    if (overridden !== null) {
+      owned['package.json'] = Buffer.from(overridden)
+      await writeFile(manifestPath, overridden)
+    }
+    const install = args => step('npm', args)
     if ((await install(context.installArgs)).code) {
       if ((await install([...context.installArgs, '-f'])).code) fail('INSTALL_FAILED', 'install', 'npm install failed even with -f; inspect npm diagnostics')
       if ((await install(context.installArgs)).code) fail('INSTALL_FAILED', 'install', 'npm install failed again after the -f retry; inspect npm diagnostics')
@@ -183,13 +206,14 @@ export async function migrateToolchain({ guard, project, item, choice, context, 
     // A commit Git already created is never undone; the caller reports it.
     if (error.createdCommit) throw error
     error.stage ??= 'toolchain'
+    const separator = /[.!?]$/.test(error.message) ? ' ' : '. '
     try {
-      await revertWorkingTree(guard)
-      error.message += ' Working tree restored.'
+      await revertWorkingTree(guard, owned)
+      error.message += `${separator}Working tree restored.`
       error.workingTreeRestored = true
     }
     catch (recovery) {
-      error.message += ` Working tree could not be restored: ${recovery.message}; inspect Git state.`
+      error.message += `${separator}Working tree could not be fully restored: ${recovery.message}; inspect Git state.`
       error.workingTreeRestored = false
     }
     throw error
