@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
 import test from 'node:test'
-import { selectItem, validatePlanner, canonicalLocation, splitToolchain } from '../src/planner.js'
+import { selectItem, validatePlanner, canonicalLocation, splitLines, splitToolchain } from '../src/planner.js'
 import { TOOLCHAIN_STRATEGY } from '../src/model.js'
 
 const location = 'node_modules/@e2e/target'
@@ -133,4 +133,21 @@ test('malformed Angular toolchain choices are rejected', () => {
   ]) assert.throws(() => validatePlanner(report([toolchainRow(choice)])), /INVALID_PLAN|choice/i)
   assert.throws(() => validatePlanner(report([toolchainRow(toolchain, [toolchain])])), /INVALID_PLAN|consumer|toolchain/i)
   assert.throws(() => splitToolchain({ ...row, choices: [toolchain, toolchain] }), /toolchain/i)
+})
+
+test('splitLines returns line choices in registry order and keeps the rest in order', () => {
+  const other = { ...row.choices[0], strategy: 'upgrade-via-parent-dependency' }
+  const item = { ...row, choices: [other, toolchain, row.choices[0]] }
+  const { lines, rest } = splitLines(item)
+  assert.equal(lines.length, 1)
+  assert.equal(lines[0].line.name, 'toolchain')
+  assert.equal(lines[0].choice, toolchain)
+  assert.deepEqual(rest.choices, [other, row.choices[0]])
+  assert.equal(rest.id, id)
+})
+test('splitLines without a line choice returns the item unchanged', () => {
+  assert.deepEqual(splitLines(row), { lines: [], rest: row })
+})
+test('splitLines rejects two choices of one line', () => {
+  assert.throws(() => splitLines({ ...row, choices: [toolchain, toolchain] }), error => error.code === 'INVALID_PLAN' && /toolchain/i.test(error.message))
 })

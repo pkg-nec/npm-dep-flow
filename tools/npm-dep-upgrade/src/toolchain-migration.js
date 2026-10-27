@@ -7,9 +7,15 @@ import { readCandidateAdvisories, readCatalog } from './registry.js'
 import { loadGraph } from './graph.js'
 import { verifyFinalSecurity } from './verify.js'
 import { consumerKey, verifyCoverage } from './coverage.js'
-import { checkManifestChanges, selectToolchainRelease, setDevkitOverride } from './toolchain.js'
+import { checkManifestChanges, selectLineRelease, setLineOverrides } from './angular-line.js'
+import { lineOfStrategy } from './angular-lines.js'
 import { TOOLCHAIN_STRATEGY } from './model.js'
 import { fail } from './errors.js'
+
+// Temporary adapters until this module is line-parameterized.
+const TOOLCHAIN_LINE = lineOfStrategy(TOOLCHAIN_STRATEGY)
+const selectToolchainRelease = (...args) => selectLineRelease(TOOLCHAIN_LINE, ...args)
+const setDevkitOverride = (...args) => setLineOverrides(TOOLCHAIN_LINE, ...args)
 
 const CLI = '@angular/cli'
 const MIGRATIONS = 'migrations.json'
@@ -68,7 +74,7 @@ function parseJson(bytes, name) {
 
 function verifyManifest(beforeManifest, afterText, version) {
   const after = parseJson(afterText, 'package.json')
-  checkManifestChanges(beforeManifest, after, version)
+  checkManifestChanges(TOOLCHAIN_LINE, beforeManifest, after, version)
   const field = ['devDependencies', 'dependencies'].find(name => Object.hasOwn(beforeManifest[name] || {}, CLI))
   if (!field || after[field]?.[CLI] !== version) fail('UNEXPECTED_MANIFEST_CHANGE', 'verification', `${CLI} was not migrated to ${version}`)
 }
