@@ -119,9 +119,9 @@ Parent actions run first, ordered by ancestor level, then original location, nam
 
 ## Angular toolchain
 
-A planner finding can contain an `upgrade-angular-toolchain` choice for a project that pins `@angular/cli` (and `@angular/build`) exactly. It always executes first, as its own commit, then parent and within-range actions run as described above; consumers the migration already moved off the target are trimmed from the later actions. Only patch-level (rarely minor) migrations within one major are supported, and the Angular runtime line is out of scope.
+A planner finding can contain an `upgrade-angular-toolchain` choice for a project that pins `@angular/cli` (and `@angular/build`) exactly. It always executes first, as its own commit, then parent and within-range actions run as described above; consumers the migration already moved off the target are trimmed from the later actions. The target stays within the current major, and the Angular runtime line is out of scope.
 
-Release selection is fresh: the executor reads the `@angular/cli` catalog and candidate advisories and takes the lowest same-major version that clears the finding. That version must be at least seven days old, judged on `@angular/cli`'s own publication time (the other members share the version), and must satisfy the configured `before`. If none qualifies, the run fails without changing anything.
+Release selection is fresh: the executor reads the `@angular/cli` catalog and candidate advisories and uses the planned release if it is still eligible, otherwise the lowest newer stable release in the same major that passes the checks below. The selected version must be at least seven days old, judged on `@angular/cli`'s own publication time (the other members share the version), must satisfy the configured `before`, and must not fall in a fresh advisory range. Whether it clears the finding is verified afterwards by the fresh audit (step 7). If none qualifies, the run fails without changing anything.
 
 Because `nx migrate` needs the workspace, the migration runs in the real project rather than in staging:
 
@@ -136,7 +136,7 @@ Because `nx migrate` needs the workspace, the migration runs in the real project
 
 The allowlist limits what `nx migrate` may change in `package.json`: only `@angular/cli`, `@angular/build`, `@angular-devkit/core`, `@angular-devkit/schematics`, `@schematics/angular` and `@angular-devkit/architect`. Every one of them that changes must equal the target version, except `@angular-devkit/architect`, whose version is not checked because its numbering scheme may differ. Any other package or version aborts the run.
 
-On any failure the tracked dependency files are restored, files the run created (including `migrations.json`) are deleted, a stderr diagnostic is printed, the command exits 1 and no partial report is written. `node_modules` is not touched and keeps whatever the installs left there. A failure in a later action keeps the committed toolchain commit. The report lists the toolchain action first.
+On any failure the run restores every change it made, tracked and untracked paths that `git status` reports (including a generated `migrations.json`), a stderr diagnostic is printed, the command exits 1 and no partial report is written. `node_modules` is not touched and keeps whatever the installs left there. A failure in a later action keeps the committed toolchain commit. The report lists the toolchain action first.
 
 ## Fresh security checks on changed versions
 

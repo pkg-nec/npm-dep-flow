@@ -155,11 +155,11 @@ Projects that pin `@angular/cli` (and usually `@angular/build`) to exact version
 
 It applies only when all of these hold:
 
-- `@angular/cli` is a direct dependency of the project root, and so is `@angular/build` if the lockfile has it.
-- Every present member has the same installed version.
+- `@angular/cli` is a direct dependency of the project root. `@angular/build` is also a member when the root declares it; a declared member must be installed.
+- All members share the CLI's installed version; otherwise the strategy does not apply.
 - The vulnerable installation is a member or at most two levels below one (taken from the same `npm-dep-paths --upstream-of` answer used for parent upgrades).
 
-Candidates come from the `npm-dep-versions` catalog of `@angular/cli`: stable releases newer than the installed one within the same major. The lowest candidate for which the read-only resolver clears the uncovered branches wins; the resolver sets every member to that version (and the `@angular-devkit/core` entry in `overrides` too, if present) in a private scratch project. A major bump is never proposed, and the Angular runtime packages (`@angular/core` and friends) are not part of the toolchain. The planner applies no release-age filter, like the other strategies; `npm-dep-upgrade` enforces the seven-day rule when it executes.
+Candidates come from the `npm-dep-versions` catalog of `@angular/cli`: stable releases newer than the installed one within the same major. The lowest candidate that wins is the one for which the read-only resolver keeps every existing action and clears at least one uncovered in-scope branch; the resolver sets every member to that version (and the `@angular-devkit/core` entry in `overrides` too, if present) in a private scratch project. A major bump is never proposed, and the Angular runtime packages (`@angular/core` and friends) are not part of the toolchain. The planner applies no release-age filter, like the other strategies; `npm-dep-upgrade` enforces the seven-day rule when it executes.
 
 The Strategy cell shows the choice as `Upgrade Angular toolchain: @angular/cli@X → @angular/cli@Y`, after any within-range and parent text. In JSON the choice uses the usual schema 3 fields, with `targetPackage` naming the CLI, `targetLocation` its installation and `affectedConsumers` the branches cleared:
 
