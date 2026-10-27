@@ -61,7 +61,8 @@ Planner and upgrade output use schema version 3; audit/paths/versions remain ver
 
 | Behavior | Case |
 | --- | --- |
-| Parent pins the safe version; other consumer pinned | one parent commit, `partial`, no override or declaration edit |
+| Parent pins the safe version; other consumer pinned | one parent commit, `partial`, no override; only the parent's own root range is raised |
+| Direct parent range | a root `^` parent (dependencies or devDependencies) is raised to the installed release in `package.json` and the lockfile root, `npm ci` clean; a wider declaration such as `>=1.0.0` is upgraded and left as written |
 | Parent pins the safe version; npm dedupes upward | plan lists within-range and parent actions, executor skips the child (`already-satisfied`), one commit, `complete` |
 | Parent removes the dependency | residual consumer upgraded in a second commit; each commit independently `npm ci` clean; or one commit when the other consumer is pinned (`partial`) |
 | Immediate parent succeeds | planner debug log shows no grandparent catalog request |
