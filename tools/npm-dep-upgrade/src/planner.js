@@ -2,7 +2,8 @@ import { createHash } from 'node:crypto'
 import semver from 'semver'
 import { runProcess } from './process.js'
 import { fail } from './errors.js'
-import { PARENT_STRATEGY, STRATEGY, TOOLCHAIN_STRATEGY } from './model.js'
+import { PARENT_STRATEGY, STRATEGY } from './model.js'
+import { ANGULAR_LINES, lineOfStrategy } from './angular-lines.js'
 
 const namePattern = /^(?:@[a-z0-9][a-z0-9._~-]*\/)?[a-z0-9][a-z0-9._~-]*$/i
 export function canonicalLocation(value) {
@@ -27,15 +28,16 @@ export function validatePlanner(report) {
     if ((row.resolution === 'none') !== (row.choices.length === 0)) fail('INVALID_PLAN', 'planner', 'Invalid resolution/action set')
     // A branch may be covered by an ancestor upgrade and by one follow-up action of the other strategy, never twice by one strategy.
     const consumers = new Set()
-    let toolchainChoices = 0
+    const lineChoices = new Map()
     for (const choice of row.choices) {
-      if (!choice || ![STRATEGY, PARENT_STRATEGY, TOOLCHAIN_STRATEGY].includes(choice.strategy) || !Array.isArray(choice.affectedConsumers) || !choice.affectedConsumers.length) fail('INVALID_PLAN', 'planner', 'Invalid or unsupported planner choice')
+      if (!choice || ![STRATEGY, PARENT_STRATEGY, ...ANGULAR_LINES.map(line => line.strategy)].includes(choice.strategy) || !Array.isArray(choice.affectedConsumers) || !choice.affectedConsumers.length) fail('INVALID_PLAN', 'planner', 'Invalid or unsupported planner choice')
       if (choice.strategy === STRATEGY) {
         if (choice.targetPackage !== row.package || choice.targetLocation !== row.targetLocation || choice.currentVersion !== row.version || !semver.valid(choice.targetVersion) || !semver.gt(choice.targetVersion, row.version)) fail('INVALID_PLAN', 'planner', 'Invalid or unsupported planner choice')
       }
-      else if (choice.strategy === TOOLCHAIN_STRATEGY) {
-        if (choice.targetPackage !== '@angular/cli' || choice.targetLocation !== 'node_modules/@angular/cli' || !semver.valid(choice.currentVersion) || !semver.valid(choice.targetVersion) || !semver.gt(choice.targetVersion, choice.currentVersion) || semver.major(choice.targetVersion) !== semver.major(choice.currentVersion)) fail('INVALID_PLAN', 'planner', 'Invalid Angular toolchain choice')
-        if (++toolchainChoices > 1) fail('INVALID_PLAN', 'planner', 'More than one Angular toolchain choice')
+      else if (lineOfStrategy(choice.strategy)) {
+        const line = lineOfStrategy(choice.strategy)
+        if (choice.targetPackage !== line.anchor || choice.targetLocation !== `node_modules/${line.anchor}` || !semver.valid(choice.currentVersion) || !semver.valid(choice.targetVersion) || !semver.gt(choice.targetVersion, choice.currentVersion) || semver.major(choice.targetVersion) !== semver.major(choice.currentVersion)) fail('INVALID_PLAN', 'planner', `Invalid Angular ${line.name} choice`)
+        if (lineChoices.set(line, (lineChoices.get(line) || 0) + 1).get(line) > 1) fail('INVALID_PLAN', 'planner', `More than one Angular ${line.name} choice`)
       }
       else {
         // The target fields describe the ancestor being upgraded; the covered consumers belong to the selected finding.
@@ -53,21 +55,25 @@ export function validatePlanner(report) {
   }
   return report
 }
-export function selectItem(report, selector, packageName = null) {
+export function selectItem(report, selector, packageName = null, lines = ANGULAR_LINES) {
   const found = report.rows.filter(row => row.id.startsWith(selector) && (!packageName || row.package === packageName))
   if (!found.length) fail('TARGET_NOT_FOUND', 'selection', 'Target not found in the current planner report')
   if (found.length !== 1) fail('AMBIGUOUS_TARGET', 'selection', `Ambiguous target; use a longer ID or --package:\n${found.map(r => `${r.id} ${r.package}@${r.version} ${r.targetLocation}`).join('\n')}`)
   const row = found[0]
   if (row.resolution === 'none') fail('INELIGIBLE_TARGET', 'selection', 'Selected target is ineligible')
-  if (!Array.isArray(row.choices) || row.choices.some(choice => ![STRATEGY, PARENT_STRATEGY, TOOLCHAIN_STRATEGY].includes(choice.strategy))) fail('UNSUPPORTED_STRATEGY', 'selection', 'Selected strategy is unsupported')
+  if (!Array.isArray(row.choices) || row.choices.some(choice => ![STRATEGY, PARENT_STRATEGY, ...lines.map(line => line.strategy)].includes(choice.strategy))) fail('UNSUPPORTED_STRATEGY', 'selection', 'Selected strategy is unsupported')
   return row
 }
-// The toolchain choice is executed separately; the rest keeps its order for parent/within-range ordering.
-export function splitToolchain(item) {
-  const found = item.choices.filter(choice => choice.strategy === TOOLCHAIN_STRATEGY)
-  if (found.length > 1) fail('INVALID_PLAN', 'planner', 'More than one Angular toolchain choice')
-  if (!found.length) return { toolchain: null, rest: item }
-  return { toolchain: found[0], rest: { ...item, choices: item.choices.filter(choice => choice !== found[0]) } }
+// Line choices are executed separately in registry order; the rest keeps its order for parent/within-range ordering.
+export function splitLines(item, registry = ANGULAR_LINES) {
+  const lines = []
+  for (const line of registry) {
+    const found = item.choices.filter(choice => choice.strategy === line.strategy)
+    if (found.length > 1) fail('INVALID_PLAN', 'planner', `More than one Angular ${line.name} choice`)
+    if (found.length) lines.push({ line, choice: found[0] })
+  }
+  if (!lines.length) return { lines, rest: item }
+  return { lines, rest: { ...item, choices: item.choices.filter(choice => !lines.some(entry => entry.choice === choice)) } }
 }
 export async function readPlanner(root, run = runProcess, { clearCache = false } = {}) {
   const r = await run('npm-dep-upgrade-plan', ['.', '--format', 'json', ...(clearCache ? ['--clear-cache'] : [])], { cwd: root })

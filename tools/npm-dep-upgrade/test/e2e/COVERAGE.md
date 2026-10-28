@@ -93,3 +93,19 @@ Resolver-level cases (removal, reintroduction, exact-version landing, dedupe, gr
 | `migrations.json` | exit 1 with the dedicated diagnostic, `git status --porcelain` empty (the generated file is removed), HEAD and dependency bytes unchanged |
 | Release age | a target whose `@angular/cli` release becomes younger than seven days after planning: exit 1, no change |
 | Mixed choices | toolchain plus within-range for one finding: two commits, toolchain first, then within-range; `complete` |
+
+## Angular runtime migrations
+
+`runtime.test.js` runs on both configured npm runtimes against the real planner, paths, audit, versions and upgrade executables. The fixture has the webapp's shape: the seven exact-pinned runtime members (`@angular/compiler-cli` in `devDependencies`, the rest in `dependencies`) beside the exact-pinned toolchain pair, an `@angular-devkit/core` override and a stale `@angular/platform-browser-dynamic` override (no lockfile entry, nothing depends on it). The packages carry the real Angular 20 peer shape: runtime members peer on exact versions of each other, `@angular/compiler-cli` also on `typescript`, and `@angular/build` peers on `^` ranges of the runtime. With that shape, real npm refuses the plain install after `nx migrate` with `ERESOLVE`, so every runtime migration goes through the executor's plain, `-f`, plain install sequence. A vulnerable package sits two levels below `@angular/core` and is fixed by the next runtime patch. The fake `nx` (`helpers/nx.js`, shared with `toolchain.test.js`) rewrites the root-declared members of the line its package argument names (`@angular/cli` or `@angular/core`) to the exact version (that real nx does the same for a member declared with a range is an unverified assumption), and leaves `overrides` alone; variants also set the line's overrides, keep a `^` operator, move further packages, or write `migrations.json`.
+
+| Behavior | Case |
+| --- | --- |
+| Planning | the finding is `complete` with a single `upgrade-angular-runtime` choice for `@angular/core` that clears the depth-two consumer; the Markdown Strategy cell names the runtime transition |
+| Migration | exit 0, one commit `deps: bump Angular runtime to <v>` holding only `package.json` and `package-lock.json`; the `--debug` process log shows `npm ci`, a failing plain install, the `-f` install and the final plain install; npm's `ERESOLVE` is relayed; the seven members in their own fields, the stale override and the lockfile members all at `<v>`, the toolchain and its override unchanged, no `@angular/platform-browser-dynamic` installed; clean tree; separate clean `npm ci` reproduces the tree; the finding is gone on replanning |
+| Module scope | `--module webapp` gives `deps(webapp): bump Angular runtime to <v>` |
+| Overrides | an nx that also sets the override is accepted; without the override none is added |
+| `^` member | a member declared `^<current>` is pinned to `<v>`, the exact version the fixture nx writes (real nx behavior unverified); an nx that keeps the operator is refused (`must be <v>`) and reverted |
+| `migrations.json` | exit 1 with the dedicated diagnostic, `git status --porcelain` empty, HEAD and dependency bytes unchanged |
+| Release age | an `@angular/core` release that becomes younger than seven days after planning: exit 1, no change |
+| Allowlist | an nx that also moves `@angular/cli` during the runtime migration: exit 1 with `Unexpected change to @angular/cli`, working tree restored, no commit |
+| Both lines | one finding reached through `@angular/build` and `@angular/core`: toolchain and runtime choices, two commits (toolchain first, holding only the toolchain move; then runtime), the toolchain installs plainly and the runtime through `-f`; `complete`, clean `npm ci` reproduction |

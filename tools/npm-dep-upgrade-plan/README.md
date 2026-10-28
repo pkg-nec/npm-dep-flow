@@ -6,7 +6,7 @@ The strategy is `update-within-declared-range`. It groups compatible incoming co
 
 When consumers remain that no within-range action can cover, the planner also searches up to two ancestor levels for a parent release that clears the branch (strategy `upgrade-via-parent-dependency`). The Strategy cell then shows the within-range label once, followed by each parent transition, for example `Upgrade via parent dependency: B@1.0.1 → B@1.1.0`. Parent choices use the same schema 3 fields as other choices: `targetPackage`, `targetLocation`, `currentVersion` and `targetVersion` describe the ancestor, and `affectedConsumers` lists the finding's branches the upgrade clears. See [Parent upgrades](#parent-upgrades-schema-decision).
 
-Branches that neither of those strategies covers can finally be handled by `upgrade-angular-toolchain` (label `Upgrade Angular toolchain`), which bumps the exact-pinned Angular CLI toolchain as one unit. See [Angular toolchain](#angular-toolchain).
+Branches that none of those strategies covers can finally be handled by an Angular line strategy: `upgrade-angular-toolchain` (label `Upgrade Angular toolchain`) bumps the exact-pinned Angular CLI toolchain as one unit, and `upgrade-angular-runtime` (label `Upgrade Angular runtime`) does the same for the Angular runtime packages. See [Angular lines](#angular-lines).
 
 ## Requirements and installation
 
@@ -149,19 +149,27 @@ Each ID is the full lowercase SHA-256 of `package + "__" + targetLocation`; Mark
 
 The old `status` and singular `strategy` fields are removed. No choice IDs, ancestor-search fields, or complete-resolution option groups are emitted. An empty report has `rows: []`; completed reports exit 0, including all-`none` reports. Findings omit full advisory details and declarations, which remain available from audit.
 
-## Angular toolchain
+## Angular lines
 
-Projects that pin `@angular/cli` (and usually `@angular/build`) to exact versions cannot be fixed by a within-range update, and the parent strategy never upgrades the project root. The `upgrade-angular-toolchain` strategy is evaluated after the other two and covers only the consumer branches they left uncovered, like parent upgrades. Other strategies' choices stay in the same finding and the action set is resolved together.
+Projects that pin Angular packages to exact versions cannot be fixed by a within-range update, and the parent strategy never upgrades the project root. Two strategies treat a coordinated group of root-declared packages, a line, as one unit: the toolchain and the runtime. The strategies are evaluated in the order within-range, parent, toolchain, runtime. Each covers only the consumer branches the earlier ones left uncovered. Other strategies' choices stay in the same finding and the action set is resolved together. A finding carries at most one choice per line.
 
-It applies only when all of these hold:
+A line strategy applies only when all of these hold:
 
-- `@angular/cli` is a direct dependency of the project root. `@angular/build` is also a member when the root declares it; a declared member must be installed.
-- All members share the CLI's installed version; otherwise the strategy does not apply.
+- The line's anchor is a direct dependency of the project root. Every other member of the line is a member only when the root declares it; a declared member must be installed.
+- All members share the anchor's installed version; otherwise the strategy does not apply.
 - The vulnerable installation is a member or at most two levels below one (taken from the same `npm-dep-paths --upstream-of` answer used for parent upgrades).
 
-Candidates come from the `npm-dep-versions` catalog of `@angular/cli`: stable releases newer than the installed one within the same major. The lowest candidate that wins is the one for which the read-only resolver keeps every existing action and clears at least one uncovered in-scope branch; the resolver sets every member to that version (and the `@angular-devkit/core` entry in `overrides` too, if present) in a private scratch project. A major bump is never proposed, and the Angular runtime packages (`@angular/core` and friends) are not part of the toolchain. The planner applies no release-age filter, like the other strategies; `npm-dep-upgrade` enforces the seven-day rule when it executes.
+Candidates come from the `npm-dep-versions` catalog of the line's anchor: stable releases newer than the installed one within the same major. The lowest candidate that wins is the one for which the read-only resolver keeps every existing action, including a choice of the other line, and clears at least one uncovered in-scope branch. A major bump is never proposed. The planner applies no release-age filter, like the other strategies; `npm-dep-upgrade` enforces the seven-day rule when it executes. Cache identity, TTL and freshness follow the parent strategy: a cached plan expires no later than the oldest catalog or audit source. Planner JSON stays at `schemaVersion: 3`, since the new strategy values are additive; install the planner and `npm-dep-upgrade` releases together.
 
-The Strategy cell shows the choice as `Upgrade Angular toolchain: @angular/cli@X → @angular/cli@Y`, after any within-range and parent text. In JSON the choice uses the usual schema 3 fields, with `targetPackage` naming the CLI, `targetLocation` its installation and `affectedConsumers` the branches cleared:
+The resolver sets every member the root declares for the chosen line to the exact target version, in the field that declares it, in a private scratch project. The line's override entries are updated too, but only if they exist, and the closures of those members are in scope. Members of the other line are not touched. Before resolving, the scratch resolver detaches the line's root member installations from the starting tree and lets npm place them again from the rewritten declarations, because npm can otherwise refuse (ERESOLVE) to replace members that peer on each other exactly while a dependent outside the line still holds the old versions. The executor's real install can still differ from this scratch resolution; in that case its own verification fails safe and nothing is committed.
+
+In the Strategy cell the choices appear after any within-range text, then parent transitions, then the toolchain transition, then the runtime transition. In JSON a choice uses the usual schema 3 fields, with `targetPackage` naming the anchor, `targetLocation` its installation and `affectedConsumers` the branches cleared.
+
+### Angular toolchain
+
+Strategy `upgrade-angular-toolchain`, label `Upgrade Angular toolchain`. The anchor is `@angular/cli`; `@angular/build` is also a member when the root declares it. The `@angular-devkit/core` entry in `overrides` is updated too, if present. The runtime packages (`@angular/core` and friends) are not part of the toolchain.
+
+The Strategy cell shows the choice as `Upgrade Angular toolchain: @angular/cli@X → @angular/cli@Y`:
 
 ```json
 {
@@ -176,7 +184,24 @@ The Strategy cell shows the choice as `Upgrade Angular toolchain: @angular/cli@X
 }
 ```
 
-Cache identity, TTL and freshness follow the parent strategy: a cached plan expires no later than the oldest catalog or audit source. Planner JSON stays at `schemaVersion: 3`, since the new strategy value is additive; install the planner and `npm-dep-upgrade` releases together.
+### Angular runtime
+
+Strategy `upgrade-angular-runtime`, label `Upgrade Angular runtime`. The members are `@angular/common`, `@angular/compiler`, `@angular/compiler-cli`, `@angular/core`, `@angular/forms`, `@angular/platform-browser` and `@angular/router`, each only when the root declares it. `@angular/core` is required (it is the anchor, so its catalog, release time and `nx migrate` argument are used) and all declared members must be installed at one shared version. The `@angular/platform-browser-dynamic` entry in `overrides`, as a string or in object form (`.`), is updated to the target only if it exists; it is never added. The toolchain packages are not part of the runtime line.
+
+The Strategy cell shows the choice as `Upgrade Angular runtime: @angular/core@X → @angular/core@Y`. For example, in JSON:
+
+```json
+{
+  "strategy": "upgrade-angular-runtime",
+  "targetPackage": "@angular/core",
+  "targetLocation": "node_modules/@angular/core",
+  "currentVersion": "21.2.25",
+  "targetVersion": "21.2.26",
+  "affectedConsumers": [
+    { "location": "", "requestedName": "@angular/core", "type": "dependencies" }
+  ]
+}
+```
 
 ## Supported projects
 

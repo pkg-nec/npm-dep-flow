@@ -139,7 +139,16 @@ test('a failing planner clear in clear-only mode exits 1', async () => {
 const toolchainChoice = { strategy: 'upgrade-angular-toolchain', targetPackage: '@angular/cli', targetLocation: 'node_modules/@angular/cli', currentVersion: '21.2.26', targetVersion: '21.2.27', affectedConsumers: [{ location: 'node_modules/@angular/build', requestedName: 'e2e-target', type: 'dependencies' }] }
 const withinChoice = { strategy: 'update-within-declared-range', targetPackage: 'e2e-target', targetLocation: 'node_modules/e2e-target', currentVersion: '6.0.9', targetVersion: '6.0.12', affectedConsumers: [{ location: '', requestedName: 'e2e-target', type: 'dependencies' }] }
 
-// A real Git fixture whose stubbed toolchain migration commits real bytes, so the guard, recovery and reload are exercised.
+// Dependency files after a stubbed line migration: the line's anchor moves to the planned version.
+function lineFiles(current, choice) {
+  const manifest = JSON.parse(current['package.json']), lock = JSON.parse(current['package-lock.json'])
+  manifest.devDependencies = { ...manifest.devDependencies, [choice.targetPackage]: choice.targetVersion }
+  lock.packages[''] = manifest
+  lock.packages[choice.targetLocation] = { version: choice.targetVersion, dev: true }
+  return { 'package.json': Buffer.from(JSON.stringify(manifest, null, 2) + '\n'), 'package-lock.json': Buffer.from(JSON.stringify(lock, null, 2) + '\n') }
+}
+
+// A real Git fixture whose stubbed line migrations commit real bytes, so the guard, recovery and reload are exercised.
 async function toolchainFixture(t, { choices, targetGone = false, resolution = 'complete' }) {
   const { gitProject } = await import('./helpers/git-project.js')
   const { preflightGit, commitUpgrade, readDependencyFiles } = await import('../src/git.js')
@@ -167,16 +176,20 @@ async function toolchainFixture(t, { choices, targetGone = false, resolution = '
       events.push('context')
       return { minAgeDays: 7, installArgs: ['install', '--ignore-scripts', '--min-release-age=7'] }
     },
-    migrateToolchain: async (args) => {
-      events.push('toolchain')
-      seen.toolchain = args
-      for (const [name, bytes] of Object.entries(toolchainFiles)) await writeFile(path.join(args.guard.root, name), bytes)
-      await recordOwnedFiles(args.guard, toolchainFiles)
-      const commit = await commitUpgrade(args.guard, toolchainFiles, { package: '@angular/cli', oldVersion: '21.2.26', newVersion: '21.2.27', strategy: 'upgrade-angular-toolchain', description: 'migrate Angular toolchain to 21.2.27' }, args.options)
+    migrateLine: async (args) => {
+      const { name } = args.line
+      events.push(name)
+      seen[name] = args
+      seen[`${name}Head`] = args.guard.head
+      const files = name === 'toolchain' ? toolchainFiles : lineFiles(args.guard.originalFiles, args.choice)
+      for (const [file, bytes] of Object.entries(files)) await writeFile(path.join(args.guard.root, file), bytes)
+      await recordOwnedFiles(args.guard, files)
+      const commit = await commitUpgrade(args.guard, files, { package: args.choice.targetPackage, oldVersion: args.choice.currentVersion, newVersion: args.choice.targetVersion, strategy: args.line.strategy, description: args.line.description(args.choice.targetVersion) }, args.options)
       args.guard.head = commit.hash
-      args.guard.originalFiles = { ...toolchainFiles }
-      args.guard.ownedFiles = { ...toolchainFiles }
-      seen.toolchainCommit = commit
+      args.guard.originalFiles = { ...files }
+      args.guard.ownedFiles = { ...files }
+      seen[`${name}Commit`] = commit
+      seen[`${name}Files`] = files
       return { commit, action: { ...args.choice, outcome: 'applied', targetLocations: [args.choice.targetLocation], releasedAt: '2026-01-01T00:00:00Z', supportingChanges: [] } }
     },
     loadGraph: async (root, options) => (options?.actual ? { nodes: new Map(), edges: [] } : loadGraph(root)),
@@ -276,7 +289,7 @@ test('remaining actions are already satisfied when the toolchain removes the tar
 
 test('a failed toolchain migration exits 1 with its stage and runs nothing after it', async (t) => {
   const x = await toolchainFixture(t, { choices: [toolchainChoice, withinChoice] })
-  x.deps.migrateToolchain = async ({ guard }) => {
+  x.deps.migrateLine = async ({ guard }) => {
     guard.installedTreeMayHaveChanged = true
     throw Object.assign(new Error('nx migrate failed; inspect nx diagnostics. Working tree restored.'), { stage: 'migration' })
   }
@@ -344,8 +357,8 @@ test('a removed target reports complete even for a partial plan', async (t) => {
 test('a toolchain commit Git created before the migration failed is named and not restored over', async (t) => {
   const { readFile } = await import('node:fs/promises'), path = await import('node:path')
   const x = await toolchainFixture(t, { choices: [toolchainChoice, withinChoice] })
-  const base = x.deps.migrateToolchain
-  x.deps.migrateToolchain = async (args) => {
+  const base = x.deps.migrateLine
+  x.deps.migrateLine = async (args) => {
     const { commit } = await base(args)
     throw Object.assign(new Error('Dependency files changed after commit'), { stage: 'commit', createdCommit: commit })
   }
@@ -387,4 +400,144 @@ test('no staging is created when every remaining choice lost its consumers', asy
   assert.equal(result.resolution, 'partial')
   assert.deepEqual(result.actions.map(a => a.outcome), ['applied', 'already-satisfied'])
   assert.equal(result.commits.length, 1)
+})
+
+// Both lines of the real registry run as pre-phases: toolchain first, then runtime.
+const runtimeChoice = { strategy: 'upgrade-angular-runtime', targetPackage: '@angular/core', targetLocation: 'node_modules/@angular/core', currentVersion: '21.2.25', targetVersion: '21.2.26', affectedConsumers: [{ location: '', requestedName: 'e2e-target', type: 'dependencies' }] }
+
+async function twoLineFixture(t, options) {
+  const { ANGULAR_LINES } = await import('../src/angular-lines.js')
+  const x = await toolchainFixture(t, options)
+  assert.equal(x.deps.lines, undefined)
+  x.runtimeLine = ANGULAR_LINES.find(line => line.key === 'runtime')
+  return x
+}
+
+test('two line choices run as pre-phases in registry order, each with its own commit', async (t) => {
+  const x = await twoLineFixture(t, { choices: [runtimeChoice, withinChoice, toolchainChoice] })
+  assert.equal(await main([x.item.id, '--format', 'json'], x.c.io, x.deps), 0, x.c.err())
+  assert.deepEqual(x.events, ['project', 'context', 'toolchain', 'project', 'runtime', 'project', 'evidence', 'staging', 'execute', 'commit'])
+  assert.equal(x.seen.runtime.line, x.runtimeLine)
+  assert.deepEqual(x.seen.runtime.choice, runtimeChoice)
+  assert.equal(x.seen.runtimeHead, x.seen.toolchainCommit.hash)
+  assert.deepEqual(x.seen.evidenceItem.choices, [withinChoice])
+  assert.deepEqual(x.seen.stagingManifest, x.seen.runtimeFiles['package.json'])
+  const result = JSON.parse(x.c.out())
+  assert.deepEqual(result.actions.map(a => [a.strategy, a.outcome]), [['upgrade-angular-toolchain', 'applied'], ['upgrade-angular-runtime', 'applied'], ['update-within-declared-range', 'applied']])
+  assert.deepEqual(result.commits.map(c => [c.hash, c.actionIndex]).slice(0, 2), [[x.seen.toolchainCommit.hash, 0], [x.seen.runtimeCommit.hash, 1]])
+  assert.deepEqual(result.commits.map(c => c.actionIndex), [0, 1, 2])
+  assert.match(result.commits[1].subject, /^deps: bump Angular runtime to 21\.2\.26$/)
+  const { runGit } = await import('../src/git.js')
+  assert.equal((await runGit(x.f.root, ['rev-parse', `${result.commits[2].hash}^`])).trim(), x.seen.runtimeCommit.hash)
+  assert.equal((await runGit(x.f.root, ['rev-parse', `${x.seen.runtimeCommit.hash}^`])).trim(), x.seen.toolchainCommit.hash)
+})
+
+test('line-only findings commit every phase and keep the planned resolution', async (t) => {
+  const x = await twoLineFixture(t, { choices: [toolchainChoice, runtimeChoice], resolution: 'partial' })
+  x.deps.createStagingProject = () => assert.fail('must not stage')
+  x.deps.readEvidence = () => assert.fail('must not read evidence')
+  assert.equal(await main([x.item.id, '--format', 'json'], x.c.io, x.deps), 0, x.c.err())
+  const result = JSON.parse(x.c.out())
+  assert.equal(result.resolution, 'partial')
+  assert.deepEqual(result.commits.map(c => [c.hash, c.actionIndex]), [[x.seen.toolchainCommit.hash, 0], [x.seen.runtimeCommit.hash, 1]])
+  assert.equal(await headOf(x.f.root), x.seen.runtimeCommit.hash)
+})
+
+test('a failure in the second phase keeps and names the first commit without restoring over it', async (t) => {
+  const { readFile } = await import('node:fs/promises'), path = await import('node:path')
+  const x = await twoLineFixture(t, { choices: [toolchainChoice, runtimeChoice, withinChoice] })
+  const base = x.deps.migrateLine
+  x.deps.migrateLine = async (args) => {
+    if (args.line === x.runtimeLine) {
+      args.guard.installedTreeMayHaveChanged = true
+      throw Object.assign(new Error('nx migrate failed; inspect nx diagnostics. Working tree restored'), { stage: 'migration' })
+    }
+    return base(args)
+  }
+  x.deps.readEvidence = () => assert.fail('must not read evidence')
+  assert.equal(await main([x.item.id], x.c.io, x.deps), 1)
+  assert.equal(x.c.out(), '')
+  assert.equal(x.c.err(), `npm-dep-upgrade: migration: nx migrate failed; inspect nx diagnostics. Working tree restored; completed commits: ${x.seen.toolchainCommit.hash}. Dependency files were not changed after the toolchain commit. node_modules may have changed.\n`)
+  assert.equal(await headOf(x.f.root), x.seen.toolchainCommit.hash)
+  for (const name of ['package.json', 'package-lock.json']) assert.deepEqual(await readFile(path.join(x.f.root, name)), x.toolchainFiles[name])
+})
+
+test('a second-phase commit Git created before the migration failed is named with the first', async (t) => {
+  const { readFile } = await import('node:fs/promises'), path = await import('node:path')
+  const x = await twoLineFixture(t, { choices: [toolchainChoice, runtimeChoice, withinChoice] })
+  const base = x.deps.migrateLine
+  x.deps.migrateLine = async (args) => {
+    const migrated = await base(args)
+    if (args.line === x.runtimeLine) throw Object.assign(new Error('Dependency files changed after commit'), { stage: 'commit', createdCommit: migrated.commit })
+    return migrated
+  }
+  assert.equal(await main([x.item.id], x.c.io, x.deps), 1)
+  assert.equal(x.c.err(), `npm-dep-upgrade: commit: Dependency files changed after commit; completed commits: ${x.seen.toolchainCommit.hash}, ${x.seen.runtimeCommit.hash}. Dependency files were not restored over the runtime commit; inspect Git state.\n`)
+  assert.equal(await headOf(x.f.root), x.seen.runtimeCommit.hash)
+  assert.deepEqual(await readFile(path.join(x.f.root, 'package.json')), x.seen.runtimeFiles['package.json'])
+})
+
+test('a failure after every phase names all phase commits and the last phase', async (t) => {
+  const x = await twoLineFixture(t, { choices: [toolchainChoice, runtimeChoice, withinChoice] })
+  x.deps.executeActions = async () => {
+    throw Object.assign(new Error('Cannot resolve selected upgrades'), { stage: 'resolution' })
+  }
+  assert.equal(await main([x.item.id], x.c.io, x.deps), 1)
+  assert.equal(x.c.err(), `npm-dep-upgrade: resolution: Cannot resolve selected upgrades; completed commits: ${x.seen.toolchainCommit.hash}, ${x.seen.runtimeCommit.hash}. Dependency files were not changed after the runtime commit.\n`)
+  assert.equal(await headOf(x.f.root), x.seen.runtimeCommit.hash)
+})
+
+test('the target removed by the first phase skips later phases and reports them already satisfied', async (t) => {
+  const x = await twoLineFixture(t, { choices: [toolchainChoice, runtimeChoice, withinChoice], targetGone: true, resolution: 'partial' })
+  x.deps.createStagingProject = () => assert.fail('must not stage')
+  x.deps.readEvidence = () => assert.fail('must not read evidence')
+  assert.equal(await main([x.item.id, '--format', 'json'], x.c.io, x.deps), 0, x.c.err())
+  assert.deepEqual(x.events, ['project', 'context', 'toolchain', 'project'])
+  const result = JSON.parse(x.c.out())
+  assert.equal(result.resolution, 'complete')
+  assert.deepEqual(result.actions.map(a => [a.strategy, a.outcome]), [['upgrade-angular-toolchain', 'applied'], ['upgrade-angular-runtime', 'already-satisfied'], ['update-within-declared-range', 'already-satisfied']])
+  assert.deepEqual(result.commits.map(c => [c.hash, c.actionIndex]), [[x.seen.toolchainCommit.hash, 0]])
+})
+
+test('a later line choice keeps only consumers still on the target and is skipped when none remain', async (t) => {
+  const mixed = { ...runtimeChoice, affectedConsumers: [...runtimeChoice.affectedConsumers, goneConsumer] }
+  const kept = await twoLineFixture(t, { choices: [toolchainChoice, mixed, withinChoice] })
+  assert.equal(await main([kept.item.id, '--format', 'json'], kept.c.io, kept.deps), 0, kept.c.err())
+  assert.deepEqual(kept.seen.runtime.choice, runtimeChoice)
+  assert.deepEqual(JSON.parse(kept.c.out()).commits.map(c => c.actionIndex), [0, 1, 2])
+
+  const gone = { ...runtimeChoice, affectedConsumers: [goneConsumer] }
+  const x = await twoLineFixture(t, { choices: [toolchainChoice, gone, withinChoice] })
+  assert.equal(await main([x.item.id, '--format', 'json'], x.c.io, x.deps), 0, x.c.err())
+  assert.ok(!x.events.includes('runtime'))
+  const result = JSON.parse(x.c.out())
+  assert.deepEqual(result.actions.map(a => [a.strategy, a.outcome]), [['upgrade-angular-toolchain', 'applied'], ['upgrade-angular-runtime', 'already-satisfied'], ['update-within-declared-range', 'applied']])
+  assert.deepEqual(result.actions[1].affectedConsumers, [goneConsumer])
+  assert.deepEqual(result.commits.map(c => c.actionIndex), [0, 2])
+})
+
+async function secondPhaseFails(t, failure) {
+  const x = await twoLineFixture(t, { choices: [toolchainChoice, runtimeChoice, withinChoice] })
+  const base = x.deps.migrateLine
+  x.deps.migrateLine = async (args) => {
+    if (args.line !== x.runtimeLine) return base(args)
+    args.guard.installedTreeMayHaveChanged = true
+    throw failure()
+  }
+  x.deps.readEvidence = () => assert.fail('must not read evidence')
+  assert.equal(await main([x.item.id], x.c.io, x.deps), 1)
+  assert.equal(x.c.out(), '')
+  return x
+}
+
+test('a second-phase message ending in a period continues with the completed commits as a sentence', async (t) => {
+  const x = await secondPhaseFails(t, () => Object.assign(new Error('nx migrate failed; inspect nx diagnostics. Working tree restored.'), { stage: 'migration', workingTreeRestored: true }))
+  assert.equal(x.c.err(), `npm-dep-upgrade: migration: nx migrate failed; inspect nx diagnostics. Working tree restored. Completed commits: ${x.seen.toolchainCommit.hash}. Dependency files were not changed after the toolchain commit. node_modules may have changed.\n`)
+})
+
+test('a second phase whose revert failed does not claim the dependency files are unchanged', async (t) => {
+  const x = await secondPhaseFails(t, () => Object.assign(new Error('nx migrate failed; inspect nx diagnostics. Working tree could not be fully restored: left in place for you to inspect: package.json (changed outside this run); inspect Git state.'), { stage: 'migration', workingTreeRestored: false }))
+  assert.equal(x.c.err(), `npm-dep-upgrade: migration: nx migrate failed; inspect nx diagnostics. Working tree could not be fully restored: left in place for you to inspect: package.json (changed outside this run); inspect Git state. Completed commits: ${x.seen.toolchainCommit.hash}. node_modules may have changed.\n`)
+  assert.doesNotMatch(x.c.err(), /were not changed after/)
+  assert.equal(await headOf(x.f.root), x.seen.toolchainCommit.hash)
 })

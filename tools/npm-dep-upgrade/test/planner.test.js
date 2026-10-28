@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
 import test from 'node:test'
-import { selectItem, validatePlanner, canonicalLocation, splitToolchain } from '../src/planner.js'
+import { selectItem, validatePlanner, canonicalLocation, splitLines } from '../src/planner.js'
 import { TOOLCHAIN_STRATEGY } from '../src/model.js'
+import { lineOfStrategy } from '../src/angular-lines.js'
 
 const location = 'node_modules/@e2e/target'
 const id = createHash('sha256').update('@e2e/target__' + location).digest('hex')
@@ -115,11 +116,11 @@ test('the Angular toolchain strategy is accepted, selected and split out', () =>
   assert.equal(TOOLCHAIN_STRATEGY, 'upgrade-angular-toolchain')
   const r = validatePlanner(report([toolchainRow()]))
   const item = selectItem(r, id)
-  const { toolchain: found, rest } = splitToolchain(item)
-  assert.deepEqual(found, toolchain)
+  const { lines, rest } = splitLines(item)
+  assert.deepEqual(lines.map(entry => [entry.line.strategy, entry.choice]), [[TOOLCHAIN_STRATEGY, toolchain]])
   assert.deepEqual(rest.choices, [row.choices[0]])
   assert.equal(rest.id, id)
-  assert.deepEqual(splitToolchain(row), { toolchain: null, rest: row })
+  assert.deepEqual(splitLines(row), { lines: [], rest: row })
 })
 test('malformed Angular toolchain choices are rejected', () => {
   for (const choice of [
@@ -132,5 +133,60 @@ test('malformed Angular toolchain choices are rejected', () => {
     { ...toolchain, affectedConsumers: [] },
   ]) assert.throws(() => validatePlanner(report([toolchainRow(choice)])), /INVALID_PLAN|choice/i)
   assert.throws(() => validatePlanner(report([toolchainRow(toolchain, [toolchain])])), /INVALID_PLAN|consumer|toolchain/i)
-  assert.throws(() => splitToolchain({ ...row, choices: [toolchain, toolchain] }), /toolchain/i)
+  assert.throws(() => splitLines({ ...row, choices: [toolchain, toolchain] }), /toolchain/i)
+})
+
+test('splitLines returns line choices in registry order and keeps the rest in order', () => {
+  const other = { ...row.choices[0], strategy: 'upgrade-via-parent-dependency' }
+  const item = { ...row, choices: [other, toolchain, row.choices[0]] }
+  const { lines, rest } = splitLines(item)
+  assert.equal(lines.length, 1)
+  assert.equal(lines[0].line.name, 'toolchain')
+  assert.equal(lines[0].choice, toolchain)
+  assert.deepEqual(rest.choices, [other, row.choices[0]])
+  assert.equal(rest.id, id)
+})
+test('splitLines without a line choice returns the item unchanged', () => {
+  assert.deepEqual(splitLines(row), { lines: [], rest: row })
+})
+test('splitLines rejects two choices of one line', () => {
+  assert.throws(() => splitLines({ ...row, choices: [toolchain, toolchain] }), error => error.code === 'INVALID_PLAN' && /toolchain/i.test(error.message))
+})
+test('splitLines and selectItem follow an injected line registry', () => {
+  const synthetic = { name: 'synthetic', strategy: 'upgrade-angular-synthetic' }
+  const extra = { ...toolchain, strategy: synthetic.strategy }
+  const item = { ...row, choices: [extra, row.choices[0], toolchain] }
+  assert.throws(() => selectItem({ rows: [item] }, id), /unsupported/i)
+  const registry = [lineOfStrategy(TOOLCHAIN_STRATEGY), synthetic]
+  assert.equal(selectItem({ rows: [item] }, id, null, registry), item)
+  const { lines, rest } = splitLines(item, registry)
+  assert.deepEqual(lines.map(entry => [entry.line, entry.choice]), [[registry[0], toolchain], [synthetic, extra]])
+  assert.deepEqual(rest.choices, [row.choices[0]])
+})
+
+const runtime = { strategy: 'upgrade-angular-runtime', targetPackage: '@angular/core', targetLocation: 'node_modules/@angular/core', currentVersion: '21.2.25', targetVersion: '21.2.26', affectedConsumers: [{ location: 'node_modules/@angular/core', requestedName: '@e2e/target', type: 'dependencies' }] }
+test('the Angular runtime strategy is accepted, selected and split out after the toolchain', () => {
+  const r = validatePlanner(report([toolchainRow(runtime)]))
+  assert.equal(selectItem(r, id).choices.at(-1), runtime)
+  validatePlanner(report([toolchainRow({ ...runtime, affectedConsumers: [{ location: '', requestedName: '@angular/core', type: 'dependencies' }] })]))
+  const both = { ...row, choices: [runtime, row.choices[0], toolchain] }
+  validatePlanner(report([{ ...both, resolution: 'partial' }]))
+  const { lines, rest } = splitLines(selectItem(report([both]), id))
+  assert.deepEqual(lines.map(entry => [entry.line, entry.choice]), [[lineOfStrategy(TOOLCHAIN_STRATEGY), toolchain], [lineOfStrategy('upgrade-angular-runtime'), runtime]])
+  assert.deepEqual(rest.choices, [row.choices[0]])
+})
+test('malformed Angular runtime choices are rejected', () => {
+  for (const choice of [
+    { ...runtime, targetPackage: '@angular/cli' },
+    { ...runtime, targetPackage: '@angular/cli', targetLocation: 'node_modules/@angular/cli' },
+    { ...runtime, targetLocation: 'node_modules/x/node_modules/@angular/core' },
+    { ...runtime, targetVersion: '22.0.0' },
+    { ...runtime, targetVersion: '21.2.25' },
+    { ...runtime, targetVersion: '21.2.24' },
+    { ...runtime, currentVersion: 'bad' },
+    { ...runtime, affectedConsumers: [] },
+  ]) assert.throws(() => validatePlanner(report([toolchainRow(choice)])), /Invalid Angular runtime choice|Invalid or unsupported planner choice/)
+  const second = { ...runtime, targetVersion: '21.2.27', affectedConsumers: [{ location: 'node_modules/@angular/compiler', requestedName: '@e2e/target', type: 'dependencies' }] }
+  assert.throws(() => validatePlanner(report([toolchainRow(runtime, [second])])), /More than one Angular runtime choice/)
+  assert.throws(() => splitLines({ ...row, choices: [runtime, toolchain, second] }), error => error.code === 'INVALID_PLAN' && /runtime/.test(error.message))
 })

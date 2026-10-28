@@ -17,7 +17,8 @@ import { readUpstream } from './paths.js'
 import { readReleasePolicy } from './policy.js'
 import { findParentChoices } from './ancestors.js'
 import { planParentChoices } from './parent-planning.js'
-import { planToolchainChoices } from './toolchain-planning.js'
+import { ANGULAR_LINES } from './angular-lines.js'
+import { planLineChoices } from './angular-line-planning.js'
 
 const defaults = { loadProject, readPlanningContext, runNpmDepAudit, runNpmDepVersions, resolveChoices, renderJson, renderMarkdown }
 const packageDir = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -101,12 +102,15 @@ async function mainWithDebug(argv, io = process, deps = defaults) {
         const parents = await planParentChoices({ finding, row, project, options, controls: { noCache: options.noCache, ...clearControl }, adapters })
         freshAt = Math.min(freshAt, parents.freshAt)
       }
-      // The toolchain bump covers what within-range and parent actions left, and is resolved ahead of them.
-      for (const finding of findings) {
-        if (finding.resolution === 'complete') continue
-        const row = auditReport.rows.find(candidate => candidate.package === finding.package && candidate.version === finding.version)
-        const toolchain = await planToolchainChoices({ finding, row, project, options, controls: { noCache: options.noCache, ...clearControl }, adapters })
-        freshAt = Math.min(freshAt, toolchain.freshAt)
+      // Each Angular line bump covers what within-range, parent and earlier line actions left, and is resolved ahead
+      // of the parent and within-range actions. Lines are visited in registry order, so each keeps the earlier choices.
+      for (const line of ANGULAR_LINES) {
+        for (const finding of findings) {
+          if (finding.resolution === 'complete') continue
+          const row = auditReport.rows.find(candidate => candidate.package === finding.package && candidate.version === finding.version)
+          const planned = await planLineChoices({ line, finding, row, project, options, controls: { noCache: options.noCache, ...clearControl }, adapters })
+          freshAt = Math.min(freshAt, planned.freshAt)
+        }
       }
       // `none` means no action clears a branch, so it never carries choices (the executor rejects the mismatch).
       for (const finding of findings) if (finding.resolution === 'none') finding.choices = []

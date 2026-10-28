@@ -3,7 +3,7 @@ import test from 'node:test'
 import path from 'node:path'
 import { readFile, writeFile } from 'node:fs/promises'
 import { resolveChoices } from '../src/resolver.js'
-import { TOOLCHAIN_STRATEGY } from '../src/toolchain.js'
+import { TOOLCHAIN_STRATEGY } from '../src/angular-lines.js'
 
 const day = 86400000
 const ago = days => new Date(Date.now() - days * day).toISOString()
