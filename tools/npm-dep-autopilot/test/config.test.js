@@ -54,10 +54,10 @@ test('keeps explicit settings and absolute repo paths', async () => {
   })
   const config = await loadConfig(file)
 
-  assert.equal(config.repo, '/srv/repo-a')
+  assert.equal(config.repo, path.resolve('/srv/repo-a'))
   assert.equal(config.pollIntervalSeconds, 5)
   assert.equal(config.deadline, '23:30')
-  assert.equal(config.projects[0].path, '/srv/repo-a')
+  assert.equal(config.projects[0].path, path.resolve('/srv/repo-a'))
   assert.deepEqual(config.projects[0].gitCommitArgs, ['--no-verify'])
 })
 
