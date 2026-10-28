@@ -57,3 +57,19 @@ test('scoped package names produce valid Git branch names', () => {
   assert.equal(plan.branch, 'deps/web/@scope/pkg-1.2.3')
   assert.doesNotThrow(() => execFileSync('git', ['check-ref-format', '--branch', plan.branch], { stdio: 'pipe' }))
 })
+
+test('falls back to package naming when the report has no Angular action', () => {
+  const report = upgradeReport()
+  const plan = prPlan({ module: 'web', kind: 'toolchain', reports: [report], singleFinding: true })
+
+  assert.equal(plan.branch, 'deps/web/brace-expansion-5.0.12')
+})
+
+test('package names with characters Git refs reject are sanitised', () => {
+  const report = upgradeReport({
+    actions: [{ strategy: 'update-within-declared-range', targetPackage: 'we~ird*pkg', currentVersion: '1.0.0', targetVersion: '1.2.3', outcome: 'applied' }],
+  })
+  const plan = prPlan({ module: 'web', kind: 'package', reports: [report], singleFinding: true })
+
+  assert.doesNotThrow(() => execFileSync('git', ['check-ref-format', '--branch', plan.branch], { stdio: 'pipe' }))
+})

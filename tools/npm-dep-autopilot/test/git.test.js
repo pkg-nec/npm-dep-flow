@@ -103,3 +103,35 @@ test('isClean ignores untracked files but sees tracked modifications', async () 
   writeFileSync(path.join(repos.clone, 'base.txt'), 'changed')
   assert.equal(await tool.isClean(), false)
 })
+
+test('push overwrites a stale remote branch of the same name', async () => {
+  const repos = createRepos()
+  git(repos.other, 'checkout', '-q', '-b', 'deps/web/x-1.0.0')
+  commitFile(repos.other, 'stale.txt', 's')
+  git(repos.other, 'push', '-q', 'origin', 'deps/web/x-1.0.0')
+  const tool = adapter(repos)
+  await tool.fetch()
+  await tool.createWorkBranch()
+  commitFile(repos.clone, 'work.txt', 'w')
+  await tool.renameBranch('deps/web/x-1.0.0')
+
+  await tool.push('deps/web/x-1.0.0')
+
+  assert.equal(git(repos.remote, 'rev-parse', 'deps/web/x-1.0.0'), git(repos.clone, 'rev-parse', 'HEAD'))
+})
+
+test('onWorkBranch and discardWork recover an interrupted work branch', async () => {
+  const repos = createRepos()
+  const tool = adapter(repos)
+  assert.equal(await tool.onWorkBranch(), false)
+
+  await tool.createWorkBranch()
+  writeFileSync(path.join(repos.clone, 'base.txt'), 'half-written')
+  writeFileSync(path.join(repos.clone, 'migrations.json'), '{}')
+  assert.equal(await tool.onWorkBranch(), true)
+  assert.equal(await tool.isClean(), false)
+
+  await tool.discardWork()
+
+  assert.equal(git(repos.clone, 'status', '--porcelain'), '')
+})

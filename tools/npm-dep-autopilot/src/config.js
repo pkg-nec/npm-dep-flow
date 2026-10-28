@@ -4,6 +4,7 @@ import { AutopilotError } from './errors.js'
 
 const TOP_KEYS = new Set(['repo', 'defaultBranch', 'pollIntervalSeconds', 'deadline', 'projects'])
 const PROJECT_KEYS = new Set(['path', 'module', 'gitCommitArgs'])
+const MODULE_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]*(?:\.[A-Za-z0-9_-]+)*$/
 const DEADLINE_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/
 
 function invalid(message) {
@@ -28,6 +29,7 @@ function validateProject(project, index, repo, seen) {
 
   const relativeInput = requireString(project.path, `${where}.path`)
   const module = requireString(project.module, `${where}.module`)
+  if (!MODULE_PATTERN.test(module) || module.endsWith('.lock')) throw invalid(`${where}.module "${module}" must be a Git-ref-safe name (letters, digits, '.', '_', '-')`)
   const absolute = path.resolve(repo, relativeInput)
   const relativePath = path.relative(repo, absolute) || '.'
 

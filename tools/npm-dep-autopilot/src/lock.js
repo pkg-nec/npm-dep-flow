@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { open, readFile, unlink } from 'node:fs/promises'
+import { link, readFile, unlink, writeFile } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 
@@ -13,16 +13,21 @@ function processAlive(pid) {
   }
 }
 
+// The pid is written to a private file first and hard-linked into place, so the lock
+// file is never visible without its owner and creation stays atomic.
 async function tryCreate(file, pid) {
+  const staging = `${file}.${pid}.${process.hrtime.bigint()}.tmp`
+  await writeFile(staging, `${pid}\n`, { flag: 'wx' })
   try {
-    const handle = await open(file, 'wx')
-    await handle.writeFile(`${pid}\n`)
-    await handle.close()
+    await link(staging, file)
     return true
   }
   catch (error) {
     if (error.code === 'EEXIST') return false
     throw error
+  }
+  finally {
+    await unlink(staging).catch(() => {})
   }
 }
 
@@ -47,6 +52,7 @@ export async function acquireLock({ repo, dir = process.env.XDG_RUNTIME_DIR || o
 
   const owner = await readOwner(file)
   if (owner !== null && isAlive(owner)) return null
+  if (await readOwner(file) !== owner) return null
 
   await unlink(file).catch(() => {})
   return await tryCreate(file, pid) ? { release } : null

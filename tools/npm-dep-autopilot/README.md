@@ -49,7 +49,7 @@ npm-dep-autopilot --version
 | `pollIntervalSeconds` | How often an open pull request is checked | `60` |
 | `deadline` | Local time of day (`HH:MM`) at which a running instance abandons its work and exits | `00:00` |
 | `projects[].path` | Project directory relative to `repo` | required |
-| `projects[].module` | Module name used in commit subjects, branches and PR titles | required |
+| `projects[].module` | Module name used in commit subjects, branches and PR titles; letters, digits, `.`, `_`, `-` only (it becomes part of a Git branch name) | required |
 | `projects[].gitCommitArgs` | Git arguments forwarded to `npm-dep-upgrade` (for example `--no-verify`) | `[]` |
 
 Project order is priority order. Unknown keys, invalid values, duplicate modules or paths, and project paths outside `repo` are errors.
@@ -57,11 +57,11 @@ Project order is priority order. Unknown keys, invalid values, duplicate modules
 ## Behavior
 
 1. **Guards.** Take a single-instance lock; if another instance is running, exit 0. Require an active `gh` login, otherwise exit 1.
-2. **Sync.** Fetch, require a clean clone, reset the default branch to `origin/<default>` and delete local `deps/*` branches.
+2. **Sync.** Fetch, require a clean clone, reset the default branch to `origin/<default>` and delete local `deps/*` branches. If a previous run was interrupted on its work branch (`deps/wip`), that unfinished work is discarded first.
 3. **Wait.** While pull requests labelled `dependencies` and authored by the logged-in user are open, check them every `pollIntervalSeconds`. When none is open (merged or closed), sync again and continue.
 4. **Work.** Run `npm-dep-upgrade-plan` for every project in order. Severities are tried in the order critical, high, moderate, low. Only findings with `resolution: complete` count. Within a severity, Angular toolchain is fixed first, then Angular runtime, then parent upgrades, then within-range updates (ties go to project order). A finding that fails to upgrade is skipped for the rest of the process.
-5. **Publish.** Fetch; if the default branch has new commits, rebase, and if the rebase fails abandon the unmerged commits and restart from step 2. Then push, create the `dependencies` label if needed and open the PR, and go back to step 3.
-6. **Exit.** Exit 0 when no completely solvable finding is left, or when `deadline` passes (running child processes are stopped and local work is abandoned; open pull requests carry over to the next run).
+5. **Publish.** Fetch; if the default branch has new commits, rebase, and if the rebase fails abandon the unmerged commits and restart from step 2. Then create the `dependencies` label if needed, push (with `--force-with-lease`, because `deps/*` branch names belong to the app and may be reused after an earlier PR) and open the PR. Go back to step 3, which also waits until the new PR shows up in the PR list so a lagging list cannot trigger a second PR.
+6. **Exit.** Exit 0 when no completely solvable finding is left, or when `deadline` passes (running child processes and their process groups are stopped (SIGTERM, then SIGKILL after 5 seconds; `taskkill /T /F` on Windows) and local work is abandoned; open pull requests carry over to the next run).
 
 | Case | Branch | PR title |
 | --- | --- | --- |
@@ -71,6 +71,8 @@ Project order is priority order. Unknown keys, invalid values, duplicate modules
 | Several commits in a batch | `deps/<module>/fix-vulnerabilities` | `deps(<module>): fix vulnerabilities` |
 
 Critical findings and Angular bumps get one PR each. High, moderate and low fixes drain a module: after the first fix the app keeps taking non-Angular complete findings of the same severity from the same module, then opens one PR. A finding that mixes an Angular action with other actions is published as the Angular bump, with its other commits in the same PR.
+
+A rebase that applies cleanly is not re-verified: the lockfile and manifest are taken as the rebased result, so review the PR before merging as usual.
 
 A pull request that is closed without merging is treated like a merged one. Its findings may be found again and a new PR opened on a later run.
 

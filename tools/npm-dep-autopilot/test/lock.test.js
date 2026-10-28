@@ -66,3 +66,19 @@ test('release only removes the lock it owns', async () => {
 
   assert.equal((await readdir(dir)).length, 1)
 })
+
+test('simultaneous acquires yield exactly one holder', async () => {
+  const dir = await tempDir()
+  const results = await Promise.all(Array.from({ length: 12 }, (_, index) => acquireLock({ repo: '/repo', dir, pid: 100 + index, isAlive: () => true })))
+
+  assert.equal(results.filter(Boolean).length, 1)
+})
+
+test('a lock file is never observable without its pid and leaves no temp files', async () => {
+  const dir = await tempDir()
+  await acquireLock({ repo: '/repo', dir, pid: 4242, isAlive: () => true })
+  const [file] = await readdir(dir)
+
+  assert.equal((await readFile(path.join(dir, file), 'utf8')).trim(), '4242')
+  assert.equal((await readdir(dir)).length, 1)
+})
