@@ -6,7 +6,7 @@
 - Each `tools/<name>/` directory is an independent Node.js project with its own manifest, lockfile, executable, source, tests, and README. Keep CLI dependencies and tool-specific npm commands within the relevant tool directory.
 - `dev-tooling/` is a separate private development package with the shared ESLint dependencies, lockfile, configuration, and commands. Keep the root a non-package and do not introduce npm workspaces.
 - Tools should exchange data through documented command-line output, including versioned JSON, rather than importing another tool's private source files.
-- Start with the [repository README](README.md) for all five tool guides and design documents.
+- Start with the [repository README](README.md) for all six tool guides and design documents.
 
 ## Versioning
 
@@ -81,3 +81,10 @@ For test scratch directories, `NPM_DEP_FLOW_TEST_TMPDIR` overrides checkout-loca
 - Stable-only default, `--all`, `--major`, and `--range` filter the complete cached catalog. `--project` selects npm configuration context and requires no manifest or lockfile.
 - Catalog identity includes canonical context, package, npm/tool versions, and a digest of effective configuration excluding moving `before`; never store configuration secrets. Preserve original fetchedAt and atomic, nonfatal cache behavior.
 - `npm test` includes executable tests. Set `NPM_DEP_UPGRADE_E2E_NPM_CLI` and `NPM_DEP_UPGRADE_E2E_COMPAT_NPM_CLI` to pinned npm 12.1.0 / 11.10.0 entries to exercise real npm metadata envelopes against a local registry. `NPM_DEP_VERSIONS_REQUIRE_RUNTIMES=1` makes absent required runtime entries an error in CI (npm12 on Windows, both on Unix).
+
+## Working on npm-dep-autopilot
+
+- Entry point: `bin/npm-dep-autopilot.js`; independent package that only calls `npm-dep-upgrade-plan`, `npm-dep-upgrade`, `git` and `gh` through their command-line interfaces (planner and upgrade schema version 3 JSON). Never import sibling private modules.
+- `src/cli.js` wires adapters (`gh.js`, `git.js`, `tools.js`, `subprocess.js`) into `src/runner.js`; `selector.js` and `naming.js` are pure. The run is stateless between invocations; the schedule lives in cron and is documented in the README.
+- The clone is dedicated to the app: it may reset the default branch and delete local `deps/*` branches, but refuses tracked changes. PRs it creates carry the `dependencies` label; branch and title formats are in the README.
+- `npm test` includes executable tests with fake `gh` and tool commands (skipped on Windows). Keep `npm-dep-*` launching through `subprocess.js` (`.cmd` through a shell on Windows) and `git`/`gh` spawned directly.

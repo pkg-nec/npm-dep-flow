@@ -16,7 +16,7 @@ npm --prefix dev-tooling run lint:fix
 
 Alternatively, run `npm ci --ignore-scripts`, `npm run lint`, or `npm run lint:fix` inside `dev-tooling/`. After automatic fixes, resolve remaining findings and rerun lint and the affected tools' tests.
 
-The shared flat configuration is `dev-tooling/eslint.config.mjs`. The commands supply it explicitly and lint source, executables, tests, and test helpers across `npm-dep-paths`, `npm-dep-audit`, `npm-dep-upgrade-plan`, `npm-dep-versions`, and `npm-dep-upgrade`, plus development-tooling JavaScript. It configures Node.js globals, ESM for `.js`/`.mjs`, and CommonJS for `.cjs`. Generated `node_modules`, `tmp`, `coverage`, `dist`, and `.cache` directories are excluded.
+The shared flat configuration is `dev-tooling/eslint.config.mjs`. The commands supply it explicitly and lint source, executables, tests, and test helpers across `npm-dep-paths`, `npm-dep-audit`, `npm-dep-upgrade-plan`, `npm-dep-versions`, `npm-dep-upgrade`, and `npm-dep-autopilot`, plus development-tooling JavaScript. It configures Node.js globals, ESM for `.js`/`.mjs`, and CommonJS for `.cjs`. Generated `node_modules`, `tmp`, `coverage`, `dist`, and `.cache` directories are excluded.
 
 Use the unchanged `@eslint/js` recommended and `@stylistic/eslint-plugin` recommended configurations. Keep their upstream style defaults; do not add personal rule overrides, rule-disable comments to bypass findings, or Prettier.
 
