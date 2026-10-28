@@ -27,13 +27,13 @@ function reportFor(id, strategies = [WITHIN], commits = 1) {
   return upgradeReport({ id, actions, commits: Array.from({ length: commits }, (_, index) => ({ hash: `h${index}`, subject: `s${id}.${index}` })) })
 }
 
-function makeEnv({ rows = {}, openPrs = [[]], upgrade, rebase = [true], newCommits = [false], dirty = false, sleep, commits = {}, strategies = {} } = {}) {
+function makeEnv({ rows = {}, openPrs = [[]], upgrade, rebase = [true], newCommits = [false], dirty = false, onWork = false, sleep, commits = {}, strategies = {}, keepFindings = false } = {}) {
   const events = []
   const fixed = new Set()
   const prQueue = [...openPrs]
   const rebaseQueue = [...rebase]
   const newQueue = [...newCommits]
-  let sha = 0
+  const state = { commits: 0, dirty }
   const created = []
 
   const tools = {
@@ -42,8 +42,9 @@ function makeEnv({ rows = {}, openPrs = [[]], upgrade, rebase = [true], newCommi
     },
     async upgrade(project, id) {
       events.push(`upgrade:${project.module}:${id}`)
+      state.commits += 1
       if (upgrade) await upgrade(project, id, events)
-      fixed.add(`${project.module}:${id}`)
+      if (!keepFindings) fixed.add(`${project.module}:${id}`)
       return reportFor(id, strategies[id] ?? [WITHIN], commits[id] ?? 1)
     },
   }
@@ -52,7 +53,14 @@ function makeEnv({ rows = {}, openPrs = [[]], upgrade, rebase = [true], newCommi
       events.push('fetch')
     },
     async isClean() {
-      return !dirty
+      return !state.dirty
+    },
+    async onWorkBranch() {
+      return onWork
+    },
+    async discardWork() {
+      events.push('discardWork')
+      state.dirty = false
     },
     async syncDefault() {
       events.push('syncDefault')
@@ -61,8 +69,7 @@ function makeEnv({ rows = {}, openPrs = [[]], upgrade, rebase = [true], newCommi
       events.push('createWorkBranch')
     },
     async head() {
-      sha += 1
-      return `sha-${sha}`
+      return `sha-${state.commits}`
     },
     async resetHard(to) {
       events.push(`resetHard:${to}`)
@@ -144,15 +151,15 @@ test('a critical finding in a later project is fixed first and published alone',
   assert.equal(env.created[0].base, 'main')
 })
 
-test('ensureLabel runs before createPr and the branch is pushed first', async () => {
+test('the label exists before the branch is pushed and the PR is created', async () => {
   const env = makeEnv({ rows: { web: [finding('1', [WITHIN], 'critical')] } })
 
   await env.run()
 
   const { events } = env
+  assert.ok(events.indexOf('ensureLabel') < events.indexOf('rename:deps/web/pkg1-1.0.1'))
   assert.ok(events.indexOf('rename:deps/web/pkg1-1.0.1') < events.indexOf('push:deps/web/pkg1-1.0.1'))
-  assert.ok(events.indexOf('push:deps/web/pkg1-1.0.1') < events.indexOf('ensureLabel'))
-  assert.ok(events.indexOf('ensureLabel') < events.indexOf('createPr:deps/web/pkg1-1.0.1'))
+  assert.ok(events.indexOf('push:deps/web/pkg1-1.0.1') < events.indexOf('createPr:deps/web/pkg1-1.0.1'))
 })
 
 test('drains a module into one fix-vulnerabilities PR', async () => {
@@ -199,7 +206,7 @@ test('a failed upgrade is reset, skipped for its module, and the next candidate 
 
   const upgrades = env.events.filter(event => event.startsWith('upgrade:'))
   assert.deepEqual(upgrades, ['upgrade:web:1', 'upgrade:api:1'])
-  assert.ok(env.events.some(event => event.startsWith('resetHard:sha-')))
+  assert.ok(env.events.includes('resetHard:sha-0'))
   assert.ok(env.events.indexOf('upgrade:web:1') < env.events.findIndex(event => event.startsWith('resetHard:')))
   assert.equal(env.created[0].branch, 'deps/api/pkg1-1.0.1')
 })
@@ -216,6 +223,18 @@ test('a failed rebase abandons the work and restarts from sync', async () => {
   assert.deepEqual(env.events.filter(event => event.startsWith('push:')), ['push:deps/web/pkg1-1.0.1'])
   assert.ok(env.events.indexOf('rebase:false') < env.events.indexOf('upgrade:web:1', env.events.indexOf('rebase:false')))
   assert.equal(env.events.filter(event => event === 'createWorkBranch').length >= 2, true)
+})
+
+test('a restart after an abandoned rebase starts as if just launched', async () => {
+  const env = makeEnv({
+    rows: { web: [finding('1', [WITHIN], 'critical')] },
+    newCommits: [true, false],
+    rebase: [false],
+  })
+
+  await env.run()
+
+  assert.equal(env.events.filter(event => event === 'upgrade:web:1').length, 2)
 })
 
 test('rebase is attempted only when the default branch moved', async () => {
@@ -275,4 +294,52 @@ test('no candidates returns done without a PR', async () => {
 
   assert.equal(await env.run(), 'done')
   assert.equal(env.created.length, 0)
+})
+
+test('an interrupted work branch is discarded instead of failing', async () => {
+  const env = makeEnv({ dirty: true, onWork: true })
+
+  assert.equal(await env.run(), 'done')
+  assert.ok(env.events.includes('discardWork'))
+})
+
+test('a dirty default branch is still an error', async () => {
+  const env = makeEnv({ dirty: true, onWork: false })
+
+  await assert.rejects(env.run(), { code: 'CLONE_DIRTY' })
+  assert.equal(env.events.includes('discardWork'), false)
+})
+
+test('resets to the head captured before a failing upgrade that already committed', async () => {
+  const env = makeEnv({
+    rows: { web: [finding('1', [WITHIN], 'critical')] },
+    upgrade: async () => {
+      throw new Error('failed after committing')
+    },
+  })
+
+  await env.run()
+
+  assert.deepEqual(env.events.filter(event => event.startsWith('resetHard:')), ['resetHard:sha-0'])
+})
+
+test('after publishing, waits until the new PR is listed before working again', async () => {
+  const env = makeEnv({
+    rows: { web: [finding('1', [WITHIN], 'critical')], api: [finding('2', [WITHIN], 'critical')] },
+    openPrs: [[], [], [{ number: 1, headRefName: 'deps/web/pkg1-1.0.1' }], []],
+  })
+
+  await env.run()
+
+  assert.equal(env.created.length, 2)
+  assert.ok(env.sleeps.length >= 2)
+  assert.ok(env.events.indexOf('createPr:deps/web/pkg1-1.0.1') < env.events.indexOf('upgrade:api:2'))
+  assert.equal(env.events.filter(event => event === 'openPrs').length >= 4, true)
+})
+
+test('a finding that stays reported after a successful upgrade is not retried forever', async () => {
+  const env = makeEnv({ rows: { web: [finding('1', [WITHIN], 'high')] }, keepFindings: true })
+
+  assert.equal(await env.run(), 'done')
+  assert.equal(env.events.filter(event => event.startsWith('upgrade:')).length, 1)
 })

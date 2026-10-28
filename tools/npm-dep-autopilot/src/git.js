@@ -53,7 +53,14 @@ export function createGit({ run, repo, defaultBranch, signal, debug }) {
       await git(['branch', '-q', '-m', to])
     },
     async push(branch) {
-      await git(['push', '-q', '-u', 'origin', branch])
+      await git(['push', '-q', '-u', '--force-with-lease', 'origin', branch])
+    },
+    async onWorkBranch() {
+      return (await git(['branch', '--show-current'])).trim() === WORK_BRANCH
+    },
+    async discardWork() {
+      await git(['reset', '-q', '--hard'])
+      await git(['clean', '-q', '-fd'])
     },
   }
 }

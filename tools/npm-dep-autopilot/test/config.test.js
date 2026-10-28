@@ -78,6 +78,10 @@ test('rejects non-string gitCommitArgs', () => assertRejects({ ...base(), projec
 test('rejects gitCommitArgs that is not an array', () => assertRejects({ ...base(), projects: [{ path: 'a', module: 'a', gitCommitArgs: '--no-verify' }] }, /gitCommitArgs/))
 test('rejects invalid JSON', () => assertRejects('{nope', /JSON/, true))
 
+for (const bad of ['has space', 'a..b', 'x.lock', '-lead', 'a/b', 'a~b']) {
+  test(`rejects the unsafe module name ${JSON.stringify(bad)}`, () => assertRejects({ ...base(), projects: [{ path: 'a', module: bad }] }, /module/))
+}
+
 test('rejects an unreadable file', async () => {
   await assert.rejects(loadConfig('/nonexistent/config.json'), AutopilotError)
 })
