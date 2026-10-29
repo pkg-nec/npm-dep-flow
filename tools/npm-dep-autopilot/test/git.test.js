@@ -135,3 +135,17 @@ test('onWorkBranch and discardWork recover an interrupted work branch', async ()
 
   assert.equal(git(repos.clone, 'status', '--porcelain'), '')
 })
+
+test('assertIdentity rejects with GIT_IDENTITY when git cannot determine a committer', async () => {
+  const run = async () => ({ code: 128, stdout: '', stderr: 'fatal: unable to auto-detect email address' })
+
+  await assert.rejects(createGit({ run, repo: '/repo', defaultBranch: 'main' }).assertIdentity(), (error) => {
+    assert.equal(error.code, 'GIT_IDENTITY')
+    assert.match(error.message, /user\.name/)
+    return true
+  })
+})
+
+test('assertIdentity passes when the clone has a committer identity', async () => {
+  await adapter(createRepos()).assertIdentity()
+})
