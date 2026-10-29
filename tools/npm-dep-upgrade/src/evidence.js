@@ -4,6 +4,23 @@ import { loadGraph } from './graph.js'
 import { fail } from './errors.js'
 
 const edgeKey = (from, to, name, type, spec) => JSON.stringify([from, to, name, type, spec])
+
+// npm-dep-paths reports only dependents the project can reach without going through the target, so a package that
+// only the target pulls in (a peer cycle such as browserslist and update-browserslist-db) is not one of its dependents.
+function reachableWithout(graph, excluded) {
+  const next = new Map()
+  for (const edge of graph.edges) if (edge.to !== null) next.set(edge.from, [...(next.get(edge.from) || []), edge.to])
+  const reached = new Set()
+  const pending = ['']
+  while (pending.length) {
+    const location = pending.pop()
+    if (location === excluded || reached.has(location)) continue
+    reached.add(location)
+    pending.push(...(next.get(location) || []))
+  }
+  return reached
+}
+
 export async function readFreshAudit(root, run = runProcess) {
   const r = await run('npm-dep-audit', ['.', '--min-severity', 'info', '--no-cache', '--format', 'json'], { cwd: root })
   if (r.code) fail('AUDIT_FAILED', 'audit', `Fresh audit failed: ${r.stderr.trim()}`)
@@ -28,7 +45,9 @@ export async function readEvidence(project, item, run = runProcess) {
   const upstream = []
   const dependents = new Map()
   const graphEdges = new Set(graph.edges.map(e => edgeKey(e.from, e.to, e.requestedName, e.type, e.rawSpec)))
-  const parents = new Set(incoming.filter(e => e.from).map((e) => {
+  const reachable = reachableWithout(graph, item.targetLocation)
+  const reported = incoming.filter(e => reachable.has(e.from))
+  const parents = new Set(reported.filter(e => e.from).map((e) => {
     const n = graph.nodes.get(e.from)
     return `${n.name}@${n.version}`
   }))
@@ -60,6 +79,6 @@ export async function readEvidence(project, item, run = runProcess) {
     upstream.push(data.upstream)
   }
   const directDependents = [...dependents.values()]
-  if (incoming.some(e => e.from && !directDependents.some(d => d.location === e.from && d.type === e.type && d.requestedName === e.requestedName))) fail('INVALID_PATHS', 'evidence', 'Paths report omits an incoming requirement for the selected installation')
+  if (reported.some(e => e.from && !directDependents.some(d => d.location === e.from && d.type === e.type && d.requestedName === e.requestedName))) fail('INVALID_PATHS', 'evidence', 'Paths report omits an incoming requirement for the selected installation')
   return { item, auditRows, graph, incoming, directDeclarations, directDependents, upstream }
 }
