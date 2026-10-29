@@ -38,14 +38,14 @@ test('resolves paths against the config directory and applies defaults', async (
   assert.equal(config.deadline, '00:00')
   assert.deepEqual(config.projects, [{
     path: path.join(dir, 'repo-a', 'apps/web'),
-    relativePath: 'apps/web',
+    relativePath: path.join('apps', 'web'),
     module: 'web',
     gitCommitArgs: [],
   }])
 })
 
 test('keeps explicit settings and absolute repo paths', async () => {
-  const { file } = await writeConfig({
+  const { dir, file } = await writeConfig({
     ...base(),
     repo: '/srv/repo-a',
     pollIntervalSeconds: 5,
@@ -54,10 +54,10 @@ test('keeps explicit settings and absolute repo paths', async () => {
   })
   const config = await loadConfig(file)
 
-  assert.equal(config.repo, path.resolve('/srv/repo-a'))
+  assert.equal(config.repo, path.resolve(dir, '/srv/repo-a'))
   assert.equal(config.pollIntervalSeconds, 5)
   assert.equal(config.deadline, '23:30')
-  assert.equal(config.projects[0].path, path.resolve('/srv/repo-a'))
+  assert.equal(config.projects[0].path, path.resolve(dir, '/srv/repo-a'))
   assert.deepEqual(config.projects[0].gitCommitArgs, ['--no-verify'])
 })
 
