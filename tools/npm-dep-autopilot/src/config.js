@@ -28,8 +28,9 @@ function validateProject(project, index, repo, seen) {
   rejectUnknownKeys(project, PROJECT_KEYS, where)
 
   const relativeInput = requireString(project.path, `${where}.path`)
-  const module = requireString(project.module, `${where}.module`)
-  if (!MODULE_PATTERN.test(module) || module.endsWith('.lock')) throw invalid(`${where}.module "${module}" must be a Git-ref-safe name (letters, digits, '.', '_', '-')`)
+  const { module } = project
+  if (typeof module !== 'string') throw invalid(`${where}.module must be a string (use "" for none)`)
+  if (module !== '' && (!MODULE_PATTERN.test(module) || module.endsWith('.lock'))) throw invalid(`${where}.module "${module}" must be a Git-ref-safe name (letters, digits, '.', '_', '-')`)
   const absolute = path.resolve(repo, relativeInput)
   const relativePath = path.relative(repo, absolute) || '.'
 

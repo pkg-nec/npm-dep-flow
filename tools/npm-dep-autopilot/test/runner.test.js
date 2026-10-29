@@ -27,7 +27,7 @@ function reportFor(id, strategies = [WITHIN], commits = 1) {
   return upgradeReport({ id, actions, commits: Array.from({ length: commits }, (_, index) => ({ hash: `h${index}`, subject: `s${id}.${index}` })) })
 }
 
-function makeEnv({ rows = {}, openPrs = [[]], upgrade, rebase = [true], newCommits = [false], dirty = false, onWork = false, sleep, commits = {}, strategies = {}, keepFindings = false } = {}) {
+function makeEnv({ rows = {}, openPrs = [[]], upgrade, rebase = [true], newCommits = [false], dirty = false, onWork = false, sleep, commits = {}, strategies = {}, keepFindings = false, runConfig = config } = {}) {
   const events = []
   const fixed = new Set()
   const prQueue = [...openPrs]
@@ -120,7 +120,7 @@ function makeEnv({ rows = {}, openPrs = [[]], upgrade, rebase = [true], newCommi
     },
   }
 
-  return { events, created, sleeps, run: () => runAutopilot({ config, gh, git, tools, deadline, log: () => {} }) }
+  return { events, created, sleeps, run: () => runAutopilot({ config: runConfig, gh, git, tools, deadline, log: () => {} }) }
 }
 
 test('waits for an open PR, resyncing before and after, then works', async () => {
@@ -342,4 +342,14 @@ test('a finding that stays reported after a successful upgrade is not retried fo
 
   assert.equal(await env.run(), 'done')
   assert.equal(env.events.filter(event => event.startsWith('upgrade:')).length, 1)
+})
+
+test('a project with an empty module publishes deps: titles and deps/ branches', async () => {
+  const noModule = { module: '', path: '/r/app', relativePath: 'app', gitCommitArgs: [] }
+  const env = makeEnv({ rows: { '': [finding('1', [WITHIN], 'critical')] }, runConfig: { ...config, projects: [noModule] } })
+
+  await env.run()
+
+  assert.equal(env.created[0].branch, 'deps/pkg1-1.0.1')
+  assert.equal(env.created[0].title, 'deps: bump pkg1 from 1.0.0 to 1.0.1')
 })

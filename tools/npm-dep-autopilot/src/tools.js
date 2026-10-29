@@ -29,7 +29,7 @@ export function createTools({ run, repo, signal, debug }) {
     },
     upgrade(project, id) {
       const commitArgs = project.gitCommitArgs.map(arg => `--git-commit-arg=${arg}`)
-      return runJson(run, 'npm-dep-upgrade', [project.path, id, '--module', project.module, ...commitArgs, '--format', 'json'], context)
+      return runJson(run, 'npm-dep-upgrade', [project.path, id, ...(project.module === '' ? [] : ['--module', project.module]), ...commitArgs, '--format', 'json'], context)
     },
   }
 }

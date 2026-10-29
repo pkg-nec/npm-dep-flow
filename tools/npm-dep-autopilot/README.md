@@ -49,7 +49,7 @@ npm-dep-autopilot --version
 | `pollIntervalSeconds` | How often an open pull request is checked | `60` |
 | `deadline` | Local time of day (`HH:MM`) at which a running instance abandons its work and exits | `00:00` |
 | `projects[].path` | Project directory relative to `repo` | required |
-| `projects[].module` | Module name used in commit subjects, branches and PR titles; letters, digits, `.`, `_`, `-` only (it becomes part of a Git branch name) | required |
+| `projects[].module` | Module name used in commit subjects, branches and PR titles; letters, digits, `.`, `_`, `-` only (it becomes part of a Git branch name). Use `""` for no module; at most one project can | required |
 | `projects[].gitCommitArgs` | Git arguments forwarded to `npm-dep-upgrade` (for example `--no-verify`) | `[]` |
 
 Project order is priority order. Unknown keys, invalid values, duplicate modules or paths, and project paths outside `repo` are errors.
@@ -69,6 +69,8 @@ Project order is priority order. Unknown keys, invalid values, duplicate modules
 | Angular runtime | `deps/<module>/angular-runtime-<v>` | `deps(<module>): bump Angular runtime to <v>` |
 | Critical finding, or one commit in a batch | `deps/<module>/<package>-<v>` | `deps(<module>): bump <package> from <old> to <new>` |
 | Several commits in a batch | `deps/<module>/fix-vulnerabilities` | `deps(<module>): fix vulnerabilities` |
+
+With an empty module the `<module>` part is dropped everywhere: titles and commit subjects start with `deps:` instead of `deps(<module>):`, and branches start with `deps/` instead of `deps/<module>/` (for example `deps/fix-vulnerabilities`). Only one project can use an empty module, because two would produce the same branch names.
 
 Critical findings and Angular bumps get one PR each. High, moderate and low fixes drain a module: after the first fix the app keeps taking non-Angular complete findings of the same severity from the same module, then opens one PR. A finding that mixes an Angular action with other actions is published as the Angular bump, with its other commits in the same PR.
 
