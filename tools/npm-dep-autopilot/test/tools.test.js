@@ -63,3 +63,10 @@ test('schema version 2 throws TOOL_OUTPUT', async () => {
   const { run } = fakeRun(ok({ schemaVersion: 2, rows: [] }))
   await assert.rejects(createTools({ run, repo: '/repo' }).plan(project), { code: 'TOOL_OUTPUT' })
 })
+
+test('upgrade omits --module for an empty module name', async () => {
+  const { run, calls } = fakeRun(ok(upgradeReport()))
+  await createTools({ run, repo: '/repo' }).upgrade({ ...project, module: '' }, 'abc')
+
+  assert.deepEqual(calls[0].args, ['/repo/apps/web', 'abc', '--git-commit-arg=--no-verify', '--format', 'json'])
+})

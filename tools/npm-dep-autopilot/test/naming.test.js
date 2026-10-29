@@ -73,3 +73,21 @@ test('package names with characters Git refs reject are sanitised', () => {
 
   assert.doesNotThrow(() => execFileSync('git', ['check-ref-format', '--branch', plan.branch], { stdio: 'pipe' }))
 })
+
+test('an empty module drops the module from branches and titles', () => {
+  const toolchain = prPlan({ module: '', kind: 'toolchain', reports: [angularReport('upgrade-angular-toolchain')], singleFinding: true })
+  const runtime = prPlan({ module: '', kind: 'runtime', reports: [angularReport('upgrade-angular-runtime')], singleFinding: true })
+  const single = prPlan({ module: '', kind: 'package', reports: [upgradeReport()], singleFinding: false })
+  const batch = prPlan({ module: '', kind: 'package', reports: [upgradeReport(), upgradeReport()], singleFinding: false })
+
+  assert.deepEqual(toolchain, { branch: 'deps/angular-toolchain-20.3.4', title: 'deps: bump Angular toolchain to 20.3.4' })
+  assert.deepEqual(runtime, { branch: 'deps/angular-runtime-20.3.4', title: 'deps: bump Angular runtime to 20.3.4' })
+  assert.deepEqual(single, { branch: 'deps/brace-expansion-5.0.12', title: 'deps: bump brace-expansion from 5.0.9 to 5.0.12' })
+  assert.deepEqual(batch, { branch: 'deps/fix-vulnerabilities', title: 'deps: fix vulnerabilities' })
+})
+
+test('empty-module branch names are valid Git refs', () => {
+  const plan = prPlan({ module: '', kind: 'package', reports: [upgradeReport(), upgradeReport()], singleFinding: false })
+
+  assert.doesNotThrow(() => execFileSync('git', ['check-ref-format', '--branch', plan.branch], { stdio: 'pipe' }))
+})

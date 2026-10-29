@@ -78,7 +78,7 @@ async function attemptUpgrade({ tools, git, log }, candidate, skip) {
   }
   catch (error) {
     if (error instanceof DeadlineReached) throw error
-    log(`Upgrade of ${project.module} ${row.id} failed: ${error.message}`)
+    log(`Upgrade of ${project.module || project.relativePath} ${row.id} failed: ${error.message}`)
     await git.resetHard(before)
     skip.add(skipKey(project, row))
     return null
@@ -122,7 +122,7 @@ async function workCycle(context, skip) {
     if (!report) continue
 
     reports.push(report)
-    log(`Upgraded ${candidate.project.module} ${candidate.row.package} (${severity})`)
+    log(`Upgraded ${candidate.project.module || candidate.project.relativePath} ${candidate.row.package} (${severity})`)
     if (publishesImmediately(severity, candidate)) {
       return publish(context, { module: candidate.project.module, kind: candidate.kind, reports, singleFinding: true })
     }
