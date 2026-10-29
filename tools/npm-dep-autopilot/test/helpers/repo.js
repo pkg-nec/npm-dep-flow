@@ -23,10 +23,14 @@ export function createRepos(defaultBranch = 'main') {
 
   git(root, 'init', '-q', '--bare', '-b', defaultBranch, remote)
   git(root, 'clone', '-q', remote, clone)
+  git(clone, 'config', 'user.name', 't')
+  git(clone, 'config', 'user.email', 't@example.com')
   git(clone, 'checkout', '-q', '-B', defaultBranch)
   commitFile(clone, 'base.txt', 'base\n', 'initial')
   git(clone, 'push', '-q', '-u', 'origin', defaultBranch)
   git(root, 'clone', '-q', remote, other)
+  git(other, 'config', 'user.name', 't')
+  git(other, 'config', 'user.email', 't@example.com')
 
   return { root, remote, clone, other, defaultBranch }
 }

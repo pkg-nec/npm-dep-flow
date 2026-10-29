@@ -13,6 +13,12 @@ export function createGit({ run, repo, defaultBranch, signal, debug }) {
   }
 
   return {
+    async assertIdentity() {
+      const result = await exec(['var', 'GIT_COMMITTER_IDENT'])
+      if (result.code !== 0) {
+        throw new AutopilotError('Git has no committer identity in the clone; run "git config user.name" and "git config user.email" there', 'GIT_IDENTITY')
+      }
+    },
     async fetch() {
       await git(['fetch', '--prune', 'origin'])
     },

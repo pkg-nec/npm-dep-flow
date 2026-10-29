@@ -82,6 +82,7 @@ export async function main(argv, { stdout = process.stdout, stderr = process.std
     await gh.assertLoggedIn()
 
     const git = createGit({ run: runProcess, repo: config.repo, defaultBranch: config.defaultBranch, signal, debug })
+    await git.assertIdentity()
     const tools = createTools({ run: runProcess, repo: config.repo, signal, debug })
     const outcome = await runAutopilot({ config, gh, git, tools, deadline, log })
     log(outcome === 'deadline' ? 'Deadline reached; abandoning current work' : 'No completely solvable findings remain')
