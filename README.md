@@ -13,12 +13,15 @@ Each tool is an independent Node.js project under `tools/`, with its own package
 | [npm-dep-versions](tools/npm-dep-versions/README.md) | List stable or prerelease versions and publication dates with semantic version filters and a cached catalog. |
 | [npm-dep-upgrade](tools/npm-dep-upgrade/README.md) | Apply all actions (within-range, parent, Angular toolchain and Angular runtime upgrades) for one planner finding, including partial fixes, and commit each upgrade. |
 | [npm-dep-upgrade-plan](tools/npm-dep-upgrade-plan/README.md) | Report per-installation eligibility for read-only vulnerability remediation strategies: within-range updates, bounded parent upgrades, Angular toolchain upgrades and Angular runtime upgrades. |
+| [npm-dep-autopilot](tools/npm-dep-autopilot/README.md) | Run unattended on a server: plan and apply complete vulnerability fixes with the other tools, push branches and open `dependencies` pull requests through `gh`, waiting for each merge. |
 
 `npm-dep-audit` uses the separately installed `npm-dep-paths` CLI to show which declared requirements resolved to vulnerable versions. Install `npm-dep-paths` as a standalone command and keep it on `PATH` when running the audit tool; each tool has its own setup and usage instructions in its README.
 
 `npm-dep-upgrade-plan` consumes the public JSON output from `npm-dep-audit` and checks stable versions through the separately installed `npm-dep-versions` CLI, which merges registry versions and publication dates in one npm command. Its versioned report has one row per vulnerable package version and target installation location, and it does not change the target project. Install `npm-dep-paths`, `npm-dep-audit`, `npm-dep-versions`, and `npm-dep-upgrade-plan` as standalone commands and keep them on `PATH` when using the planner.
 
 `npm-dep-upgrade` reruns the planner, accepts an optional project directory plus one full or abbreviated item hash, and executes its compatible-consumer actions with scripts disabled, verifies their combined effect, and creates one commit per actual upgrade. Partial remediation preserves incompatible consumers. Planner and upgrade output use schema version 3; audit, paths, and versions retain version 2. It requires all four analysis CLIs on `PATH` and clean dependency files with an empty staging area.
+
+`npm-dep-autopilot` calls the planner and upgrade CLIs, `git` and `gh` on a schedule (cron) to turn complete findings into pull requests one at a time. It needs all five commands on `PATH`, a logged-in `gh` and a dedicated clone; see its guide for the crontab setup.
 
 ## Analysis caches
 
@@ -55,3 +58,4 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the contribution guide, including the
 - [Upgrade CLI E2E cases and fixture manifests](docs/superpowers/specs/2026-10-20-npm-dep-upgrade-e2e-cases.md)
 
 - [Versions catalog design](docs/superpowers/specs/2026-10-21-npm-dep-versions-design.md)
+- [Autopilot design](docs/superpowers/specs/2026-10-28-npm-dep-autopilot-design.md)

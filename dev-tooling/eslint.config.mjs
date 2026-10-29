@@ -13,7 +13,7 @@ export default defineConfig([
   ]),
   {
     files: [
-      'tools/{npm-dep-versions,npm-dep-paths,npm-dep-audit,npm-dep-upgrade-plan,npm-dep-upgrade}/**/*.{js,mjs,cjs}',
+      'tools/{npm-dep-versions,npm-dep-paths,npm-dep-audit,npm-dep-upgrade-plan,npm-dep-upgrade,npm-dep-autopilot}/**/*.{js,mjs,cjs}',
       'dev-tooling/**/*.{js,mjs,cjs}',
     ],
     extends: [js.configs.recommended, stylistic.configs.recommended],
@@ -24,7 +24,7 @@ export default defineConfig([
   },
   {
     files: [
-      'tools/{npm-dep-versions,npm-dep-paths,npm-dep-audit,npm-dep-upgrade-plan,npm-dep-upgrade}/**/*.{js,mjs,cjs}',
+      'tools/{npm-dep-versions,npm-dep-paths,npm-dep-audit,npm-dep-upgrade-plan,npm-dep-upgrade,npm-dep-autopilot}/**/*.{js,mjs,cjs}',
       'dev-tooling/**/*.{js,mjs,cjs}',
     ],
     // Additional readability rules; these never override a rule from the recommended sets above.
