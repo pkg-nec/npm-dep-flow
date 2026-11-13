@@ -18,6 +18,7 @@ import { createTools } from './tools.js'
 const toolDir = path.dirname(path.dirname(fileURLToPath(import.meta.url)))
 
 const helpBody = `Usage: npm-dep-autopilot --config <path> [options]
+       npm-dep-autopilot --config <path> --ignore <module>:<id>
        npm-dep-autopilot --clear-cache
 
 Keeps npm dependencies patched: plans and applies vulnerability fixes with the
@@ -25,7 +26,7 @@ npm-dep tools, then pushes branches and opens pull requests through gh.
 
 Options:
   --config <path>         JSON configuration file (required unless only clearing caches)
-  --clear-cache           Delete analysis caches (planner, audit, paths, versions); without --config, only clear
+  --clear-cache           Delete analysis caches and stored ignores; without --config, only clear
   --ignore <module>:<id>  Never attempt this finding again; cleared only by --clear-cache
   --debug                 Log external actions to stderr, including planner and upgrade
   --no-debug              Disable debug logging, overriding NPM_DEP_FLOW_DEBUG
