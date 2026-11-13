@@ -83,9 +83,6 @@ function makeEnv({ rows = {}, openPrs = [[]], upgrade, rebase = [true], newCommi
       if (!ok) fixed.clear()
       return ok
     },
-    async subjectsSince() {
-      return ['subject one']
-    },
     async renameBranch(to) {
       events.push(`rename:${to}`)
     },
@@ -170,7 +167,17 @@ test('drains a module into one fix-vulnerabilities PR', async () => {
   assert.deepEqual(env.events.filter(event => event.startsWith('upgrade:')).slice(0, 3), ['upgrade:web:1', 'upgrade:web:22', 'upgrade:web:333'])
   assert.equal(env.created[0].branch, 'deps/web/fix-vulnerabilities')
   assert.equal(env.created[0].title, 'deps(web): fix vulnerabilities')
-  assert.equal(env.created[0].body, '- subject one')
+  assert.equal(env.created[0].body, '- s1.0 (1)\n- s22.0 (22)\n- s333.0 (333)')
+})
+
+test('a drained batch of one finding with two commits is still fix-vulnerabilities', async () => {
+  const env = makeEnv({ rows: { web: [finding('1')] }, commits: { 1: 2 } })
+
+  await env.run()
+
+  assert.equal(env.created[0].branch, 'deps/web/fix-vulnerabilities')
+  assert.equal(env.created[0].title, 'deps(web): fix vulnerabilities')
+  assert.equal(env.created[0].body, '- s1.0 (1)\n- s1.1 (1)')
 })
 
 test('an Angular finding is never batched and is published first', async () => {

@@ -100,12 +100,11 @@ test('a row that is both skipped and ignored is reported as ignored, not dropped
   assert.deepEqual(ignored.map(i => i.row.id), ['a1b2c3'])
 })
 
-test('publishesImmediately for critical and Angular candidates only', () => {
-  const pkg = { kind: 'package' }
-  assert.equal(publishesImmediately('critical', pkg), true)
-  assert.equal(publishesImmediately('high', pkg), false)
-  assert.equal(publishesImmediately('low', { kind: 'toolchain' }), true)
-  assert.equal(publishesImmediately('moderate', { kind: 'runtime' }), true)
+test('publishesImmediately is true for a critical item and for any non-package kind', () => {
+  assert.equal(publishesImmediately({ severity: 'critical', kind: 'package' }), true)
+  assert.equal(publishesImmediately({ severity: 'high', kind: 'package' }), false)
+  assert.equal(publishesImmediately({ severity: 'low', kind: 'toolchain' }), true)
+  assert.equal(publishesImmediately({ severity: 'moderate', kind: 'runtime' }), true)
 })
 
 test('drainCandidates keeps same-module package candidates only', () => {

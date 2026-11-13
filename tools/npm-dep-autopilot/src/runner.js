@@ -1,5 +1,5 @@
 import { AutopilotError, DeadlineReached } from './errors.js'
-import { prPlan } from './naming.js'
+import { prBody, prPlan } from './naming.js'
 import { drainCandidates, publishesImmediately, rankCandidates, SEVERITIES, skipKey } from './selector.js'
 
 const MAX_POLL_FAILURES = 5
@@ -70,11 +70,21 @@ async function selectDrain({ tools }, batch, skip) {
 
 async function attemptUpgrade({ tools, git, log }, candidate, skip) {
   const before = await git.head()
-  const { project, row } = candidate
+  const { project, row, kind } = candidate
   try {
     const report = await tools.upgrade(project, row.id)
     skip.add(skipKey(project, row))
-    return report.commits.length === 0 ? null : report
+    if (report.commits.length === 0) return null
+
+    return {
+      id: report.id,
+      severity: row.severity,
+      kind,
+      package: report.package,
+      oldVersion: report.oldVersion,
+      actions: report.actions,
+      commits: report.commits.map(commit => commit.subject),
+    }
   }
   catch (error) {
     if (error instanceof DeadlineReached) throw error
@@ -85,15 +95,15 @@ async function attemptUpgrade({ tools, git, log }, candidate, skip) {
   }
 }
 
-async function publish({ git, gh, config, log }, { module, kind, reports, singleFinding }) {
+async function publish({ git, gh, config, log }, { module, items, singleFinding }) {
   await git.fetch()
   if (await git.hasNewDefaultCommits() && !await git.rebaseOnDefault()) {
     log('Rebase onto the default branch failed; abandoning unmerged commits')
     return { status: 'restart' }
   }
 
-  const { branch, title } = prPlan({ module, kind, reports, singleFinding })
-  const body = (await git.subjectsSince()).map(subject => `- ${subject}`).join('\n')
+  const { branch, title } = prPlan({ module, items, singleFinding })
+  const body = prBody(items)
   await gh.ensureLabel()
   await git.renameBranch(branch)
   await git.push(branch)
@@ -107,24 +117,24 @@ async function workCycle(context, skip) {
   await git.createWorkBranch()
 
   let batch = null
-  const reports = []
+  const items = []
 
   for (;;) {
     const next = batch ? await selectDrain(context, batch, skip) : await selectFirst(context, skip)
 
     if (!next) {
-      if (reports.length === 0) return { status: 'done' }
-      return publish(context, { module: batch.project.module, kind: 'package', reports, singleFinding: false })
+      if (items.length === 0) return { status: 'done' }
+      return publish(context, { module: batch.project.module, items, singleFinding: false })
     }
 
     const { severity, candidate } = next
-    const report = await attemptUpgrade(context, candidate, skip)
-    if (!report) continue
+    const item = await attemptUpgrade(context, candidate, skip)
+    if (!item) continue
 
-    reports.push(report)
+    items.push(item)
     log(`Upgraded ${candidate.project.module || candidate.project.relativePath} ${candidate.row.package} (${severity})`)
-    if (publishesImmediately(severity, candidate)) {
-      return publish(context, { module: candidate.project.module, kind: candidate.kind, reports, singleFinding: true })
+    if (publishesImmediately(item)) {
+      return publish(context, { module: candidate.project.module, items, singleFinding: true })
     }
     batch = { project: candidate.project, severity }
   }

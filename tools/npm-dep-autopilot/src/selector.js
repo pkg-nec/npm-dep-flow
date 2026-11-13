@@ -37,6 +37,6 @@ export function rankCandidates(entries, severity, skip, ignores = []) {
   return { candidates, ignored }
 }
 
-export const publishesImmediately = (severity, candidate) => severity === 'critical' || candidate.kind !== 'package'
+export const publishesImmediately = item => item.severity === 'critical' || item.kind !== 'package'
 
 export const drainCandidates = (candidates, module) => candidates.filter(candidate => candidate.project.module === module && candidate.kind === 'package')
