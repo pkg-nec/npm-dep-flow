@@ -435,3 +435,22 @@ test('a stored ignore keeps the finding out of the run and is logged', { skip: !
   assert.deepEqual(upgraded, ['1'.repeat(64)])
   assert.match(stdout, /^Ignoring 1 finding\(s\): web:fffffff \(brace-expansion@5\.0\.9\)$/m)
 })
+
+test('an unreadable ignore store warns with its own path and the run continues', { skip: !posix, timeout: 60000 }, async () => {
+  const { env, file, store } = await ignoreScenario()
+  mkdirSync(path.dirname(store), { recursive: true })
+  writeFileSync(store, 'not json')
+  const { code, stdout, stderr } = await runCli(['--config', file], env)
+
+  assert.equal(code, 0, stderr)
+  assert.ok(stdout.includes(`Cannot read the ignore store ${store}; continuing with no ignored findings`), stdout)
+  assert.match(stdout, /Created PR /)
+})
+
+test('--ignore records the stored entries for debugging', { skip: !posix }, async () => {
+  const { env, file } = await ignoreScenario()
+  const { code, stderr } = await runCli(['--config', file, '--ignore', 'web:a1b2c3d', '--debug'], env)
+
+  assert.equal(code, 0, stderr)
+  assert.match(stderr, /^\[npm-dep-autopilot debug\] ignores web:a1b2c3d addedAt=\d{4}-\d\d-\d\dT[\d:.]+Z$/m)
+})

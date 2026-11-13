@@ -36,20 +36,28 @@ function parseStore(text, repo) {
   return value.entries.map(({ module, id, addedAt }) => ({ module, id, addedAt }))
 }
 
+// The result carries the file it read, so a diagnostic about an unreadable
+// store can never name a path the read did not use.
 export async function readIgnores(repo, root = cacheRoot()) {
+  const path = storePath(repo, root)
   let text
   try {
-    text = await readFile(storePath(repo, root), 'utf8')
+    text = await readFile(path, 'utf8')
   }
   catch (error) {
-    return { entries: [], unreadable: error?.code !== 'ENOENT' }
+    return { entries: [], unreadable: error?.code !== 'ENOENT', path }
   }
   try {
-    return { entries: parseStore(text, repo), unreadable: false }
+    return { entries: parseStore(text, repo), unreadable: false, path }
   }
   catch {
-    return { entries: [], unreadable: true }
+    return { entries: [], unreadable: true, path }
   }
+}
+
+// One line listing the stored entries, shared by the run and the --ignore command.
+export function ignoreRecord(entries) {
+  return entries.length === 0 ? 'none' : entries.map(entry => `${entry.module}:${entry.id} addedAt=${entry.addedAt}`).join(', ')
 }
 
 export async function addIgnores(repo, items, root = cacheRoot(), now = () => new Date()) {

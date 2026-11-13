@@ -35,7 +35,7 @@ test('cacheRoot honours XDG_CACHE_HOME and falls back to the home directory', ()
 
 test('reading a missing store yields no entries and is not unreadable', async () => {
   await withRoot(async (root) => {
-    assert.deepEqual(await readIgnores(repo, root), { entries: [], unreadable: false })
+    assert.deepEqual(await readIgnores(repo, root), { entries: [], unreadable: false, path: storePath(repo, root) })
   })
 })
 
@@ -88,7 +88,7 @@ for (const [name, content] of unreadableStores) {
     await withRoot(async (root) => {
       await mkdir(root, { recursive: true })
       await writeFile(storePath(repo, root), content)
-      assert.deepEqual(await readIgnores(repo, root), { entries: [], unreadable: true })
+      assert.deepEqual(await readIgnores(repo, root), { entries: [], unreadable: true, path: storePath(repo, root) })
     })
   })
 }
@@ -96,7 +96,7 @@ for (const [name, content] of unreadableStores) {
 test('a store path that cannot be read as a file reads as unreadable', async () => {
   await withRoot(async (root) => {
     await mkdir(storePath(repo, root), { recursive: true })
-    assert.deepEqual(await readIgnores(repo, root), { entries: [], unreadable: true })
+    assert.deepEqual(await readIgnores(repo, root), { entries: [], unreadable: true, path: storePath(repo, root) })
   })
 })
 
@@ -106,7 +106,7 @@ test('writing over an unreadable store rebuilds it with only the new entries', a
     await writeFile(storePath(repo, root), '{nope')
     const result = await addIgnores(repo, [{ module: 'web', id: ID1 }], root, now)
     assert.equal(result.rebuilt, true)
-    assert.deepEqual(await readIgnores(repo, root), { entries: [good], unreadable: false })
+    assert.deepEqual(await readIgnores(repo, root), { entries: [good], unreadable: false, path: storePath(repo, root) })
   })
 })
 

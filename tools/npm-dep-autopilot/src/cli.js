@@ -4,12 +4,12 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { loadConfig } from './config.js'
 import { computeDeadline, createDeadline } from './deadline.js'
-import { runDebug } from './debug.js'
+import { debugLog, runDebug } from './debug.js'
 import { AutopilotError } from './errors.js'
 import { createGh } from './gh.js'
 import { createGit } from './git.js'
 import { clearAllStores, clearStore } from './cache-clear.js'
-import { addIgnores, cacheRoot, readIgnores } from './ignores.js'
+import { addIgnores, cacheRoot, ignoreRecord, readIgnores } from './ignores.js'
 import { acquireLock } from './lock.js'
 import { runAutopilot } from './runner.js'
 import { runProcess } from './subprocess.js'
@@ -119,6 +119,7 @@ export async function main(argv, { stdout = process.stdout, stderr = process.std
         const { added, duplicates } = await addIgnores(config.repo, args.ignore, cacheRoot(env))
         for (const { module, id } of added) stdout.write(`Ignoring ${module}:${id}\n`)
         for (const { module, id } of duplicates) stdout.write(`Already ignored: ${module}:${id}\n`)
+        debugLog(`ignores ${ignoreRecord((await readIgnores(config.repo, cacheRoot(env))).entries)}`)
         return 0
       }
 

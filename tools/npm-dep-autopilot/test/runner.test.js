@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { join } from 'node:path'
 import test from 'node:test'
 import { runDebug } from '../src/debug.js'
 import { DeadlineReached } from '../src/errors.js'
@@ -425,16 +426,17 @@ test('a cycle that ignores nothing logs no ignoring line', async () => {
   assert.deepEqual(ignoringLines(env.logs), [])
 })
 
-test('an unreadable store warns once per run and keeps working', async () => {
+test('an unreadable store warns once per run and keeps working, naming the file that was read', async () => {
+  const store = storePath(config.repo, join('/elsewhere', 'npm-dep-autopilot'))
   const env = makeEnv({
     rows: { web: [finding('1', [WITHIN], 'critical'), finding('2', [WITHIN], 'critical')] },
-    loadIgnores: async () => ({ entries: [], unreadable: true }),
+    loadIgnores: async () => ({ entries: [], unreadable: true, path: store }),
   })
 
   assert.equal(await env.run(), 'done')
   assert.deepEqual(upgrades(env.events), ['upgrade:web:1', 'upgrade:web:2'])
   assert.deepEqual(env.logs.filter(line => line.startsWith('Cannot read the ignore store')), [
-    `Cannot read the ignore store ${storePath(config.repo)}; continuing with no ignored findings`,
+    `Cannot read the ignore store ${store}; continuing with no ignored findings`,
   ])
 })
 

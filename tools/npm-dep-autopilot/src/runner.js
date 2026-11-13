@@ -1,6 +1,6 @@
 import { debugLog } from './debug.js'
 import { AutopilotError, DeadlineReached } from './errors.js'
-import { storePath } from './ignores.js'
+import { ignoreRecord } from './ignores.js'
 import { prBody, prPlan } from './naming.js'
 import { drainCandidates, publishesImmediately, rankCandidates, SEVERITIES, skipKey } from './selector.js'
 
@@ -58,7 +58,7 @@ async function planEntries(tools, projects) {
 // The stored ignores are separate from the runtime skip set, which a restart
 // clears, and are reloaded on every selection so a new --ignore is honoured
 // without restarting the app.
-function createIgnores({ config, log, loadIgnores }) {
+function createIgnores({ log, loadIgnores }) {
   const matched = new Map()
   let warned = false
   let recorded = null
@@ -70,10 +70,10 @@ function createIgnores({ config, log, loadIgnores }) {
       firstReadOfCycle = true
     },
     async read() {
-      const { entries, unreadable } = await loadIgnores()
-      if (unreadable && !warned) log(`Cannot read the ignore store ${storePath(config.repo)}; continuing with no ignored findings`)
+      const { entries, unreadable, path } = await loadIgnores()
+      if (unreadable && !warned) log(`Cannot read the ignore store ${path}; continuing with no ignored findings`)
       warned = unreadable
-      const record = entries.length === 0 ? 'none' : entries.map(entry => `${entry.module}:${entry.id} addedAt=${entry.addedAt}`).join(', ')
+      const record = ignoreRecord(entries)
       if (firstReadOfCycle || record !== recorded) {
         debugLog(`ignores ${record}`)
         recorded = record
@@ -197,7 +197,7 @@ async function applyUpgrades(context, skip, ignores) {
 export async function runAutopilot({ config, gh, git, tools, deadline, log, loadIgnores = async () => ({ entries: [], unreadable: false }) }) {
   const context = { config, gh, git, tools, deadline, log }
   const skip = new Set()
-  const ignores = createIgnores({ config, log, loadIgnores })
+  const ignores = createIgnores({ log, loadIgnores })
 
   try {
     const user = await gh.currentUser()
