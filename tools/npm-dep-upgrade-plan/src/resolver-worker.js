@@ -1,8 +1,11 @@
-// Standalone worker: only npm's in-memory resolver, private lock serialization, and the Angular line registry.
+// Standalone worker: only npm's in-memory resolver, the planner's registry metadata store, private lock serialization,
+// and the Angular line registry.
 import { readFile, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import path from 'node:path'
 import { ANGULAR_LINES, lineOfStrategy } from './angular-lines.js'
+import { createPackumentCache } from './packument-cache.js'
+import { debugLog } from './debug.js'
 
 const key = e => JSON.stringify([e.location ?? e.from, e.requestedName, e.type])
 const types = { prod: 'dependencies', dev: 'devDependencies', peer: 'peerDependencies', peerOptional: 'peerDependencies', optional: 'optionalDependencies' }
@@ -293,7 +296,14 @@ export async function resolveRequest(request) {
   await config.load()
   config.validate()
   if (!config.valid) throw new Error('Invalid npm resolver configuration')
-  const opts = { ...config.flat, path: request.root, ignoreScripts: true, audit: false, fund: false, preferOnline: true }
+  // One metadata store reaches every resolver step, including the `before`-capped copies of these options.
+  const required = {}
+  for (const choice of request.choices) {
+    const line = lineOfStrategy(choice.strategy)
+    for (const name of line ? line.members : [choice.targetPackage]) (required[name] ??= []).push(choice.targetVersion)
+  }
+  const packumentCache = createPackumentCache({ ...request.packumentCache, required })
+  const opts = { ...config.flat, path: request.root, ignoreScripts: true, audit: false, fund: false, preferOnline: true, packumentCache }
   delete opts.before
   delete opts.minReleaseAge
   assertLineOrder(request.choices, ANGULAR_LINES)
@@ -434,7 +444,9 @@ export async function resolveRequest(request) {
     snapshots.push({ choiceIndex, graph: after, files: Object.fromEntries(await Promise.all(['package.json', 'package-lock.json'].map(async n => [n, (await readFile(path.join(request.root, n))).toString('base64')]))) })
   }
   const after = await load()
-  return { schemaVersion: 1, choices: request.choices.filter(choice => accepted.includes(choice) || satisfied.includes(choice)), graph: after, before, snapshots, coverage: computeCoverage(before, after, request.item, semver, ANGULAR_LINES), manifestChanged: !(await readFile(path.join(request.root, 'package.json'))).equals(original), freshAt: request.startedAt }
+  const { diskHits, misses } = packumentCache.stats
+  debugLog(`packument cache ${request.packumentCache ? '' : 'bypass '}diskHits=${diskHits} misses=${misses}`)
+  return { schemaVersion: 1, choices: request.choices.filter(choice => accepted.includes(choice) || satisfied.includes(choice)), graph: after, before, snapshots, coverage: computeCoverage(before, after, request.item, semver, ANGULAR_LINES), manifestChanged: !(await readFile(path.join(request.root, 'package.json'))).equals(original), freshAt: Math.min(request.startedAt, packumentCache.oldestFetchedAt) }
 }
 if (process.argv[2]) {
   try {
