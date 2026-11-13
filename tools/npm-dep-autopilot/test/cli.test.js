@@ -6,6 +6,7 @@ import os from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
 import { fileURLToPath } from 'node:url'
+import { readIgnores, storePath } from '../src/ignores.js'
 import { acquireLock } from '../src/lock.js'
 import { installFakes } from './helpers/fake-bin.js'
 import { createRepos, git } from './helpers/repo.js'
@@ -57,7 +58,7 @@ test('--help aligns option descriptions to one column', async () => {
   const longest = Math.max(...rows.map(match => match[1].length))
 
   assert.equal(code, 0)
-  assert.equal(rows.length, 6)
+  assert.equal(rows.length, 7)
   assert.equal(new Set(columns).size, 1)
   assert.equal(columns[0], 2 + longest + 2)
 })
@@ -273,4 +274,101 @@ test('--help lists --clear-cache', async () => {
   const { stdout } = await runCli(['--help'])
 
   assert.match(stdout, /^ {2}--clear-cache /m)
+})
+
+async function ignoreScenario(overrides) {
+  const base = scenario()
+  const cacheDir = await mkdtemp(path.join(os.tmpdir(), 'autopilot-ignore-'))
+  const file = await writeConfig(base.repos, overrides)
+  const env = { ...base.env, XDG_CACHE_HOME: cacheDir }
+  const store = storePath(base.repos.clone, path.join(cacheDir, 'npm-dep-autopilot'))
+  const entries = async () => (await readIgnores(base.repos.clone, path.join(cacheDir, 'npm-dep-autopilot'))).entries
+  return { ...base, file, env, store, entries }
+}
+
+test('--ignore stores an entry and exits without running', { skip: !posix }, async () => {
+  const { fakes, env, file, entries } = await ignoreScenario()
+  const { code, stdout, stderr } = await runCli(['--config', file, '--ignore', 'web:a1b2c3d'], env)
+
+  assert.equal(code, 0, stderr)
+  assert.match(stdout, /web:a1b2c3d/)
+  assert.deepEqual((await entries()).map(({ module, id }) => ({ module, id })), [{ module: 'web', id: 'a1b2c3d' }])
+  assert.equal(existsSync(path.join(fakes.stateDir, 'calls.log')), false)
+  assert.equal(existsSync(path.join(fakes.stateDir, 'gh-calls.log')), false)
+})
+
+test('--ignore does not take the single-instance lock', { skip: !posix }, async () => {
+  const { fakes, repos, env, file, entries } = await ignoreScenario()
+  const lock = await acquireLock({ repo: repos.clone, dir: fakes.runtimeDir })
+  const { code, stderr } = await runCli(['--config', file, '--ignore', 'web:a1b2c3d'], env)
+
+  assert.ok(lock)
+  assert.equal(code, 0, stderr)
+  assert.equal((await entries()).length, 1)
+  await lock.release()
+})
+
+test('repeated --ignore stores every entry', { skip: !posix }, async () => {
+  const { env, file, entries } = await ignoreScenario()
+  const { code, stderr } = await runCli(['--config', file, '--ignore', 'web:a1b2c3d', '--ignore', 'web:0123456'], env)
+
+  assert.equal(code, 0, stderr)
+  assert.deepEqual((await entries()).map(entry => entry.id), ['a1b2c3d', '0123456'])
+})
+
+test('--ignore=<value> is accepted', { skip: !posix }, async () => {
+  const { env, file, entries } = await ignoreScenario()
+  const { code, stderr } = await runCli(['--config', file, '--ignore=web:a1b2c3d'], env)
+
+  assert.equal(code, 0, stderr)
+  assert.equal((await entries()).length, 1)
+})
+
+test('--ignore :<id> stores the empty-module project', { skip: !posix }, async () => {
+  const { env, file, entries } = await ignoreScenario({ projects: [{ path: '.', module: '', gitCommitArgs: ['--no-verify'] }] })
+  const { code, stderr } = await runCli(['--config', file, '--ignore', ':a1b2c3d'], env)
+
+  assert.equal(code, 0, stderr)
+  assert.deepEqual((await entries()).map(({ module, id }) => ({ module, id })), [{ module: '', id: 'a1b2c3d' }])
+})
+
+test('--ignore reports an already stored entry without duplicating it', { skip: !posix }, async () => {
+  const { env, file, entries } = await ignoreScenario()
+  await runCli(['--config', file, '--ignore', 'web:a1b2c3d'], env)
+  const { code, stdout, stderr } = await runCli(['--config', file, '--ignore', 'web:a1b2c3d'], env)
+
+  assert.equal(code, 0, stderr)
+  assert.match(stdout, /already ignored/i)
+  assert.equal((await entries()).length, 1)
+})
+
+for (const [value, problem] of [
+  ['a1b2c3d', /<module>:<id>/],
+  ['web:a1b2c3', /id/],
+  ['web:ABC1234', /id/],
+  ['web:zzzzzzz', /id/],
+  ['nope:a1b2c3d', /Unknown module "nope".*web/],
+]) {
+  test(`--ignore rejects a bad value: ${value}`, { skip: !posix }, async () => {
+    const { env, file, store } = await ignoreScenario()
+    const { code, stderr } = await runCli(['--config', file, '--ignore', value], env)
+
+    assert.equal(code, 1)
+    assert.match(stderr, problem)
+    assert.equal(existsSync(store), false)
+  })
+}
+
+test('--ignore without --config is a usage error', async () => {
+  const { code, stderr } = await runCli(['--ignore', 'web:a1b2c3d'])
+
+  assert.equal(code, 1)
+  assert.match(stderr, /--config/)
+})
+
+test('--ignore with --clear-cache is a usage error', async () => {
+  const { code, stderr } = await runCli(['--config', 'x.json', '--ignore', 'web:a1b2c3d', '--clear-cache'])
+
+  assert.equal(code, 1)
+  assert.match(stderr, /--ignore.*--clear-cache|--clear-cache.*--ignore/)
 })

@@ -8,6 +8,7 @@ import { runDebug } from './debug.js'
 import { AutopilotError } from './errors.js'
 import { createGh } from './gh.js'
 import { createGit } from './git.js'
+import { addIgnores, cacheRoot } from './ignores.js'
 import { acquireLock } from './lock.js'
 import { runAutopilot } from './runner.js'
 import { runProcess } from './subprocess.js'
@@ -22,16 +23,27 @@ Keeps npm dependencies patched: plans and applies vulnerability fixes with the
 npm-dep tools, then pushes branches and opens pull requests through gh.
 
 Options:
-  --config <path>  JSON configuration file (required unless only clearing caches)
-  --clear-cache    Delete analysis caches (planner, audit, paths, versions); without --config, only clear
-  --debug          Log external actions to stderr, including planner and upgrade
-  --no-debug       Disable debug logging, overriding NPM_DEP_FLOW_DEBUG
-  --version        Show version and tool directory
-  --help           Show this help
+  --config <path>         JSON configuration file (required unless only clearing caches)
+  --clear-cache           Delete analysis caches (planner, audit, paths, versions); without --config, only clear
+  --ignore <module>:<id>  Never attempt this finding again; cleared only by --clear-cache
+  --debug                 Log external actions to stderr, including planner and upgrade
+  --no-debug              Disable debug logging, overriding NPM_DEP_FLOW_DEBUG
+  --version               Show version and tool directory
+  --help                  Show this help
 `
 
+function parseIgnore(value) {
+  const colon = value.indexOf(':')
+  if (colon === -1) throw new AutopilotError(`Invalid --ignore value "${value}": expected <module>:<id>`, 'USAGE')
+  const id = value.slice(colon + 1)
+  if (!/^[0-9a-f]{7,64}$/.test(id)) {
+    throw new AutopilotError(`Invalid --ignore value "${value}": the id must be 7 to 64 lowercase hexadecimal characters`, 'USAGE')
+  }
+  return { module: value.slice(0, colon), id }
+}
+
 function parseArgs(argv) {
-  const args = { config: null, debug: undefined, clearCache: false }
+  const args = { config: null, debug: undefined, clearCache: false, ignore: [] }
 
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index]
@@ -41,6 +53,15 @@ function parseArgs(argv) {
       args.config = argv[index]
     }
     else if (arg.startsWith('--config=')) args.config = arg.slice('--config='.length)
+    else if (arg === '--ignore' || arg.startsWith('--ignore=')) {
+      let value = arg.slice('--ignore='.length)
+      if (arg === '--ignore') {
+        index += 1
+        if (index >= argv.length) throw new AutopilotError('--ignore needs a <module>:<id> value', 'USAGE')
+        value = argv[index]
+      }
+      args.ignore.push(parseIgnore(value))
+    }
     else if (arg === '--clear-cache') {
       if (args.clearCache) throw new AutopilotError('Repeated --clear-cache option', 'USAGE')
       args.clearCache = true
@@ -51,6 +72,8 @@ function parseArgs(argv) {
     }
     else throw new AutopilotError(`Unknown argument: ${arg}`, 'USAGE')
   }
+
+  if (args.ignore.length > 0 && args.clearCache) throw new AutopilotError('--ignore cannot be combined with --clear-cache', 'USAGE')
 
   return args
 }
@@ -84,6 +107,19 @@ export async function main(argv, { stdout = process.stdout, stderr = process.std
       }
 
       const config = await loadConfig(args.config)
+      if (args.ignore.length > 0) {
+        const modules = config.projects.map(project => project.module)
+        for (const { module } of args.ignore) {
+          if (!modules.includes(module)) {
+            throw new AutopilotError(`Unknown module "${module}" in --ignore; configured modules: ${modules.map(name => `"${name}"`).join(', ')}`, 'USAGE')
+          }
+        }
+        const { added, duplicates } = await addIgnores(config.repo, args.ignore, cacheRoot(env))
+        for (const { module, id } of added) stdout.write(`Ignoring ${module}:${id}\n`)
+        for (const { module, id } of duplicates) stdout.write(`Already ignored: ${module}:${id}\n`)
+        return 0
+      }
+
       lock = await acquireLock({ repo: config.repo, dir: env.XDG_RUNTIME_DIR || os.tmpdir() })
       if (!lock) {
         stdout.write('Another npm-dep-autopilot instance is already running; exiting\n')
