@@ -80,3 +80,25 @@ test('relayed debug lines are not part of a tool failure message', async () => {
     return true
   })
 })
+
+test('clearCache runs the upgrade tool in clear-only mode', async () => {
+  const { run, calls } = fakeRun({ code: 0, stdout: '', stderr: '' })
+  await createTools({ run, repo: '/repo' }).clearCache()
+
+  assert.equal(calls[0].command, 'npm-dep-upgrade')
+  assert.deepEqual(calls[0].args, ['--clear-cache'])
+  assert.equal(calls[0].options.cwd, '/repo')
+  assert.equal(calls[0].options.cmdShim, true)
+})
+
+test('clearCache failure throws TOOL_FAILED with stderr but without relayed debug lines', async () => {
+  const { run } = fakeRun({ code: 1, stdout: '', stderr: '[npm-dep-upgrade debug] start 1:1 process {}\ncache is locked\n' })
+
+  await assert.rejects(createTools({ run, repo: '/repo' }).clearCache(), (error) => {
+    assert.equal(error.code, 'TOOL_FAILED')
+    assert.match(error.message, /--clear-cache/)
+    assert.match(error.message, /cache is locked/)
+    assert.doesNotMatch(error.message, /debug\]/)
+    return true
+  })
+})

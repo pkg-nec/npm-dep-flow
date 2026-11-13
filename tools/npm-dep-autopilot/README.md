@@ -22,11 +22,15 @@ npm install --global . --ignore-scripts
 npm-dep-autopilot --config /etc/npm-dep-autopilot.json
 npm-dep-autopilot --config ./autopilot.json --debug
 npm-dep-autopilot --config ./autopilot.json --no-debug
+npm-dep-autopilot --config ./autopilot.json --clear-cache
+npm-dep-autopilot --clear-cache
 npm-dep-autopilot --help
 npm-dep-autopilot --version
 ```
 
 Progress lines go to stdout.
+
+`--clear-cache` deletes the analysis caches of the tools autopilot runs (planner, audit, paths and versions) by running `npm-dep-upgrade --clear-cache`, which forwards the clearing down its chain. Autopilot keeps no cache of its own. Together with `--config` it clears once at startup, after the single-instance, `gh` login and Git identity checks, and then runs normally. Alone, without `--config`, it only clears the caches and exits 0 without taking the lock or needing `gh`. A cache that cannot be cleared is an error (exit 1). Use it when a stale or wrong cached plan keeps the app from seeing a fix; Autopilot has no `--no-cache` or `--cache-ttl`: the planner's cache is keyed on the project's manifest and lockfile content, so syncing after a merge invalidates it, and it lasts one hour by default.
 
 `--debug` logs every external command (`git`, `gh`, `npm-dep-upgrade-plan`, `npm-dep-upgrade`) to stderr, in the same format as the other tools: `[npm-dep-autopilot debug] start <pid>:<n> process {...}` followed by `end <pid>:<n> process exit=<code> duration=<ms>ms`. Credentials in arguments and URLs are redacted, and subprocess output is not logged. Debug mode is passed down to the planner and upgrade tool (`--debug` plus `NPM_DEP_FLOW_DEBUG=1`), and their `[npm-dep-<tool> debug]` records, including those of the tools they run, are relayed to stderr. `--no-debug` disables debug logging even when `NPM_DEP_FLOW_DEBUG=1` is inherited from the environment, which otherwise enables it.
 
@@ -108,7 +112,7 @@ List the installed schedule with `crontab -l`.
 | Code | Situation |
 | --- | --- |
 | 0 | Nothing left to fix, another instance is running, or the deadline was reached |
-| 1 | Invalid config or arguments, no `gh` login, no Git committer identity in the clone, a modified clone, repeated `gh` failures, or an unexpected tool error |
+| 1 | Invalid config or arguments, a cache that cannot be cleared, no `gh` login, no Git committer identity in the clone, a modified clone, repeated `gh` failures, or an unexpected tool error |
 
 Upgrade failures and rebase failures are handled inside the run and are not exit conditions.
 

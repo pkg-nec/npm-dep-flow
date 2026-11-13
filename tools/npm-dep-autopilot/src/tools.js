@@ -2,11 +2,18 @@ import { AutopilotError } from './errors.js'
 
 const RELAYED_DEBUG_LINE = /^\[npm-dep-[a-z-]+ debug\] .*$/gm
 
-async function runJson(run, command, args, { repo, signal }) {
+async function runChecked(run, command, args, { repo, signal }) {
   const result = await run(command, args, { cwd: repo, signal, cmdShim: true })
   if (result.code !== 0) {
-    throw new AutopilotError(`${command} failed (exit ${result.code}): ${result.stderr.replace(RELAYED_DEBUG_LINE, '').trim()}`, 'TOOL_FAILED')
+    const shown = [command, ...args.filter(arg => arg === '--clear-cache')].join(' ')
+    throw new AutopilotError(`${shown} failed (exit ${result.code}): ${result.stderr.replace(RELAYED_DEBUG_LINE, '').trim()}`, 'TOOL_FAILED')
   }
+
+  return result
+}
+
+async function runJson(run, command, args, context) {
+  const result = await runChecked(run, command, args, context)
 
   let report
   try {
@@ -28,6 +35,9 @@ export function createTools({ run, repo, signal }) {
       const report = await runJson(run, 'npm-dep-upgrade-plan', [project.path, '--format', 'json'], context)
       if (!Array.isArray(report.rows)) throw new AutopilotError('npm-dep-upgrade-plan report has no rows', 'TOOL_OUTPUT')
       return report.rows
+    },
+    async clearCache() {
+      await runChecked(run, 'npm-dep-upgrade', ['--clear-cache'], context)
     },
     upgrade(project, id) {
       const commitArgs = project.gitCommitArgs.map(arg => `--git-commit-arg=${arg}`)

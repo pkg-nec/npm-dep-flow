@@ -16,12 +16,14 @@ import { createTools } from './tools.js'
 const toolDir = path.dirname(path.dirname(fileURLToPath(import.meta.url)))
 
 const helpBody = `Usage: npm-dep-autopilot --config <path> [options]
+       npm-dep-autopilot --clear-cache
 
 Keeps npm dependencies patched: plans and applies vulnerability fixes with the
 npm-dep tools, then pushes branches and opens pull requests through gh.
 
 Options:
-  --config <path>  JSON configuration file (required)
+  --config <path>  JSON configuration file (required unless only clearing caches)
+  --clear-cache    Delete analysis caches (planner, audit, paths, versions); without --config, only clear
   --debug          Log external actions to stderr, including planner and upgrade
   --no-debug       Disable debug logging, overriding NPM_DEP_FLOW_DEBUG
   --version        Show version and tool directory
@@ -29,7 +31,7 @@ Options:
 `
 
 function parseArgs(argv) {
-  const args = { config: null, debug: undefined }
+  const args = { config: null, debug: undefined, clearCache: false }
 
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index]
@@ -39,6 +41,10 @@ function parseArgs(argv) {
       args.config = argv[index]
     }
     else if (arg.startsWith('--config=')) args.config = arg.slice('--config='.length)
+    else if (arg === '--clear-cache') {
+      if (args.clearCache) throw new AutopilotError('Repeated --clear-cache option', 'USAGE')
+      args.clearCache = true
+    }
     else if (arg === '--debug' || arg === '--no-debug') {
       if (args.debug !== undefined) throw new AutopilotError('Repeated debug option', 'USAGE')
       args.debug = arg === '--debug'
@@ -68,9 +74,15 @@ export async function main(argv, { stdout = process.stdout, stderr = process.std
       return 0
     }
     const args = parseArgs(argv)
-    if (!args.config) throw new AutopilotError('--config <path> is required', 'USAGE')
+    if (!args.config && !args.clearCache) throw new AutopilotError('--config <path> is required', 'USAGE')
 
     return await runDebug(args.debug, { stderr }, async () => {
+      if (!args.config) {
+        await createTools({ run: runProcess, repo: process.cwd() }).clearCache()
+        stdout.write('Analysis caches cleared\n')
+        return 0
+      }
+
       const config = await loadConfig(args.config)
       lock = await acquireLock({ repo: config.repo, dir: env.XDG_RUNTIME_DIR || os.tmpdir() })
       if (!lock) {
@@ -87,6 +99,11 @@ export async function main(argv, { stdout = process.stdout, stderr = process.std
       const git = createGit({ run: runProcess, repo: config.repo, defaultBranch: config.defaultBranch, signal })
       await git.assertIdentity()
       const tools = createTools({ run: runProcess, repo: config.repo, signal })
+      if (args.clearCache) {
+        await tools.clearCache()
+        log('Analysis caches cleared')
+      }
+
       const outcome = await runAutopilot({ config, gh, git, tools, deadline, log })
       log(outcome === 'deadline' ? 'Deadline reached; abandoning current work' : 'No completely solvable findings remain')
       return 0

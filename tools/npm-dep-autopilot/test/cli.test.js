@@ -57,7 +57,7 @@ test('--help aligns option descriptions to one column', async () => {
   const longest = Math.max(...rows.map(match => match[1].length))
 
   assert.equal(code, 0)
-  assert.equal(rows.length, 5)
+  assert.equal(rows.length, 6)
   assert.equal(new Set(columns).size, 1)
   assert.equal(columns[0], 2 + longest + 2)
 })
@@ -212,4 +212,65 @@ test('--help takes precedence over --version', async () => {
   const { stdout } = await runCli(['--version', '--help'])
 
   assert.match(stdout, /^Usage: /m)
+})
+
+test('--clear-cache alone clears the chain without config, lock or gh login', { skip: !posix }, async () => {
+  const { fakes, env } = scenario()
+  writeFileSync(path.join(fakes.stateDir, 'gh-logged-out'), '1')
+  const { code, stderr } = await runCli(['--clear-cache'], env)
+  const calls = readCalls(fakes)
+
+  assert.equal(code, 0, stderr)
+  assert.deepEqual(calls.map(call => [call.name, call.args]), [['npm-dep-upgrade', ['--clear-cache']]])
+})
+
+test('--clear-cache with --config clears once at startup, then runs normally', { skip: !posix, timeout: 60000 }, async () => {
+  const { fakes, repos, env } = scenario()
+  const { code, stderr } = await runCli(['--config', await writeConfig(repos), '--clear-cache'], env)
+  const calls = toolCalls(fakes)
+
+  assert.equal(code, 0, stderr)
+  assert.deepEqual([calls[0].name, calls[0].args], ['npm-dep-upgrade', ['--clear-cache']])
+  assert.equal(calls.filter(call => call.args.includes('--clear-cache')).length, 1)
+  assert.ok(calls.findIndex(call => call.name === 'npm-dep-upgrade-plan') > 0)
+  assert.ok(ghCalls(fakes).some(call => call[0] === 'pr' && call[1] === 'create'))
+})
+
+test('a failing cache clear stops the run with exit 1 before any planning', { skip: !posix }, async () => {
+  const { fakes, repos, env } = scenario()
+  writeFileSync(path.join(fakes.stateDir, 'clear-fails'), '1')
+  const { code, stderr } = await runCli(['--config', await writeConfig(repos), '--clear-cache'], env)
+
+  assert.equal(code, 1)
+  assert.match(stderr, /cache is locked/)
+  assert.equal(toolCalls(fakes).some(call => call.name === 'npm-dep-upgrade-plan'), false)
+})
+
+test('a failing cache clear without config exits 1', { skip: !posix }, async () => {
+  const { fakes, env } = scenario()
+  writeFileSync(path.join(fakes.stateDir, 'clear-fails'), '1')
+  const { code, stderr } = await runCli(['--clear-cache'], env)
+
+  assert.equal(code, 1)
+  assert.match(stderr, /cache is locked/)
+})
+
+test('a repeated --clear-cache is an error', async () => {
+  const { code, stderr } = await runCli(['--clear-cache', '--clear-cache'])
+
+  assert.equal(code, 1)
+  assert.match(stderr, /Repeated --clear-cache option/)
+})
+
+test('without --config or --clear-cache the config is required', async () => {
+  const { code, stderr } = await runCli(['--debug'])
+
+  assert.equal(code, 1)
+  assert.match(stderr, /--config/)
+})
+
+test('--help lists --clear-cache', async () => {
+  const { stdout } = await runCli(['--help'])
+
+  assert.match(stdout, /^ {2}--clear-cache /m)
 })
