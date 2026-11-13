@@ -13,6 +13,7 @@ Each tool is an independent Node.js project under `tools/`, with its own package
 | [npm-dep-versions](tools/npm-dep-versions/README.md) | List stable or prerelease versions and publication dates with semantic version filters and a cached catalog. |
 | [npm-dep-upgrade](tools/npm-dep-upgrade/README.md) | Apply all actions (within-range, parent, Angular toolchain and Angular runtime upgrades) for one planner finding, including partial fixes, and commit each upgrade. |
 | [npm-dep-upgrade-plan](tools/npm-dep-upgrade-plan/README.md) | Report per-installation eligibility for read-only vulnerability remediation strategies: within-range updates, bounded parent upgrades, Angular toolchain upgrades and Angular runtime upgrades. |
+| [npm-dep-autopilot](tools/npm-dep-autopilot/README.md) | Run unattended on a server: plan and apply complete vulnerability fixes with the other tools, push branches and open `dependencies` pull requests through `gh`, waiting for each merge. |
 
 `npm-dep-audit` uses the separately installed `npm-dep-paths` CLI to show which declared requirements resolved to vulnerable versions. Install `npm-dep-paths` as a standalone command and keep it on `PATH` when running the audit tool; each tool has its own setup and usage instructions in its README.
 
@@ -20,9 +21,11 @@ Each tool is an independent Node.js project under `tools/`, with its own package
 
 `npm-dep-upgrade` reruns the planner, accepts an optional project directory plus one full or abbreviated item hash, and executes its compatible-consumer actions with scripts disabled, verifies their combined effect, and creates one commit per actual upgrade. Partial remediation preserves incompatible consumers. Planner and upgrade output use schema version 3; audit, paths, and versions retain version 2. It requires all four analysis CLIs on `PATH` and clean dependency files with an empty staging area.
 
+`npm-dep-autopilot` calls the planner and upgrade CLIs, `git` and `gh` on a schedule (cron) to turn complete findings into pull requests one at a time. It needs all five commands on `PATH`, a logged-in `gh` and a dedicated clone; see its guide for the crontab setup.
+
 ## Analysis caches
 
-All four analysis tools cache structured results outside the target project by default. Paths invalidates by project content and query; versions enforces catalog TTLs, while audit and upgrade planning enforce source/advisory TTLs (one hour by default). Output formats share results. Use `--no-cache` on any analysis tool to bypass its cache; planner and audit propagate bypass to their nested analysis calls. Bypass leaves stored entries untouched, so it cannot repair a stale or wrong one. Use `--clear-cache` for that: the tool deletes its whole cache directory (`XDG_CACHE_HOME/<tool>` or `~/.cache/<tool>`), forwards the flag to the analysis tools it runs (planner to audit and versions, audit to paths, upgrade to planner), then runs normally and writes fresh entries. Required arguments are waived for clearing: `--clear-cache` alone (no selector, package name, item ID or project argument) only clears the caches of the tool and its chain and exits 0 without analysis. A cache that cannot be cleared is an error. Versions, audit, and planner also accept `--cache-ttl`, such as `30m`.
+All four analysis tools cache structured results outside the target project by default. Paths invalidates by project content and query; versions enforces catalog TTLs, while audit and upgrade planning enforce source/advisory TTLs (one hour by default). Output formats share results. Use `--no-cache` on any analysis tool to bypass its cache; planner and audit propagate bypass to their nested analysis calls. Bypass leaves stored entries untouched, so it cannot repair a stale or wrong one. Use `--clear-cache` for that: the tool deletes its whole cache directory (`XDG_CACHE_HOME/<tool>` or `~/.cache/<tool>`), forwards the flag to the analysis tools it runs (planner to audit and versions, audit to paths, upgrade to planner, autopilot to upgrade), then runs normally and writes fresh entries. Required arguments are waived for clearing: `--clear-cache` alone (no selector, package name, item ID, project argument or autopilot `--config`) only clears the caches of the tool and its chain and exits 0 without analysis. A cache that cannot be cleared is an error. Versions, audit, and planner also accept `--cache-ttl`, such as `30m`.
 
 `npm-dep-versions react --major 19` lists stable releases with dates; add `--all` for prereleases or use `--range '>=19.0.0 <20'` for semantic version bounds. Its `--project` selects npm configuration context without requiring dependency files. Catalog filters and formats share cached data, and planner results expire no later than their oldest audit or catalog source.
 
@@ -38,7 +41,7 @@ npm-dep-upgrade-plan /path/to/project --debug --format json > report.json 2> deb
 
 The report stays on stdout. Each subprocess has a start record with its command, arguments and working directory, followed by an end record with its duration and exit status, signal or launch error. Records include a process ID and action number so concurrent operations can be paired. Logs cover npm context queries, registry lookups, audits, sibling tools, and upgrade's installs, Git commands and hook runner. Upgrade's direct security requests log their HTTP method, endpoint and outcome.
 
-Debug mode propagates to sibling tools and streams their debug records to the caller. Use versions of all five tools that support `--debug`. Cache hits, misses and bypasses are logged; debug mode keeps normal cache behavior. Use `--no-cache` on an analysis tool when you also want fresh analysis.
+Debug mode propagates to sibling tools and streams their debug records to the caller; `npm-dep-autopilot` does the same for the planner and upgrade tool it runs. Use versions of all six tools that support `--debug`. Cache hits, misses and bypasses are logged; debug mode keeps normal cache behavior. Use `--no-cache` on an analysis tool when you also want fresh analysis.
 
 Credentials in command arguments and URLs are redacted. Debug records omit environment values, request bodies and subprocess stdout/stderr. Existing error diagnostics and npm installation progress still follow each tool's normal behavior. Logging covers actions launched by these tools, rather than commands or network requests performed internally by npm or user hooks.
 
@@ -55,3 +58,4 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the contribution guide, including the
 - [Upgrade CLI E2E cases and fixture manifests](docs/superpowers/specs/2026-10-20-npm-dep-upgrade-e2e-cases.md)
 
 - [Versions catalog design](docs/superpowers/specs/2026-10-21-npm-dep-versions-design.md)
+- [Autopilot design](docs/superpowers/specs/2026-10-28-npm-dep-autopilot-design.md)
