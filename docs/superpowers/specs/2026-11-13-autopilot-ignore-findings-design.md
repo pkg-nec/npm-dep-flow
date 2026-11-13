@@ -175,10 +175,10 @@ operator's workflow.
 
 One JSON file per clone, in autopilot's own cache directory
 `$XDG_CACHE_HOME/npm-dep-autopilot` (default `~/.cache/npm-dep-autopilot`),
-named `ignored-<digest>.json`. `<digest>` is `sha256(JSON.stringify([repo]))`
+named `ignored-<digest>.json`. `<digest>` is `sha256(JSON.stringify(repo))`
 as 64 hexadecimal characters, with `repo` the clone's resolved absolute path.
 This matches the sibling tools' `result-<digest>.json` naming, which uses the
-same full-length digest of a JSON-stringified key array
+same full-length digest of a JSON-stringified key
 (`tools/npm-dep-paths/src/result-cache.js`). Living in that directory is what
 lets `--clear-cache` remove the files, as the operator asked.
 
