@@ -252,6 +252,9 @@ function releaseCutoff(config, now = Date.now()) {
   return Math.min(now - Math.max(7, configured) * DAY_MS, explicit)
 }
 
+const MAX_REPAIR_PASSES = 5
+const hasProblemEdges = tree => [...tree.inventory.values()].some(n => [...n.edgesOut.values()].some(e => (e.to ? !e.valid : !e.optional)))
+
 // Phase 1 lands the ancestor on exactly the tested release (npm's named update, capped at that release's publication
 // time). That cap would also hold back everything the new release brings in, so phase 2 removes those new or changed
 // installations from the tree and lets npm resolve them again under the real cutoff: the newest releases that are old
@@ -269,8 +272,16 @@ async function landAncestor({ Arborist, opts, choice, releasedAt, cutoff, load }
     if (node) node.parent = null
   }
   arborist.virtualTree = virtual
-  const ideal = await arborist.buildIdealTree()
+  let ideal = await arborist.buildIdealTree()
   await ideal.meta.save()
+  // npm only revisits the invalid edges of installations reachable from the root when the tree is loaded. A surviving
+  // installation whose only route ran through a removed one, such as the dependent of a removed ancestor copy, is not
+  // reachable then, so it keeps an edge to a nested copy removed above. Loading the saved lockfile again makes it
+  // reachable, and npm places the missing copy under the cutoff while every valid installation stays as it is.
+  for (let pass = 0; pass < MAX_REPAIR_PASSES && hasProblemEdges(ideal); pass++) {
+    ideal = await new Arborist({ ...opts, before: new Date(cutoff) }).buildIdealTree()
+    await ideal.meta.save()
+  }
   return ideal
 }
 
