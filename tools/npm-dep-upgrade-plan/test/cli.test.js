@@ -868,3 +868,33 @@ test('the @angular/core catalog freshness bounds the cached plan', async (t) => 
   assert.equal(await main(['/project', '--format', 'json', '--cache-ttl', '30m'], createIo().io, deps), 0)
   assert.ok(calls.versions.length > before, 'a shorter TTL refreshes because the @angular/core catalog is too old')
 })
+
+test('resolver options carry the packument identity and drop it under --no-cache', async (t) => {
+  const previous = process.env.XDG_CACHE_HOME
+  process.env.XDG_CACHE_HOME = mkdtempSync(path.join(tmpdir(), 'planner-identity-'))
+  t.after(() => {
+    rmSync(process.env.XDG_CACHE_HOME, { recursive: true, force: true })
+    if (previous === undefined) delete process.env.XDG_CACHE_HOME
+    else process.env.XDG_CACHE_HOME = previous
+  })
+  const { version } = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
+  const run = async (argv) => {
+    const seen = []
+    const deps = parentDeps({ versions: [], upstream: [], resolves: [] })
+    const resolve = deps.resolveChoices
+    deps.readPlanningContext = async () => ({ npmVersion: '12.1.0', configHash: 'h' })
+    deps.resolveChoices = async (project, item, choices, options) => {
+      seen.push(options.packumentIdentity)
+      return resolve(project, item, choices, options)
+    }
+    const io = createIo()
+    assert.equal(await main(argv, io.io, deps), 0, io.stderr)
+    return seen
+  }
+  const cached = await run(['/project', '--format', 'json'])
+  assert.ok(cached.length >= 2, 'within-range and parent resolutions both run')
+  for (const identity of cached) assert.deepEqual(identity, { planner: version, npmVersion: '12.1.0', configHash: 'h' })
+  const bypassed = await run(['/project', '--no-cache', '--format', 'json'])
+  assert.ok(bypassed.length >= 2)
+  for (const identity of bypassed) assert.equal(identity, null)
+})

@@ -67,6 +67,8 @@ async function mainWithDebug(argv, io = process, deps = defaults) {
     const clearControl = options.clearCache ? { clearCache: true } : {}
     const project = await deps.loadProject(options.projectPath)
     const identity = options.noCache ? null : await deps.readPlanningContext(project.root)
+    // The resolver's registry metadata is reusable only under the same planner, npm and npm configuration.
+    options.packumentIdentity = identity && { planner: packageJson.version, npmVersion: identity.npmVersion, configHash: identity.configHash }
     const report = await cachedResult({
       tool: packageJson.name, version: packageJson.version, project, identity,
       ttlMs: options.ttlMs, noCache: options.noCache,
