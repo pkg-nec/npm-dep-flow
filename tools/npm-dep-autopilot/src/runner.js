@@ -1,4 +1,6 @@
+import { debugLog } from './debug.js'
 import { AutopilotError, DeadlineReached } from './errors.js'
+import { storePath } from './ignores.js'
 import { prBody, prPlan } from './naming.js'
 import { drainCandidates, publishesImmediately, rankCandidates, SEVERITIES, skipKey } from './selector.js'
 
@@ -53,18 +55,62 @@ async function planEntries(tools, projects) {
   return entries
 }
 
-async function selectFirst({ tools, config }, skip) {
-  const entries = await planEntries(tools, config.projects)
-  for (const severity of SEVERITIES) {
-    const [candidate] = rankCandidates(entries, severity, skip).candidates
-    if (candidate) return { severity, candidate }
+// The stored ignores are separate from the runtime skip set, which a restart
+// clears, and are reloaded on every selection so a new --ignore is honoured
+// without restarting the app.
+function createIgnores({ config, log, loadIgnores }) {
+  const matched = new Map()
+  let warned = false
+  let recorded = null
+  let firstReadOfCycle = true
+
+  return {
+    startCycle() {
+      matched.clear()
+      firstReadOfCycle = true
+    },
+    async read() {
+      const { entries, unreadable } = await loadIgnores()
+      if (unreadable && !warned) log(`Cannot read the ignore store ${storePath(config.repo)}; continuing with no ignored findings`)
+      warned = unreadable
+      const record = entries.length === 0 ? 'none' : entries.map(entry => `${entry.module}:${entry.id} addedAt=${entry.addedAt}`).join(', ')
+      if (firstReadOfCycle || record !== recorded) {
+        debugLog(`ignores ${record}`)
+        recorded = record
+        firstReadOfCycle = false
+      }
+      return entries
+    },
+    collect(ignored) {
+      for (const { project, row } of ignored) {
+        matched.set(skipKey(project, row), `${project.module}:${row.id.slice(0, 7)} (${row.package}@${row.version})`)
+      }
+    },
+    report() {
+      if (matched.size > 0) log(`Ignoring ${matched.size} finding(s): ${[...matched.values()].join(', ')}`)
+    },
   }
-  return null
 }
 
-async function selectDrain({ tools }, batch, skip) {
+async function selectFirst({ tools, config }, skip, ignores) {
+  const entries = await planEntries(tools, config.projects)
+  const stored = await ignores.read()
+  let first = null
+  // Every severity is ranked even once a candidate is found, so the cycle's
+  // ignore report covers what it passed over at any severity.
+  for (const severity of SEVERITIES) {
+    const { candidates, ignored } = rankCandidates(entries, severity, skip, stored)
+    ignores.collect(ignored)
+    if (!first && candidates[0]) first = { severity, candidate: candidates[0] }
+  }
+  return first
+}
+
+async function selectDrain({ tools }, batch, skip, ignores) {
   const entries = await planEntries(tools, [batch.project])
-  const [candidate] = drainCandidates(rankCandidates(entries, batch.severity, skip).candidates, batch.project.module)
+  const { candidates, ignored } = rankCandidates(entries, batch.severity, skip, await ignores.read())
+  ignores.collect(ignored)
+  const [candidate] = drainCandidates(candidates, batch.project.module)
   return candidate ? { severity: batch.severity, candidate } : null
 }
 
@@ -112,15 +158,23 @@ async function publish({ git, gh, config, log }, { module, items, singleFinding 
   return { status: 'published', branch }
 }
 
-async function workCycle(context, skip) {
-  const { git, log } = context
+async function workCycle(context, skip, ignores) {
+  const { git } = context
   await git.createWorkBranch()
+  ignores.startCycle()
 
+  const result = await applyUpgrades(context, skip, ignores)
+  ignores.report()
+  return result
+}
+
+async function applyUpgrades(context, skip, ignores) {
+  const { log } = context
   let batch = null
   const items = []
 
   for (;;) {
-    const next = batch ? await selectDrain(context, batch, skip) : await selectFirst(context, skip)
+    const next = batch ? await selectDrain(context, batch, skip, ignores) : await selectFirst(context, skip, ignores)
 
     if (!next) {
       if (items.length === 0) return { status: 'done' }
@@ -140,9 +194,10 @@ async function workCycle(context, skip) {
   }
 }
 
-export async function runAutopilot({ config, gh, git, tools, deadline, log }) {
+export async function runAutopilot({ config, gh, git, tools, deadline, log, loadIgnores = async () => ({ entries: [], unreadable: false }) }) {
   const context = { config, gh, git, tools, deadline, log }
   const skip = new Set()
+  const ignores = createIgnores({ config, log, loadIgnores })
 
   try {
     const user = await gh.currentUser()
@@ -151,7 +206,7 @@ export async function runAutopilot({ config, gh, git, tools, deadline, log }) {
       await sync(context)
       if (await waitForOpenPrs({ ...context, user }, expectBranch)) await sync(context)
 
-      const result = await workCycle(context, skip)
+      const result = await workCycle(context, skip, ignores)
       if (result.status === 'done') return 'done'
       if (result.status === 'restart') skip.clear()
       expectBranch = result.status === 'published' ? result.branch : null

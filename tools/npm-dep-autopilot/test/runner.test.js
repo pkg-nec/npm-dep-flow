@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
+import { runDebug } from '../src/debug.js'
 import { DeadlineReached } from '../src/errors.js'
+import { storePath } from '../src/ignores.js'
 import { runAutopilot } from '../src/runner.js'
 import { choice, plannerRow, upgradeReport } from './helpers/fixtures.js'
 
@@ -27,8 +29,9 @@ function reportFor(id, strategies = [WITHIN], commits = 1) {
   return upgradeReport({ id, actions, commits: Array.from({ length: commits }, (_, index) => ({ hash: `h${index}`, subject: `s${id}.${index}` })) })
 }
 
-function makeEnv({ rows = {}, openPrs = [[]], upgrade, rebase = [true], newCommits = [false], dirty = false, onWork = false, sleep, commits = {}, strategies = {}, keepFindings = false, runConfig = config } = {}) {
+function makeEnv({ rows = {}, openPrs = [[]], upgrade, rebase = [true], newCommits = [false], dirty = false, onWork = false, sleep, commits = {}, strategies = {}, keepFindings = false, runConfig = config, loadIgnores } = {}) {
   const events = []
+  const logs = []
   const fixed = new Set()
   const prQueue = [...openPrs]
   const rebaseQueue = [...rebase]
@@ -117,7 +120,10 @@ function makeEnv({ rows = {}, openPrs = [[]], upgrade, rebase = [true], newCommi
     },
   }
 
-  return { events, created, sleeps, run: () => runAutopilot({ config: runConfig, gh, git, tools, deadline, log: () => {} }) }
+  const context = { config: runConfig, gh, git, tools, deadline, log: line => logs.push(line) }
+  if (loadIgnores) context.loadIgnores = loadIgnores
+
+  return { events, created, sleeps, logs, run: () => runAutopilot(context) }
 }
 
 test('waits for an open PR, resyncing before and after, then works', async () => {
@@ -349,6 +355,119 @@ test('a finding that stays reported after a successful upgrade is not retried fo
 
   assert.equal(await env.run(), 'done')
   assert.equal(env.events.filter(event => event.startsWith('upgrade:')).length, 1)
+})
+
+const IGNORED_ID = `a1b2c3d${'0'.repeat(57)}`
+const stored = (module, id) => ({ module, id, addedAt: '2026-11-13T09:12:04.000Z' })
+const ignoringLines = logs => logs.filter(line => line.startsWith('Ignoring '))
+const upgrades = events => events.filter(event => event.startsWith('upgrade:'))
+
+test('an ignored finding is never upgraded', async () => {
+  const env = makeEnv({
+    rows: { web: [finding(IGNORED_ID, [WITHIN], 'critical'), finding('2', [WITHIN], 'critical')] },
+    loadIgnores: async () => ({ entries: [stored('web', 'a1b2c3d')], unreadable: false }),
+  })
+
+  assert.equal(await env.run(), 'done')
+  assert.deepEqual(upgrades(env.events), ['upgrade:web:2'])
+  assert.equal(env.created.length, 1)
+  assert.equal(env.created[0].branch, 'deps/web/pkg2-1.0.1')
+})
+
+test('an ignore added between cycles is honoured without a restart', async () => {
+  let reads = 0
+  const env = makeEnv({
+    rows: { web: [finding('1', [WITHIN], 'critical'), finding(IGNORED_ID, [WITHIN], 'critical')] },
+    loadIgnores: async () => {
+      reads += 1
+      return { entries: reads === 1 ? [] : [stored('web', 'a1b2c3d')], unreadable: false }
+    },
+  })
+
+  assert.equal(await env.run(), 'done')
+  assert.deepEqual(upgrades(env.events), ['upgrade:web:1'])
+  assert.equal(env.created.length, 1)
+})
+
+test('each work cycle logs one line naming the ignored findings', async () => {
+  const env = makeEnv({
+    rows: { web: [finding(IGNORED_ID), finding('1'), finding('22')] },
+    loadIgnores: async () => ({ entries: [stored('web', 'a1b2c3d')], unreadable: false }),
+  })
+
+  assert.equal(await env.run(), 'done')
+  assert.deepEqual(upgrades(env.events), ['upgrade:web:1', 'upgrade:web:22'])
+  assert.deepEqual(ignoringLines(env.logs), [
+    'Ignoring 1 finding(s): web:a1b2c3d (brace-expansion@5.0.9)',
+    'Ignoring 1 finding(s): web:a1b2c3d (brace-expansion@5.0.9)',
+  ])
+})
+
+test('a cycle that publishes nothing still logs the ignored findings', async () => {
+  const env = makeEnv({
+    rows: { web: [finding(IGNORED_ID)], api: [finding(`4c5b6a7${'0'.repeat(57)}`, [WITHIN], 'low')] },
+    loadIgnores: async () => ({ entries: [stored('web', 'a1b2c3d'), stored('api', '4c5b6a7')], unreadable: false }),
+  })
+
+  assert.equal(await env.run(), 'done')
+  assert.equal(env.created.length, 0)
+  assert.deepEqual(ignoringLines(env.logs), ['Ignoring 2 finding(s): web:a1b2c3d (brace-expansion@5.0.9), api:4c5b6a7 (brace-expansion@5.0.9)'])
+})
+
+test('a cycle that ignores nothing logs no ignoring line', async () => {
+  const env = makeEnv({
+    rows: { web: [finding('1', [WITHIN], 'critical')] },
+    loadIgnores: async () => ({ entries: [stored('api', 'a1b2c3d')], unreadable: false }),
+  })
+
+  assert.equal(await env.run(), 'done')
+  assert.deepEqual(upgrades(env.events), ['upgrade:web:1'])
+  assert.deepEqual(ignoringLines(env.logs), [])
+})
+
+test('an unreadable store warns once per run and keeps working', async () => {
+  const env = makeEnv({
+    rows: { web: [finding('1', [WITHIN], 'critical'), finding('2', [WITHIN], 'critical')] },
+    loadIgnores: async () => ({ entries: [], unreadable: true }),
+  })
+
+  assert.equal(await env.run(), 'done')
+  assert.deepEqual(upgrades(env.events), ['upgrade:web:1', 'upgrade:web:2'])
+  assert.deepEqual(env.logs.filter(line => line.startsWith('Cannot read the ignore store')), [
+    `Cannot read the ignore store ${storePath(config.repo)}; continuing with no ignored findings`,
+  ])
+})
+
+test('the loaded ignores are recorded once per cycle and again when they change', async () => {
+  let reads = 0
+  const env = makeEnv({
+    rows: { web: [finding('1'), finding('22')] },
+    loadIgnores: async () => {
+      reads += 1
+      return { entries: reads > 2 ? [stored('web', 'a1b2c3d')] : [], unreadable: false }
+    },
+  })
+  const lines = []
+
+  await runDebug(true, { stderr: { write: line => lines.push(line) } }, env.run)
+
+  assert.deepEqual(lines.filter(line => line.includes(' ignores ')), [
+    '[npm-dep-autopilot debug] ignores none\n',
+    '[npm-dep-autopilot debug] ignores web:a1b2c3d addedAt=2026-11-13T09:12:04.000Z\n',
+    '[npm-dep-autopilot debug] ignores web:a1b2c3d addedAt=2026-11-13T09:12:04.000Z\n',
+  ])
+})
+
+test('a restart clears runtime skips but not ignores', async () => {
+  const env = makeEnv({
+    rows: { web: [finding('1', [WITHIN], 'critical'), finding(IGNORED_ID, [WITHIN], 'critical')] },
+    newCommits: [true, false],
+    rebase: [false],
+    loadIgnores: async () => ({ entries: [stored('web', 'a1b2c3d')], unreadable: false }),
+  })
+
+  assert.equal(await env.run(), 'done')
+  assert.deepEqual(upgrades(env.events), ['upgrade:web:1', 'upgrade:web:1'])
 })
 
 test('a project with an empty module publishes deps: titles and deps/ branches', async () => {

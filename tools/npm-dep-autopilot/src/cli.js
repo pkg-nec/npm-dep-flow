@@ -9,7 +9,7 @@ import { AutopilotError } from './errors.js'
 import { createGh } from './gh.js'
 import { createGit } from './git.js'
 import { clearAllStores, clearStore } from './cache-clear.js'
-import { addIgnores, cacheRoot } from './ignores.js'
+import { addIgnores, cacheRoot, readIgnores } from './ignores.js'
 import { acquireLock } from './lock.js'
 import { runAutopilot } from './runner.js'
 import { runProcess } from './subprocess.js'
@@ -143,7 +143,7 @@ export async function main(argv, { stdout = process.stdout, stderr = process.std
         log('Analysis caches cleared')
       }
 
-      const outcome = await runAutopilot({ config, gh, git, tools, deadline, log })
+      const outcome = await runAutopilot({ config, gh, git, tools, deadline, log, loadIgnores: () => readIgnores(config.repo, cacheRoot(env)) })
       log(outcome === 'deadline' ? 'Deadline reached; abandoning current work' : 'No completely solvable findings remain')
       return 0
     })

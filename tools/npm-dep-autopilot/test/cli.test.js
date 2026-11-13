@@ -412,3 +412,26 @@ test('--ignore with --clear-cache is a usage error', async () => {
   assert.equal(code, 1)
   assert.match(stderr, /--ignore.*--clear-cache|--clear-cache.*--ignore/)
 })
+
+test('a stored ignore keeps the finding out of the run and is logged', { skip: !posix, timeout: 60000 }, async () => {
+  const { fakes, env, file } = await ignoreScenario()
+  const other = {
+    id: '1'.repeat(64),
+    package: 'minimist',
+    version: '1.2.0',
+    targetLocation: 'node_modules/minimist',
+    severity: 'critical',
+    resolution: 'complete',
+    choices: [{ strategy: 'update-within-declared-range', targetPackage: 'minimist', currentVersion: '1.2.0', targetVersion: '1.2.8' }],
+  }
+  const runEnv = { ...env, FAKE_EXTRA_ROWS: JSON.stringify([other]) }
+  const ignored = await runCli(['--config', file, '--ignore', 'web:fffffff'], runEnv)
+  const { code, stdout, stderr } = await runCli(['--config', file], runEnv)
+  const calls = readFileSync(path.join(fakes.stateDir, 'calls.log'), 'utf8').trim().split('\n').map(line => JSON.parse(line))
+  const upgraded = calls.filter(call => call.name === 'npm-dep-upgrade' && call.args[0] !== '--clear-cache').map(call => call.args[1])
+
+  assert.equal(ignored.code, 0, ignored.stderr)
+  assert.equal(code, 0, stderr)
+  assert.deepEqual(upgraded, ['1'.repeat(64)])
+  assert.match(stdout, /^Ignoring 1 finding\(s\): web:fffffff \(brace-expansion@5\.0\.9\)$/m)
+})
