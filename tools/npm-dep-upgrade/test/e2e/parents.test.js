@@ -6,7 +6,7 @@ import { createProject } from './helpers/project.js'
 import { plan, runUpgrade, assertResolved } from './helpers/runner.js'
 import { checked, command } from './helpers/commands.js'
 import { target } from './fixtures/catalog.js'
-import { loosensPin, bringsIn, chain, swapsAffectedHelper, constrained, grandName, helperName, hName, parents, pb, pc, reintroduced, sharedGrand, twoAncestorCopies } from './fixtures/parents.js'
+import { loosensPin, bringsIn, chain, swapsAffectedHelper, constrained, nestedBelowRemoved, jName, sName, grandName, helperName, hName, parents, pb, pc, reintroduced, sharedGrand, twoAncestorCopies } from './fixtures/parents.js'
 
 const runtimes = [process.env.NPM_DEP_UPGRADE_E2E_NPM_CLI, process.env.NPM_DEP_UPGRADE_E2E_COMPAT_NPM_CLI].filter(Boolean)
 const subjects = async f => (await checked(f, 'git', ['log', '--format=%s', `${f.initialHead}..HEAD`])).split('\n').filter(Boolean).reverse()
@@ -373,5 +373,19 @@ for (const npmCli of runtimes) {
     assert.equal((await readManifest(f)).dependencies[pb], '>=1.0.0')
     assert.deepEqual(await subjects(f), [`deps: bump ${pb} from 1.0.1 to 1.1.0`])
     await assertResolved(f, `node_modules/${pb}`, target, '6.0.12')
+  })
+}
+
+for (const npmCli of runtimes) {
+  test(`a nested installation orphaned by the parent upgrade is placed again and the upgrade applies (${npmCli})`, async (t) => {
+    const f = await createProject(nestedBelowRemoved(), { npmCli }, t)
+    const row = finding(await plan(f))
+    assert.equal(row.resolution, 'complete')
+    assert.deepEqual(row.choices.map(c => `${c.strategy}:${c.targetPackage}@${c.targetVersion}`), [`upgrade-via-parent-dependency:${pb}@1.1.0`])
+    const result = await runUpgrade(f, [row.id, '--format', 'json'])
+    assert.equal(result.code, 0, result.stderr)
+    assert.deepEqual(await subjects(f), [`deps: bump ${pb} from 1.0.1 to 1.1.0`])
+    await assertResolved(f, `node_modules/${pb}`, target, '6.0.12')
+    await assertResolved(f, `node_modules/${jName}`, sName, '2.0.1')
   })
 }

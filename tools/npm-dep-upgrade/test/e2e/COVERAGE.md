@@ -65,6 +65,7 @@ Planner and upgrade output use schema version 3; audit/paths/versions remain ver
 | Direct parent range | a root `^` parent (dependencies or devDependencies) is raised to the installed release in `package.json` and the lockfile root, `npm ci` clean; a wider declaration such as `>=1.0.0` is upgraded and left as written |
 | Parent pins the safe version; npm dedupes upward | plan lists within-range and parent actions, executor skips the child (`already-satisfied`), one commit, `complete` |
 | Parent removes the dependency | residual consumer upgraded in a second commit; each commit independently `npm ci` clean; or one commit when the other consumer is pinned (`partial`) |
+| Nested installation orphaned by the parent upgrade | a dependent only reachable through a replaced installation keeps its own nested copy of a shared package (hoisted copy of another major); the copy is placed again, `complete`, one commit |
 | Immediate parent succeeds | planner debug log shows no grandparent catalog request |
 | Grandparent fallback | immediate parent pinned by the grandparent; grandparent upgrade clears the branch |
 | Level three | a safe release three levels up is never evaluated: `none`, no third-level request, executor refuses |

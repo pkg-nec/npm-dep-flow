@@ -118,3 +118,19 @@ export function loosensPin(next = '^6.0.8') {
   s.manifest.dependencies = { [pb]: '^1.0.0' }
   return s
 }
+
+export const jName = 'e2e-j', sName = 'e2e-s', dName = 'e2e-d'
+
+// root -> pb -> target -> j -> s@^2 while root -> d -> s@^1 hoists s@1, so j keeps its own s@2. pb@1.1.0 brings the safe
+// target, and s@2.0.1 is a newer release than the locked s@2.0.0 that is old enough to be used, so npm moves j's s.
+export function nestedBelowRemoved() {
+  const s = parents()
+  s.manifest.dependencies = { [pb]: '^1.0.0', [dName]: '^1.0.0' }
+  s.packages[target] = releases(target, { '6.0.9': [{ [jName]: '^1.0.0' }, 100], '6.0.12': [{ [jName]: '^1.0.0' }, 40, false] })
+  s.packages[pb] = releases(pb, { '1.0.1': [{ [target]: '6.0.9' }, 90], '1.1.0': [{ [target]: '6.0.12' }, 30, false] })
+  delete s.packages[pc]
+  s.packages[dName] = releases(dName, { '1.0.0': [{ [sName]: '^1.0.0' }, 90] })
+  s.packages[jName] = releases(jName, { '1.0.0': [{ [sName]: '^2.0.0' }, 90] })
+  s.packages[sName] = releases(sName, { '1.0.0': [null, 90], '2.0.0': [null, 90], '2.0.1': [null, 45, false] })
+  return s
+}
