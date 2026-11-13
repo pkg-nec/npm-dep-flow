@@ -56,7 +56,7 @@ async function planEntries(tools, projects) {
 async function selectFirst({ tools, config }, skip) {
   const entries = await planEntries(tools, config.projects)
   for (const severity of SEVERITIES) {
-    const [candidate] = rankCandidates(entries, severity, skip)
+    const [candidate] = rankCandidates(entries, severity, skip).candidates
     if (candidate) return { severity, candidate }
   }
   return null
@@ -64,7 +64,7 @@ async function selectFirst({ tools, config }, skip) {
 
 async function selectDrain({ tools }, batch, skip) {
   const entries = await planEntries(tools, [batch.project])
-  const [candidate] = drainCandidates(rankCandidates(entries, batch.severity, skip), batch.project.module)
+  const [candidate] = drainCandidates(rankCandidates(entries, batch.severity, skip).candidates, batch.project.module)
   return candidate ? { severity: batch.severity, candidate } : null
 }
 
