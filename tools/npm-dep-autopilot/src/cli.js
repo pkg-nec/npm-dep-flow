@@ -15,7 +15,7 @@ import { createTools } from './tools.js'
 
 const toolDir = path.dirname(path.dirname(fileURLToPath(import.meta.url)))
 
-const HELP = `Usage: npm-dep-autopilot --config <path> [options]
+const helpBody = `Usage: npm-dep-autopilot --config <path> [options]
 
 Keeps npm dependencies patched: plans and applies vulnerability fixes with the
 npm-dep tools, then pushes branches and opens pull requests through gh.
@@ -24,12 +24,12 @@ Options:
   --config <path>  JSON configuration file (required)
   --debug          Log external actions to stderr, including planner and upgrade
   --no-debug       Disable debug logging, overriding NPM_DEP_FLOW_DEBUG
+  --version        Show version and tool directory
   --help           Show this help
-  --version        Show the version and installed directory
 `
 
 function parseArgs(argv) {
-  const args = { config: null, debug: undefined, help: false, version: false }
+  const args = { config: null, debug: undefined }
 
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index]
@@ -43,8 +43,6 @@ function parseArgs(argv) {
       if (args.debug !== undefined) throw new AutopilotError('Repeated debug option', 'USAGE')
       args.debug = arg === '--debug'
     }
-    else if (arg === '--help') args.help = true
-    else if (arg === '--version') args.version = true
     else throw new AutopilotError(`Unknown argument: ${arg}`, 'USAGE')
   }
 
@@ -61,15 +59,15 @@ export async function main(argv, { stdout = process.stdout, stderr = process.std
   let deadline = null
 
   try {
+    if (argv.includes('--help')) {
+      stdout.write(`npm-dep-autopilot v${await toolVersion()}\n\n${helpBody}`)
+      return 0
+    }
+    if (argv.includes('--version')) {
+      stdout.write(`npm-dep-autopilot v${await toolVersion()}\nLocation: ${toolDir}\n`)
+      return 0
+    }
     const args = parseArgs(argv)
-    if (args.help) {
-      stdout.write(HELP)
-      return 0
-    }
-    if (args.version) {
-      stdout.write(`npm-dep-autopilot ${await toolVersion()}\n${toolDir}\n`)
-      return 0
-    }
     if (!args.config) throw new AutopilotError('--config <path> is required', 'USAGE')
 
     return await runDebug(args.debug, { stderr }, async () => {

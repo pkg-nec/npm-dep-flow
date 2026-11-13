@@ -66,8 +66,8 @@ test('--version prints the tool version and install directory', async () => {
   const { code, stdout } = await runCli(['--version'])
 
   assert.equal(code, 0)
-  assert.match(stdout, /^npm-dep-autopilot \d+\.\d+\.\d+/)
-  assert.ok(stdout.includes(toolDir))
+  assert.match(stdout, /^npm-dep-autopilot v\d+\.\d+\.\d+\nLocation: /)
+  assert.ok(stdout.includes(`Location: ${toolDir}\n`))
 })
 
 test('a missing --config is an error', async () => {
@@ -182,4 +182,34 @@ test('--help lists --no-debug', async () => {
   const { stdout } = await runCli(['--help'])
 
   assert.match(stdout, /^ {2}--no-debug /m)
+})
+
+test('--help starts with the tool name and version, then the usage', async () => {
+  const { stdout } = await runCli(['--help'])
+  const [title, blank, usage] = stdout.split('\n')
+
+  assert.match(title, /^npm-dep-autopilot v\d+\.\d+\.\d+$/)
+  assert.equal(blank, '')
+  assert.match(usage, /^Usage: npm-dep-autopilot /)
+})
+
+test('--help and --version win over argument validation', async () => {
+  for (const args of [['--bogus', '--help'], ['--config', '--help'], ['--help', '--debug', '--no-debug']]) {
+    const { code, stdout } = await runCli(args)
+
+    assert.equal(code, 0, args.join(' '))
+    assert.match(stdout, /^Usage: npm-dep-autopilot /m)
+  }
+  for (const args of [['--bogus', '--version'], ['--config', '--version']]) {
+    const { code, stdout } = await runCli(args)
+
+    assert.equal(code, 0, args.join(' '))
+    assert.match(stdout, /^Location: /m)
+  }
+})
+
+test('--help takes precedence over --version', async () => {
+  const { stdout } = await runCli(['--version', '--help'])
+
+  assert.match(stdout, /^Usage: /m)
 })
