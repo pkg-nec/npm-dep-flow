@@ -440,6 +440,25 @@ test('an unreadable store warns once per run and keeps working, naming the file 
   ])
 })
 
+test('an unreadable store warns again only after a later read succeeds', async () => {
+  const store = storePath(config.repo, join('/elsewhere', 'npm-dep-autopilot'))
+  let reads = 0
+  const env = makeEnv({
+    rows: { web: [finding('1', [WITHIN], 'critical'), finding('2', [WITHIN], 'critical'), finding('3', [WITHIN], 'critical')] },
+    loadIgnores: async () => {
+      reads += 1
+      return { entries: [], unreadable: reads !== 2, path: store }
+    },
+  })
+
+  assert.equal(await env.run(), 'done')
+  assert.ok(reads >= 3)
+  assert.deepEqual(env.logs.filter(line => line.startsWith('Cannot read the ignore store')), [
+    `Cannot read the ignore store ${store}; continuing with no ignored findings`,
+    `Cannot read the ignore store ${store}; continuing with no ignored findings`,
+  ])
+})
+
 test('the loaded ignores are recorded once per cycle and again when they change', async () => {
   let reads = 0
   const env = makeEnv({

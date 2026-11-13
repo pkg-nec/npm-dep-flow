@@ -104,7 +104,7 @@ npm-dep-autopilot --config ./autopilot.json --ignore :a1b2c3d
 - **Ignore first, then close the pull request.** A closed pull request is treated like a merged one, so the next cycle may select the same finding again unless the ignore is already in place.
 - Entries never expire. They are stored per clone in `$XDG_CACHE_HOME/npm-dep-autopilot/ignored-<digest>.json` (default `~/.cache/npm-dep-autopilot/`), where `<digest>` is the SHA-256 of the JSON-encoded `repo` value. Outside the clone, they survive the resets and branch deletions the app performs.
 - The only way to remove an ignore is `--clear-cache`, and it is all-or-nothing: with `--config` it removes that clone's ignores (and the analysis caches), alone it removes every clone's. `--ignore` cannot be combined with `--clear-cache`.
-- If the store cannot be read, the run continues with no ignored findings and logs one warning per run: `Cannot read the ignore store <path>; continuing with no ignored findings`. The consequence is visible: the breaking upgrade is attempted again and lands in the next pull request. Treat the warning as the signal to add the ignore again.
+- If the store cannot be read, the run continues with no ignored findings and logs one warning, repeated only if a later read succeeds and then fails again: `Cannot read the ignore store <path>; continuing with no ignored findings`. The consequence is visible: the breaking upgrade is attempted again and lands in the next pull request. Treat the warning as the signal to add the ignore again.
 
 ## Scheduling with cron
 

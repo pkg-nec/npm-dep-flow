@@ -83,6 +83,7 @@ function createIgnores({ log, loadIgnores }) {
     },
     collect(ignored) {
       for (const { project, row } of ignored) {
+        // Bare module on purpose: operators paste this after --ignore, and an empty module really is `:<id>`; a relativePath fallback would be rejected.
         matched.set(skipKey(project, row), `${project.module}:${row.id.slice(0, 7)} (${row.package}@${row.version})`)
       }
     },
@@ -163,6 +164,7 @@ async function workCycle(context, skip, ignores) {
   await git.createWorkBranch()
   ignores.startCycle()
 
+  // DeadlineReached unwinds past report() on purpose: the cycle is abandoned and the next run reports its ignores again.
   const result = await applyUpgrades(context, skip, ignores)
   ignores.report()
   return result

@@ -19,7 +19,7 @@
 - Commit messages use Conventional Commits headers, scope `autopilot`.
 - Bump `tools/npm-dep-autopilot` exactly once, in the final commit, minor (0.1.0 → 0.2.0), with `package.json` and `package-lock.json` root metadata in sync.
 - Cache root is `$XDG_CACHE_HOME/npm-dep-autopilot`, falling back to `~/.cache/npm-dep-autopilot`, matching the sibling tools.
-- Store filename: `ignored-<digest>.json`, `<digest>` = `sha256(JSON.stringify([repo]))` as 64 lowercase hex characters, `repo` being the clone's resolved absolute path.
+- Store filename: `ignored-<digest>.json`, `<digest>` = `sha256(JSON.stringify(resolve(repo)))` as 64 lowercase hex characters, `repo` being the clone's resolved absolute path.
 - An unreadable store always means zero entries and never a nonzero exit.
 - Code must stay portable to Windows even though the executable tests are skipped there.
 
