@@ -1,9 +1,11 @@
 import { AutopilotError } from './errors.js'
 
-async function runJson(run, command, args, { repo, signal, debug }) {
-  const result = await run(command, args, { cwd: repo, signal, debug, cmdShim: true })
+const RELAYED_DEBUG_LINE = /^\[npm-dep-[a-z-]+ debug\] .*$/gm
+
+async function runJson(run, command, args, { repo, signal }) {
+  const result = await run(command, args, { cwd: repo, signal, cmdShim: true })
   if (result.code !== 0) {
-    throw new AutopilotError(`${command} failed (exit ${result.code}): ${result.stderr.trim()}`, 'TOOL_FAILED')
+    throw new AutopilotError(`${command} failed (exit ${result.code}): ${result.stderr.replace(RELAYED_DEBUG_LINE, '').trim()}`, 'TOOL_FAILED')
   }
 
   let report
@@ -18,8 +20,8 @@ async function runJson(run, command, args, { repo, signal, debug }) {
   return report
 }
 
-export function createTools({ run, repo, signal, debug }) {
-  const context = { repo, signal, debug }
+export function createTools({ run, repo, signal }) {
+  const context = { repo, signal }
 
   return {
     async plan(project) {

@@ -41,7 +41,7 @@ npm-dep-upgrade-plan /path/to/project --debug --format json > report.json 2> deb
 
 The report stays on stdout. Each subprocess has a start record with its command, arguments and working directory, followed by an end record with its duration and exit status, signal or launch error. Records include a process ID and action number so concurrent operations can be paired. Logs cover npm context queries, registry lookups, audits, sibling tools, and upgrade's installs, Git commands and hook runner. Upgrade's direct security requests log their HTTP method, endpoint and outcome.
 
-Debug mode propagates to sibling tools and streams their debug records to the caller. Use versions of all five tools that support `--debug`. Cache hits, misses and bypasses are logged; debug mode keeps normal cache behavior. Use `--no-cache` on an analysis tool when you also want fresh analysis.
+Debug mode propagates to sibling tools and streams their debug records to the caller; `npm-dep-autopilot` does the same for the planner and upgrade tool it runs. Use versions of all six tools that support `--debug`. Cache hits, misses and bypasses are logged; debug mode keeps normal cache behavior. Use `--no-cache` on an analysis tool when you also want fresh analysis.
 
 Credentials in command arguments and URLs are redacted. Debug records omit environment values, request bodies and subprocess stdout/stderr. Existing error diagnostics and npm installation progress still follow each tool's normal behavior. Logging covers actions launched by these tools, rather than commands or network requests performed internally by npm or user hooks.
 

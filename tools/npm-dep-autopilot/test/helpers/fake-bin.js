@@ -2,7 +2,7 @@ import { chmodSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 
-const header = '#!/usr/bin/env node\nconst fs = require("node:fs")\nconst path = require("node:path")\nconst { execFileSync } = require("node:child_process")\nconst state = process.env.FAKE_STATE_DIR\nconst args = process.argv.slice(2)\n'
+const header = '#!/usr/bin/env node\nconst fs = require("node:fs")\nconst path = require("node:path")\nconst { execFileSync } = require("node:child_process")\nconst state = process.env.FAKE_STATE_DIR\nconst args = process.argv.slice(2)\nconst name = path.basename(process.argv[1])\nfs.appendFileSync(path.join(state, "calls.log"), JSON.stringify({ name, args, debugEnv: process.env.NPM_DEP_FLOW_DEBUG ?? null }) + "\\n")\nif (name.startsWith("npm-dep-") && (args.includes("--debug") || process.env.NPM_DEP_FLOW_DEBUG === "1")) process.stderr.write("[" + name + " debug] fake record\\n")\n'
 
 const scripts = {
   'gh': `${header}
@@ -18,6 +18,13 @@ const rows = upgraded ? [] : [{ id: 'f'.repeat(64), package: 'brace-expansion', 
 console.log(JSON.stringify({ schemaVersion: 3, auditedAt: new Date().toISOString(), rows }))
 `,
   'npm-dep-upgrade': `${header}
+if (args[0] === '--clear-cache') {
+  if (fs.existsSync(path.join(state, 'clear-fails'))) {
+    process.stderr.write('cache is locked\\n')
+    process.exit(1)
+  }
+  process.exit(0)
+}
 const project = args[0]
 fs.writeFileSync(path.join(project, 'fixed.txt'), 'fixed')
 execFileSync('git', ['add', 'fixed.txt'], { cwd: project })

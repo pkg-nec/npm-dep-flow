@@ -1,7 +1,7 @@
 import { AutopilotError } from './errors.js'
 
-export function createGh({ run, repo, signal, debug }) {
-  const exec = args => run('gh', args, { cwd: repo, signal, debug })
+export function createGh({ run, repo, signal }) {
+  const exec = args => run('gh', args, { cwd: repo, signal })
 
   async function execOrThrow(args) {
     const result = await exec(args)

@@ -21,11 +21,14 @@ npm install --global . --ignore-scripts
 ```sh
 npm-dep-autopilot --config /etc/npm-dep-autopilot.json
 npm-dep-autopilot --config ./autopilot.json --debug
+npm-dep-autopilot --config ./autopilot.json --no-debug
 npm-dep-autopilot --help
 npm-dep-autopilot --version
 ```
 
-`--debug` logs every external command (start and end records) to stderr. Progress lines go to stdout.
+Progress lines go to stdout.
+
+`--debug` logs every external command (`git`, `gh`, `npm-dep-upgrade-plan`, `npm-dep-upgrade`) to stderr, in the same format as the other tools: `[npm-dep-autopilot debug] start <pid>:<n> process {...}` followed by `end <pid>:<n> process exit=<code> duration=<ms>ms`. Credentials in arguments and URLs are redacted, and subprocess output is not logged. Debug mode is passed down to the planner and upgrade tool (`--debug` plus `NPM_DEP_FLOW_DEBUG=1`), and their `[npm-dep-<tool> debug]` records, including those of the tools they run, are relayed to stderr. `--no-debug` disables debug logging even when `NPM_DEP_FLOW_DEBUG=1` is inherited from the environment, which otherwise enables it.
 
 ## Configuration
 

@@ -2,8 +2,8 @@ import { AutopilotError } from './errors.js'
 
 const WORK_BRANCH = 'deps/wip'
 
-export function createGit({ run, repo, defaultBranch, signal, debug }) {
-  const exec = args => run('git', args, { cwd: repo, signal, debug })
+export function createGit({ run, repo, defaultBranch, signal }) {
+  const exec = args => run('git', args, { cwd: repo, signal })
   const remoteDefault = `origin/${defaultBranch}`
 
   async function git(args) {

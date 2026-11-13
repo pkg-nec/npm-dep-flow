@@ -57,7 +57,7 @@ test('--help aligns option descriptions to one column', async () => {
   const longest = Math.max(...rows.map(match => match[1].length))
 
   assert.equal(code, 0)
-  assert.equal(rows.length, 4)
+  assert.equal(rows.length, 5)
   assert.equal(new Set(columns).size, 1)
   assert.equal(columns[0], 2 + longest + 2)
 })
@@ -120,4 +120,66 @@ test('fixes a critical finding, opens a labelled PR and finishes', { skip: !posi
   assert.equal(create[create.indexOf('--title') + 1], 'deps(web): bump brace-expansion from 5.0.9 to 5.0.12')
   assert.equal(create[create.indexOf('--head') + 1], 'deps/web/brace-expansion-5.0.12')
   assert.match(git(repos.remote, 'branch', '--list', 'deps/web/brace-expansion-5.0.12'), /brace-expansion-5.0.12/)
+})
+
+const readCalls = fakes => readFileSync(path.join(fakes.stateDir, 'calls.log'), 'utf8').trim().split('\n').map(line => JSON.parse(line))
+const ghCalls = fakes => readFileSync(path.join(fakes.stateDir, 'gh-calls.log'), 'utf8').trim().split('\n').map(line => JSON.parse(line))
+const toolCalls = fakes => readCalls(fakes).filter(call => call.name !== 'gh')
+
+test('--debug logs with the tool prefix, passes debug to planner and upgrade only, and relays their records', { skip: !posix, timeout: 60000 }, async () => {
+  const { fakes, repos, env } = scenario()
+  const { code, stderr } = await runCli(['--config', await writeConfig(repos), '--debug'], env)
+  const planner = toolCalls(fakes).find(call => call.name === 'npm-dep-upgrade-plan')
+  const upgrade = toolCalls(fakes).find(call => call.name === 'npm-dep-upgrade' && call.args[1] !== undefined)
+
+  assert.equal(code, 0)
+  assert.match(stderr, /^\[npm-dep-autopilot debug\] start \d+:\d+ process \{"command":"git",/m)
+  assert.match(stderr, /^\[npm-dep-autopilot debug\] end \d+:\d+ process exit=0 duration=\d+ms$/m)
+  assert.match(stderr, /^\[npm-dep-upgrade-plan debug\] fake record$/m)
+  assert.match(stderr, /^\[npm-dep-upgrade debug\] fake record$/m)
+  assert.equal(stderr.split('\n').some(line => line.startsWith('[debug]')), false)
+  assert.ok(planner.args.includes('--debug'))
+  assert.ok(upgrade.args.includes('--debug'))
+  assert.equal(planner.debugEnv, '1')
+  assert.equal(ghCalls(fakes).some(call => call.includes('--debug')), false)
+})
+
+test('without debug nothing is logged or passed down', { skip: !posix, timeout: 60000 }, async () => {
+  const { fakes, repos, env } = scenario()
+  const { code, stderr } = await runCli(['--config', await writeConfig(repos)], env)
+
+  assert.equal(code, 0)
+  assert.doesNotMatch(stderr, /debug\]/)
+  assert.equal(toolCalls(fakes).some(call => call.args.includes('--debug') || call.debugEnv === '1'), false)
+})
+
+test('an inherited NPM_DEP_FLOW_DEBUG=1 enables debug', { skip: !posix, timeout: 60000 }, async () => {
+  const { fakes, repos, env } = scenario()
+  const { code, stderr } = await runCli(['--config', await writeConfig(repos)], { ...env, NPM_DEP_FLOW_DEBUG: '1' })
+
+  assert.equal(code, 0)
+  assert.match(stderr, /^\[npm-dep-autopilot debug\] start /m)
+  assert.ok(toolCalls(fakes).some(call => call.name === 'npm-dep-upgrade-plan' && call.args.includes('--debug')))
+})
+
+test('--no-debug overrides an inherited NPM_DEP_FLOW_DEBUG=1', { skip: !posix, timeout: 60000 }, async () => {
+  const { fakes, repos, env } = scenario()
+  const { code, stderr } = await runCli(['--config', await writeConfig(repos), '--no-debug'], { ...env, NPM_DEP_FLOW_DEBUG: '1' })
+
+  assert.equal(code, 0)
+  assert.doesNotMatch(stderr, /debug\]/)
+  assert.equal(toolCalls(fakes).some(call => call.args.includes('--debug') || call.debugEnv === '1'), false)
+})
+
+test('--debug together with --no-debug is an error', async () => {
+  const { code, stderr } = await runCli(['--config', 'x.json', '--debug', '--no-debug'])
+
+  assert.equal(code, 1)
+  assert.match(stderr, /Repeated debug option/)
+})
+
+test('--help lists --no-debug', async () => {
+  const { stdout } = await runCli(['--help'])
+
+  assert.match(stdout, /^ {2}--no-debug /m)
 })

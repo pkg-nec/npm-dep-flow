@@ -70,3 +70,13 @@ test('upgrade omits --module for an empty module name', async () => {
 
   assert.deepEqual(calls[0].args, ['/repo/apps/web', 'abc', '--git-commit-arg=--no-verify', '--format', 'json'])
 })
+
+test('relayed debug lines are not part of a tool failure message', async () => {
+  const { run } = fakeRun({ code: 1, stdout: '', stderr: '[npm-dep-upgrade debug] start 1:1 process {}\nboom\n[npm-dep-upgrade-plan debug] end 1:2 process exit=1 duration=3ms\n' })
+
+  await assert.rejects(createTools({ run, repo: '/repo' }).plan(project), (error) => {
+    assert.match(error.message, /boom/)
+    assert.doesNotMatch(error.message, /debug\]/)
+    return true
+  })
+})

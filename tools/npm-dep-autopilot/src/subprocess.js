@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process'
+import { debugSpawn } from './debug.js'
 import { AutopilotError } from './errors.js'
 
 const UNSAFE_WINDOWS_ARGUMENT = /[&"%|^<>\r\n]/
@@ -17,7 +18,6 @@ export function runProcess(commandName, args, options = {}) {
     cmdShim = false,
     spawnImpl = spawn,
     platform = process.platform,
-    debug,
     killProcess = (pid, killSignal) => process.kill(pid, killSignal),
     killGraceMs = 5000,
   } = options
@@ -30,7 +30,6 @@ export function runProcess(commandName, args, options = {}) {
 
     const windows = platform === 'win32'
     const windowsShim = cmdShim && windows
-    const startedAt = Date.now()
     let command = commandName
     let commandArgs = args
 
@@ -46,9 +45,8 @@ export function runProcess(commandName, args, options = {}) {
     }
 
     let child = null
-    debug?.(`start pid=- ${commandName} ${args.join(' ')} cwd=${cwd ?? process.cwd()}`)
     try {
-      child = spawnImpl(command, commandArgs, { cwd, shell: windowsShim, detached: !windows, stdio: ['ignore', 'pipe', 'pipe'] })
+      child = debugSpawn(spawnImpl, command, commandArgs, { cwd, shell: windowsShim, detached: !windows, stdio: ['ignore', 'pipe', 'pipe'] })
     }
     catch (error) {
       reject(error)
@@ -112,7 +110,6 @@ export function runProcess(commandName, args, options = {}) {
         reject(signal.reason)
         return
       }
-      debug?.(`end ${commandName} exit ${code} duration=${Date.now() - startedAt}ms`)
       resolve({ code, stdout, stderr })
     }))
     signal?.addEventListener('abort', onAbort, { once: true })

@@ -4,6 +4,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { loadConfig } from './config.js'
 import { computeDeadline, createDeadline } from './deadline.js'
+import { runDebug } from './debug.js'
 import { AutopilotError } from './errors.js'
 import { createGh } from './gh.js'
 import { createGit } from './git.js'
@@ -14,20 +15,21 @@ import { createTools } from './tools.js'
 
 const toolDir = path.dirname(path.dirname(fileURLToPath(import.meta.url)))
 
-const HELP = `Usage: npm-dep-autopilot --config <path> [--debug]
+const HELP = `Usage: npm-dep-autopilot --config <path> [options]
 
 Keeps npm dependencies patched: plans and applies vulnerability fixes with the
 npm-dep tools, then pushes branches and opens pull requests through gh.
 
 Options:
   --config <path>  JSON configuration file (required)
-  --debug          Log external actions to stderr
+  --debug          Log external actions to stderr, including planner and upgrade
+  --no-debug       Disable debug logging, overriding NPM_DEP_FLOW_DEBUG
   --help           Show this help
   --version        Show the version and installed directory
 `
 
 function parseArgs(argv) {
-  const args = { config: null, debug: false, help: false, version: false }
+  const args = { config: null, debug: undefined, help: false, version: false }
 
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index]
@@ -37,7 +39,10 @@ function parseArgs(argv) {
       args.config = argv[index]
     }
     else if (arg.startsWith('--config=')) args.config = arg.slice('--config='.length)
-    else if (arg === '--debug') args.debug = true
+    else if (arg === '--debug' || arg === '--no-debug') {
+      if (args.debug !== undefined) throw new AutopilotError('Repeated debug option', 'USAGE')
+      args.debug = arg === '--debug'
+    }
     else if (arg === '--help') args.help = true
     else if (arg === '--version') args.version = true
     else throw new AutopilotError(`Unknown argument: ${arg}`, 'USAGE')
@@ -67,26 +72,27 @@ export async function main(argv, { stdout = process.stdout, stderr = process.std
     }
     if (!args.config) throw new AutopilotError('--config <path> is required', 'USAGE')
 
-    const config = await loadConfig(args.config)
-    lock = await acquireLock({ repo: config.repo, dir: env.XDG_RUNTIME_DIR || os.tmpdir() })
-    if (!lock) {
-      stdout.write('Another npm-dep-autopilot instance is already running; exiting\n')
+    return await runDebug(args.debug, { stderr }, async () => {
+      const config = await loadConfig(args.config)
+      lock = await acquireLock({ repo: config.repo, dir: env.XDG_RUNTIME_DIR || os.tmpdir() })
+      if (!lock) {
+        stdout.write('Another npm-dep-autopilot instance is already running; exiting\n')
+        return 0
+      }
+
+      const log = line => stdout.write(`${line}\n`)
+      deadline = createDeadline({ deadlineAt: computeDeadline(now(), config.deadline) })
+      const { signal } = deadline
+      const gh = createGh({ run: runProcess, repo: config.repo, signal })
+      await gh.assertLoggedIn()
+
+      const git = createGit({ run: runProcess, repo: config.repo, defaultBranch: config.defaultBranch, signal })
+      await git.assertIdentity()
+      const tools = createTools({ run: runProcess, repo: config.repo, signal })
+      const outcome = await runAutopilot({ config, gh, git, tools, deadline, log })
+      log(outcome === 'deadline' ? 'Deadline reached; abandoning current work' : 'No completely solvable findings remain')
       return 0
-    }
-
-    const debug = args.debug ? line => stderr.write(`[debug] ${line}\n`) : undefined
-    const log = line => stdout.write(`${line}\n`)
-    deadline = createDeadline({ deadlineAt: computeDeadline(now(), config.deadline) })
-    const { signal } = deadline
-    const gh = createGh({ run: runProcess, repo: config.repo, signal, debug })
-    await gh.assertLoggedIn()
-
-    const git = createGit({ run: runProcess, repo: config.repo, defaultBranch: config.defaultBranch, signal, debug })
-    await git.assertIdentity()
-    const tools = createTools({ run: runProcess, repo: config.repo, signal, debug })
-    const outcome = await runAutopilot({ config, gh, git, tools, deadline, log })
-    log(outcome === 'deadline' ? 'Deadline reached; abandoning current work' : 'No completely solvable findings remain')
-    return 0
+    })
   }
   catch (error) {
     stderr.write(`npm-dep-autopilot: ${error.message}\n`)

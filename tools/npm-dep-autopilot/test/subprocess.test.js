@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { EventEmitter } from 'node:events'
 import test from 'node:test'
+import { runDebug } from '../src/debug.js'
 import { AutopilotError, DeadlineReached } from '../src/errors.js'
 import { runProcess } from '../src/subprocess.js'
 
@@ -84,14 +85,42 @@ test('a spawn error rejects', async () => {
   await assert.rejects(runProcess('git', [], { spawnImpl }), /ENOENT/)
 })
 
-test('debug receives start and end records', async () => {
+test('under an enabled debug scope the launch is logged with start and end records', async () => {
   const { spawnImpl } = fakeSpawn({ code: 0 })
-  const lines = []
-  await runProcess('git', ['fetch'], { cwd: '/repo', spawnImpl, platform: 'linux', debug: line => lines.push(line) })
+  const output = []
+  await runDebug(true, { stderr: { write: line => output.push(line) } }, () => runProcess('git', ['fetch'], { cwd: '/repo', spawnImpl, platform: 'linux' }))
 
-  assert.equal(lines.length, 2)
-  assert.match(lines[0], /start .*git fetch.*\/repo/)
-  assert.match(lines[1], /end .*exit 0/)
+  assert.equal(output.length, 2)
+  assert.match(output[0], /^\[npm-dep-autopilot debug\] start \d+:1 process \{"command":"git","args":\["fetch"\],"cwd":"\/repo"\}/)
+  assert.match(output[1], /end \d+:1 process exit=0 duration=\d+ms/)
+})
+
+test('siblings get --debug and the environment flag, on Unix and through the Windows shell', async () => {
+  const unix = fakeSpawn()
+  const windows = fakeSpawn()
+  await runDebug(true, { stderr: { write() {} } }, async () => {
+    await runProcess('npm-dep-upgrade-plan', ['/p', '--format', 'json'], { spawnImpl: unix.spawnImpl, platform: 'linux', cmdShim: true })
+    await runProcess('npm-dep-upgrade', ['/p', 'abc'], { spawnImpl: windows.spawnImpl, platform: 'win32', cmdShim: true })
+  })
+
+  assert.deepEqual(unix.calls[0].args, ['/p', '--format', 'json', '--debug'])
+  assert.equal(unix.calls[0].options.env.NPM_DEP_FLOW_DEBUG, '1')
+  assert.equal(windows.calls[0].command, 'npm-dep-upgrade.cmd /p abc --debug')
+})
+
+test('a deadline kill logs exactly one end record with the signal', async () => {
+  const { spawnImpl, calls } = fakeSpawn({ hang: true })
+  const output = []
+  const controller = new AbortController()
+  const killProcess = () => calls[0].child.emit('close', null, 'SIGTERM')
+  await runDebug(true, { stderr: { write: line => output.push(line) } }, async () => {
+    const running = runProcess('npm-dep-upgrade', [], { spawnImpl, platform: 'linux', signal: controller.signal, killProcess })
+    controller.abort(new DeadlineReached())
+    await assert.rejects(running, DeadlineReached)
+  })
+
+  assert.equal(output.filter(line => line.includes(' end ')).length, 1)
+  assert.match(output.at(-1), /signal=SIGTERM/)
 })
 
 test('on Unix the child leads its own process group and the group receives SIGTERM', async () => {
