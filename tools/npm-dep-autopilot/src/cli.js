@@ -8,6 +8,7 @@ import { runDebug } from './debug.js'
 import { AutopilotError } from './errors.js'
 import { createGh } from './gh.js'
 import { createGit } from './git.js'
+import { clearAllStores, clearStore } from './cache-clear.js'
 import { addIgnores, cacheRoot } from './ignores.js'
 import { acquireLock } from './lock.js'
 import { runAutopilot } from './runner.js'
@@ -101,6 +102,7 @@ export async function main(argv, { stdout = process.stdout, stderr = process.std
 
     return await runDebug(args.debug, { stderr }, async () => {
       if (!args.config) {
+        await clearAllStores(cacheRoot(env))
         await createTools({ run: runProcess, repo: process.cwd() }).clearCache()
         stdout.write('Analysis caches cleared\n')
         return 0
@@ -136,6 +138,7 @@ export async function main(argv, { stdout = process.stdout, stderr = process.std
       await git.assertIdentity()
       const tools = createTools({ run: runProcess, repo: config.repo, signal })
       if (args.clearCache) {
+        await clearStore(config.repo, cacheRoot(env))
         await tools.clearCache()
         log('Analysis caches cleared')
       }

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { execFile } from 'node:child_process'
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { mkdtemp } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
@@ -30,6 +30,7 @@ function scenario() {
     PATH: `${fakes.bin}${path.delimiter}${process.env.PATH}`,
     FAKE_STATE_DIR: fakes.stateDir,
     XDG_RUNTIME_DIR: fakes.runtimeDir,
+    XDG_CACHE_HOME: mkdtempSync(path.join(os.tmpdir(), 'autopilot-cache-')),
     GIT_AUTHOR_NAME: 't',
     GIT_AUTHOR_EMAIL: 't@example.com',
     GIT_COMMITTER_NAME: 't',
@@ -235,6 +236,45 @@ test('--clear-cache with --config clears once at startup, then runs normally', {
   assert.equal(calls.filter(call => call.args.includes('--clear-cache')).length, 1)
   assert.ok(calls.findIndex(call => call.name === 'npm-dep-upgrade-plan') > 0)
   assert.ok(ghCalls(fakes).some(call => call[0] === 'pr' && call[1] === 'create'))
+})
+
+function seedStores(env, repos) {
+  const root = path.join(env.XDG_CACHE_HOME, 'npm-dep-autopilot')
+  mkdirSync(root, { recursive: true })
+  const mine = storePath(repos.clone, root)
+  const other = storePath(path.join(os.tmpdir(), 'another-clone'), root)
+  writeFileSync(mine, '{}')
+  writeFileSync(other, '{}')
+  return { root, mine, other }
+}
+
+test('--clear-cache with --config removes only this clone\'s store', { skip: !posix, timeout: 60000 }, async () => {
+  const { fakes, repos, env } = scenario()
+  const { mine, other } = seedStores(env, repos)
+  const { code, stderr } = await runCli(['--config', await writeConfig(repos), '--clear-cache'], env)
+
+  assert.equal(code, 0, stderr)
+  assert.equal(existsSync(mine), false)
+  assert.equal(existsSync(other), true)
+  assert.ok(toolCalls(fakes).some(call => call.name === 'npm-dep-upgrade' && call.args.includes('--clear-cache')))
+})
+
+test('--clear-cache alone removes every store', { skip: !posix }, async () => {
+  const { env, repos } = scenario()
+  const { root } = seedStores(env, repos)
+  const { code, stderr } = await runCli(['--clear-cache'], env)
+
+  assert.equal(code, 0, stderr)
+  assert.equal(existsSync(root), false)
+})
+
+test('--clear-cache succeeds when no store file exists', { skip: !posix, timeout: 60000 }, async () => {
+  const { env, repos } = scenario()
+  const alone = await runCli(['--clear-cache'], env)
+  const withConfig = await runCli(['--config', await writeConfig(repos), '--clear-cache'], env)
+
+  assert.equal(alone.code, 0, alone.stderr)
+  assert.equal(withConfig.code, 0, withConfig.stderr)
 })
 
 test('a failing cache clear stops the run with exit 1 before any planning', { skip: !posix }, async () => {
