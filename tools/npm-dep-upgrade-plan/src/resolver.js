@@ -30,7 +30,7 @@ export async function runWorker(args, { env = process.env } = {}) {
 // context keeps the worker's metadata in memory only.
 function packumentCacheFor({ noCache = false, ttlMs, packumentIdentity, env = process.env }) {
   if (noCache || packumentIdentity == null) return null
-  const cacheHome = env.XDG_CACHE_HOME || path.join(env.HOME || homedir(), '.cache')
+  const cacheHome = env.XDG_CACHE_HOME || path.join(homedir(), '.cache')
   return { dir: path.join(cacheHome, 'npm-dep-upgrade-plan', 'packuments'), ttlMs, identity: createHash('sha256').update(JSON.stringify([1, packumentIdentity])).digest('hex') }
 }
 

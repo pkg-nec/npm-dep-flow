@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import path from 'node:path'
-import { access, mkdtemp, rm } from 'node:fs/promises'
+import { createHash } from 'node:crypto'
+import { access, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { gunzipSync, gzipSync } from 'node:zlib'
 import { setTimeout as delay } from 'node:timers/promises'
 import { resolveChoices } from '../src/resolver.js'
 import { selectWithinRangeChoices } from '../src/coverage.js'
@@ -58,4 +60,29 @@ for (const npmCli of runtimes) test(`expired entries are refetched: ${npmCli}`, 
   await delay(5)
   await f.resolve({ ttlMs: 1 })
   assert.ok(f.packumentRequests() > afterFirst)
+})
+
+// A packument cached before a release can miss a version the catalog (cached separately) already offers.
+async function dropCachedVersion(cacheHome, name, version) {
+  const dir = path.join(cacheHome, 'npm-dep-upgrade-plan', 'packuments')
+  for (const file of (await readdir(dir)).map(entry => path.join(dir, entry))) {
+    const entry = JSON.parse(gunzipSync(await readFile(file)).toString())
+    if (entry.packument.name !== name) continue
+    delete entry.packument.versions[version]
+    delete entry.packument.time?.[version]
+    entry.checksum = createHash('sha256').update(JSON.stringify([entry.fetchedAt, entry.packument])).digest('hex')
+    await writeFile(file, gzipSync(JSON.stringify(entry)))
+  }
+}
+
+for (const npmCli of runtimes) test(`a cached packument missing a targeted version is refetched: ${npmCli}`, async (t) => {
+  const f = await setup(t, npmCli)
+  const first = await f.resolve()
+  assert.deepEqual(first.choices.map(choice => choice.targetVersion), ['6.0.12'])
+  await dropCachedVersion(f.cacheHome, 'e2e-target', '6.0.12')
+  const afterFirst = f.packumentRequests()
+  const second = await f.resolve()
+  assert.ok(f.packumentRequests() > afterFirst)
+  assert.deepEqual(second.choices, first.choices)
+  assert.deepEqual(second.coverage, first.coverage)
 })

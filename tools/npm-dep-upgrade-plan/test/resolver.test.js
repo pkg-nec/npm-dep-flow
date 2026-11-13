@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { readFileSync } from 'node:fs'
 import { mkdtemp, writeFile, rm } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { homedir, tmpdir } from 'node:os'
 import path from 'node:path'
 import { resolveChoices } from '../src/resolver.js'
 
@@ -45,4 +45,9 @@ test('request carries the packument cache under the planner cache root', async (
 test('no-cache and missing identity disable the disk cache', async (t) => {
   assert.equal((await capturedRequest(t, { ttlMs: 5000, noCache: true, packumentIdentity: { a: 1 } })).packumentCache, null)
   assert.equal((await capturedRequest(t, { ttlMs: 5000 })).packumentCache, null)
+})
+
+test('packument cache root falls back to the same home directory as --clear-cache', async (t) => {
+  const request = await capturedRequest(t, { env: { HOME: '/elsewhere' }, ttlMs: 5000, packumentIdentity: { a: 1 } })
+  assert.equal(request.packumentCache.dir, path.join(homedir(), '.cache', 'npm-dep-upgrade-plan', 'packuments'))
 })

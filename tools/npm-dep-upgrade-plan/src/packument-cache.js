@@ -1,9 +1,11 @@
 import { createHash, randomUUID } from 'node:crypto'
-import { mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readdirSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { gunzipSync, gzipSync } from 'node:zlib'
 
 const digest = value => createHash('sha256').update(value).digest('hex')
+const DAY_MS = 86_400_000
+const STORE_FILE = /^[0-9a-f]{64}\.json\.gz(?:\..+\.tmp)?$/
 const removeQuietly = (file) => {
   try {
     unlinkSync(file)
@@ -15,12 +17,30 @@ const removeQuietly = (file) => {
 // set/delete synchronously). Entries live for the planner TTL from their original fetch, and reuse never extends that.
 // File names hash the identity and pacote's key, so registry URLs, which may carry credentials, never reach disk.
 // Without a directory and identity the store is memory-only. Storage failures never fail a resolution.
-export function createPackumentCache({ dir = null, identity = null, ttlMs = 0, now = Date.now } = {}) {
+// `required` maps package names to versions this check targets; an entry fetched before one of them was published is a
+// miss, so a release the (separately cached) catalog already offers is never resolved against older metadata.
+export function createPackumentCache({ dir = null, identity = null, ttlMs = 0, now = Date.now, required = {} } = {}) {
   const memory = new Map()
   const stats = { diskHits: 0, misses: 0 }
   let oldestFetchedAt = Infinity
   const disk = typeof dir === 'string' && typeof identity === 'string'
   const fileOf = key => join(dir, `${digest(JSON.stringify([1, identity, key]))}.json.gz`)
+
+  // Entries orphaned by a planner, npm or configuration change, or by a package leaving every project, are never looked
+  // up again, so each store first removes files nobody has written for longer than max(TTL, one day).
+  if (disk) {
+    let names = []
+    try {
+      names = readdirSync(dir)
+    }
+    catch { /* A missing or unreadable directory has nothing to sweep. */ }
+    for (const name of names.filter(entry => STORE_FILE.test(entry))) {
+      try {
+        if (now() - statSync(join(dir, name)).mtimeMs > Math.max(ttlMs, DAY_MS)) unlinkSync(join(dir, name))
+      }
+      catch { /* Sweeping is best effort. */ }
+    }
+  }
 
   const readEntry = (key) => {
     const file = fileOf(key)
@@ -39,6 +59,8 @@ export function createPackumentCache({ dir = null, identity = null, ttlMs = 0, n
       removeQuietly(file)
       return undefined
     }
+    const versions = entry.packument?.versions ?? {}
+    if ((required[entry.packument?.name] ?? []).some(version => !Object.hasOwn(versions, version))) return undefined
     return entry
   }
 

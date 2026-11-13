@@ -297,7 +297,12 @@ export async function resolveRequest(request) {
   config.validate()
   if (!config.valid) throw new Error('Invalid npm resolver configuration')
   // One metadata store reaches every resolver step, including the `before`-capped copies of these options.
-  const packumentCache = createPackumentCache(request.packumentCache ?? {})
+  const required = {}
+  for (const choice of request.choices) {
+    const line = lineOfStrategy(choice.strategy)
+    for (const name of line ? line.members : [choice.targetPackage]) (required[name] ??= []).push(choice.targetVersion)
+  }
+  const packumentCache = createPackumentCache({ ...request.packumentCache, required })
   const opts = { ...config.flat, path: request.root, ignoreScripts: true, audit: false, fund: false, preferOnline: true, packumentCache }
   delete opts.before
   delete opts.minReleaseAge

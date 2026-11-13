@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync, statSync, utimesSync, writeFileSync } from 'node:fs'
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
@@ -123,4 +123,37 @@ test('unwritable directory is nonfatal', async (t) => {
   assert.doesNotThrow(() => cache.set(key, packument))
   assert.equal(cache.has(key), true)
   assert.equal(cache.get(key), packument)
+})
+
+test('a disk entry missing a required version is a miss', async (t) => {
+  const f = await fixture(t)
+  f.open().set(key, packument)
+  assert.equal(f.open({ required: { pkg: ['1.0.0'] } }).has(key), true)
+  assert.equal(f.open({ required: { other: ['9.9.9'] } }).has(key), true)
+  const stale = f.open({ required: { pkg: ['1.0.0', '1.0.1'] } })
+  assert.equal(stale.has(key), false)
+  assert.equal(stale.stats.misses, 1)
+})
+
+test('opening the store sweeps entries and temporary files untouched for longer than max(TTL, one day)', async (t) => {
+  const f = await fixture(t)
+  const day = 86_400_000
+  const real = Date.now()
+  f.time(real)
+  f.open().set(key, packument)
+  const [fresh] = f.files()
+  const orphan = join(f.dir, `${'a'.repeat(64)}.json.gz`)
+  const leftover = join(f.dir, `${'b'.repeat(64)}.json.gz.123.tmp`)
+  const recent = join(f.dir, `${'c'.repeat(64)}.json.gz`)
+  for (const file of [orphan, leftover, recent]) writeFileSync(file, 'x')
+  const old = new Date(real - day - 60_000)
+  for (const file of [orphan, leftover]) utimesSync(file, old, old)
+  const hourAgo = new Date(real - 3_600_000)
+  utimesSync(recent, hourAgo, hourAgo)
+  f.open()
+  assert.deepEqual(f.files().sort(), [fresh, recent].sort())
+  f.open({ ttlMs: 2 * day })
+  assert.deepEqual(f.files().sort(), [fresh, recent].sort())
+  createPackumentCache({ dir: f.dir, identity: null, ttlMs: 100, now: () => real + 10 * day })
+  assert.deepEqual(f.files().sort(), [fresh, recent].sort(), 'a memory-only store never touches disk')
 })
