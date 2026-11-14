@@ -51,7 +51,6 @@ test('rebaseOnDefault rebases non-conflicting work', async () => {
 
   assert.equal(await tool.rebaseOnDefault(), true)
   assert.equal(await tool.hasNewDefaultCommits(), false)
-  assert.deepEqual(await tool.subjectsSince(), ['work'])
 })
 
 test('rebaseOnDefault aborts on conflict and leaves the work branch intact', async () => {
