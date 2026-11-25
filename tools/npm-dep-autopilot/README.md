@@ -66,7 +66,7 @@ Project order is priority order. Unknown keys, invalid values, duplicate modules
 
 1. **Guards.** Take a single-instance lock; if another instance is running, exit 0. Require an active `gh` login, otherwise exit 1.
 2. **Sync.** Fetch, require a clean clone, reset the default branch to `origin/<default>` and delete local `deps/*` branches. If a previous run was interrupted on its work branch (`deps/wip`), that unfinished work is discarded first.
-3. **Wait.** While pull requests labelled `dependencies` and authored by the logged-in user are open, check them every `pollIntervalSeconds`. When none is open (merged or closed), sync again and continue.
+3. **Wait.** While pull requests labelled `dependencies` and authored by the logged-in user are open, check them every `pollIntervalSeconds`. Each check fetches first; a PR whose branch no longer contains the tip of `origin/<default>` (another merge moved the default branch) is closed with a comment, its branch is deleted on origin, and the app logs `Closed stale PR <url>: <branch> is behind <default>`. A PR whose branch is missing on origin is left alone. When none is open (merged, closed, or closed as stale), sync again and continue.
 4. **Work.** Run `npm-dep-upgrade-plan` for every project in order. Severities are tried in the order critical, high, moderate, low. Only findings with `resolution: complete` count. Within a severity, Angular toolchain is fixed first, then Angular runtime, then parent upgrades, then within-range updates (ties go to project order). A finding that fails to upgrade is skipped for the rest of the process. Findings [ignored](#ignoring-a-finding) are never selected; once per work cycle in which at least one stored ignore matched, the app logs `Ignoring 2 finding(s): web:a1b2c3d (brace-expansion@5.0.9), api:4c5b6a7 (...)`. The line is not limited to the severity or module that publishes, so it also appears on a cycle that publishes nothing.
 5. **Publish.** Fetch; if the default branch has new commits, rebase, and if the rebase fails abandon the unmerged commits and restart from step 2. Then create the `dependencies` label if needed, push (with `--force-with-lease`, because `deps/*` branch names belong to the app and may be reused after an earlier PR) and open the PR. Go back to step 3, which also waits until the new PR shows up in the PR list so a lagging list cannot trigger a second PR.
 6. **Exit.** Exit 0 when no completely solvable finding is left, or when `deadline` passes (running child processes and their process groups are stopped (SIGTERM, then SIGKILL after 5 seconds; `taskkill /T /F` on Windows) and local work is abandoned; open pull requests carry over to the next run).
@@ -86,7 +86,7 @@ A rebase that applies cleanly is not re-verified: the lockfile and manifest are 
 
 Each line of a pull request body ends with the finding's seven-digit ID, for example `- deps(web): bump foo from 2.1.0 to 2.4.1 (a1b2c3d)`; titles and branch names are unchanged.
 
-A pull request that is closed without merging is treated like a merged one. Its findings may be found again and a new PR opened on a later run.
+A pull request that is closed without merging is treated like a merged one. The app closes its own pull requests this way when they fall behind the default branch, so expect a dependencies PR to be replaced after each merge to the default branch. Its findings may be found again and a new PR opened on a later run.
 
 ## Ignoring a finding
 
@@ -133,7 +133,7 @@ List the installed schedule with `crontab -l`.
 | Code | Situation |
 | --- | --- |
 | 0 | Nothing left to fix, another instance is running, or the deadline was reached |
-| 1 | Invalid config or arguments (including an `--ignore` value that is not `<module>:<id>` with a 7 to 64 digit lowercase hexadecimal ID, a module that is not configured, or `--ignore` together with `--clear-cache`), a cache that cannot be cleared, no `gh` login, no Git committer identity in the clone, a modified clone, repeated `gh` failures, or an unexpected tool error |
+| 1 | Invalid config or arguments (including an `--ignore` value that is not `<module>:<id>` with a 7 to 64 digit lowercase hexadecimal ID, a module that is not configured, or `--ignore` together with `--clear-cache`), a cache that cannot be cleared, no `gh` login, no Git committer identity in the clone, a modified clone, repeated failures to poll open pull requests (`gh` or `git fetch`), or an unexpected tool error |
 
 Upgrade failures and rebase failures are handled inside the run and are not exit conditions.
 
