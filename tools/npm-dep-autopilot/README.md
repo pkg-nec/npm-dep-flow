@@ -22,6 +22,7 @@ npm install --global . --ignore-scripts
 npm-dep-autopilot --config /etc/npm-dep-autopilot.json
 npm-dep-autopilot --config ./autopilot.json --debug
 npm-dep-autopilot --config ./autopilot.json --no-debug
+npm-dep-autopilot --config ./autopilot.json --ignore web:a1b2c3d
 npm-dep-autopilot --config ./autopilot.json --clear-cache
 npm-dep-autopilot --clear-cache
 npm-dep-autopilot --help
@@ -30,9 +31,9 @@ npm-dep-autopilot --version
 
 Progress lines go to stdout.
 
-`--clear-cache` deletes the analysis caches of the tools autopilot runs (planner, audit, paths and versions) by running `npm-dep-upgrade --clear-cache`, which forwards the clearing down its chain. Autopilot keeps no cache of its own. Together with `--config` it clears once at startup, after the single-instance, `gh` login and Git identity checks, and then runs normally. Alone, without `--config`, it only clears the caches and exits 0 without taking the lock or needing `gh`. A cache that cannot be cleared is an error (exit 1). Use it when a stale or wrong cached plan keeps the app from seeing a fix; Autopilot has no `--no-cache` or `--cache-ttl`: the planner's cache is keyed on the project's manifest and lockfile content, so syncing after a merge invalidates it, and it lasts one hour by default.
+`--clear-cache` deletes the analysis caches of the tools autopilot runs (planner, audit, paths and versions) by running `npm-dep-upgrade --clear-cache`, which forwards the clearing down its chain. Autopilot keeps no analysis cache of its own, but it does keep [ignored findings](#ignoring-a-finding), and `--clear-cache` removes them too: together with `--config` only that clone's ignores, alone every clone's. Together with `--config` it clears once at startup, after the single-instance, `gh` login and Git identity checks, and then runs normally. Alone, without `--config`, it only clears and exits 0 without taking the lock or needing `gh`. A cache that cannot be cleared is an error (exit 1). Use it when a stale or wrong cached plan keeps the app from seeing a fix; Autopilot has no `--no-cache` or `--cache-ttl`: the planner's cache is keyed on the project's manifest and lockfile content, so syncing after a merge invalidates it, and it lasts one hour by default.
 
-`--debug` logs every external command (`git`, `gh`, `npm-dep-upgrade-plan`, `npm-dep-upgrade`) to stderr, in the same format as the other tools: `[npm-dep-autopilot debug] start <pid>:<n> process {...}` followed by `end <pid>:<n> process exit=<code> duration=<ms>ms`. Credentials in arguments and URLs are redacted, and subprocess output is not logged. Debug mode is passed down to the planner and upgrade tool (`--debug` plus `NPM_DEP_FLOW_DEBUG=1`), and their `[npm-dep-<tool> debug]` records, including those of the tools they run, are relayed to stderr. `--no-debug` disables debug logging even when `NPM_DEP_FLOW_DEBUG=1` is inherited from the environment, which otherwise enables it.
+`--debug` logs every external command (`git`, `gh`, `npm-dep-upgrade-plan`, `npm-dep-upgrade`) to stderr, in the same format as the other tools: `[npm-dep-autopilot debug] start <pid>:<n> process {...}` followed by `end <pid>:<n> process exit=<code> duration=<ms>ms`. Credentials in arguments and URLs are redacted, and subprocess output is not logged. Debug mode is passed down to the planner and upgrade tool (`--debug` plus `NPM_DEP_FLOW_DEBUG=1`), and their `[npm-dep-<tool> debug]` records, including those of the tools they run, are relayed to stderr. The stored ignores are logged as one `ignores ...` record listing the entries (module, id and when each was added), at the first read of every work cycle, whenever the effective set changes, and after `--ignore` stores entries. `--no-debug` disables debug logging even when `NPM_DEP_FLOW_DEBUG=1` is inherited from the environment, which otherwise enables it.
 
 ## Configuration
 
@@ -66,7 +67,7 @@ Project order is priority order. Unknown keys, invalid values, duplicate modules
 1. **Guards.** Take a single-instance lock; if another instance is running, exit 0. Require an active `gh` login, otherwise exit 1.
 2. **Sync.** Fetch, require a clean clone, reset the default branch to `origin/<default>` and delete local `deps/*` branches. If a previous run was interrupted on its work branch (`deps/wip`), that unfinished work is discarded first.
 3. **Wait.** While pull requests labelled `dependencies` and authored by the logged-in user are open, check them every `pollIntervalSeconds`. When none is open (merged or closed), sync again and continue.
-4. **Work.** Run `npm-dep-upgrade-plan` for every project in order. Severities are tried in the order critical, high, moderate, low. Only findings with `resolution: complete` count. Within a severity, Angular toolchain is fixed first, then Angular runtime, then parent upgrades, then within-range updates (ties go to project order). A finding that fails to upgrade is skipped for the rest of the process.
+4. **Work.** Run `npm-dep-upgrade-plan` for every project in order. Severities are tried in the order critical, high, moderate, low. Only findings with `resolution: complete` count. Within a severity, Angular toolchain is fixed first, then Angular runtime, then parent upgrades, then within-range updates (ties go to project order). A finding that fails to upgrade is skipped for the rest of the process. Findings [ignored](#ignoring-a-finding) are never selected; once per work cycle in which at least one stored ignore matched, the app logs `Ignoring 2 finding(s): web:a1b2c3d (brace-expansion@5.0.9), api:4c5b6a7 (...)`. The line is not limited to the severity or module that publishes, so it also appears on a cycle that publishes nothing.
 5. **Publish.** Fetch; if the default branch has new commits, rebase, and if the rebase fails abandon the unmerged commits and restart from step 2. Then create the `dependencies` label if needed, push (with `--force-with-lease`, because `deps/*` branch names belong to the app and may be reused after an earlier PR) and open the PR. Go back to step 3, which also waits until the new PR shows up in the PR list so a lagging list cannot trigger a second PR.
 6. **Exit.** Exit 0 when no completely solvable finding is left, or when `deadline` passes (running child processes and their process groups are stopped (SIGTERM, then SIGKILL after 5 seconds; `taskkill /T /F` on Windows) and local work is abandoned; open pull requests carry over to the next run).
 
@@ -83,7 +84,27 @@ Critical findings and Angular bumps get one PR each. High, moderate and low fixe
 
 A rebase that applies cleanly is not re-verified: the lockfile and manifest are taken as the rebased result, so review the PR before merging as usual.
 
+Each line of a pull request body ends with the finding's seven-digit ID, for example `- deps(web): bump foo from 2.1.0 to 2.4.1 (a1b2c3d)`; titles and branch names are unchanged.
+
 A pull request that is closed without merging is treated like a merged one. Its findings may be found again and a new PR opened on a later run.
+
+## Ignoring a finding
+
+An upgrade that passes the planner and `npm-dep-upgrade` can still break the project in ways the tools cannot see. Merging nothing is not an option for an unattended app, because the same finding would be selected again after the pull request is closed. `--ignore` marks a finding as never to be attempted again:
+
+```sh
+npm-dep-autopilot --config ./autopilot.json --ignore web:a1b2c3d
+npm-dep-autopilot --config ./autopilot.json --ignore web:a1b2c3d --ignore api:4c5b6a7
+npm-dep-autopilot --config ./autopilot.json --ignore :a1b2c3d
+```
+
+- The value is `<module>:<id>`. The module is one of the configured `projects[].module` values; use `:<id>` for the project with the empty module. The option is repeatable and also accepted as `--ignore=<value>`.
+- The ID is 7 to 64 lowercase hexadecimal characters. It matches a finding of that module when the finding's full ID starts with it, so the seven-digit ID from the pull request is enough. Read it from the end of the pull request body line, for example `- deps(web): bump foo from 2.1.0 to 2.4.1 (a1b2c3d)`, or from `npm-dep-upgrade-plan`.
+- The command stores the entries, prints `Ignoring <module>:<id>` (or `Already ignored: <module>:<id>`) and exits 0. It does not take the single-instance lock, need `gh`, touch the clone or run any other tool, so it is safe while another instance is running. A running instance reads the store at every candidate selection, so the entry applies from its next work cycle without a restart.
+- **Ignore first, then close the pull request.** A closed pull request is treated like a merged one, so the next cycle may select the same finding again unless the ignore is already in place.
+- Entries never expire. They are stored per clone in `$XDG_CACHE_HOME/npm-dep-autopilot/ignored-<digest>.json` (default `~/.cache/npm-dep-autopilot/`), where `<digest>` is the SHA-256 of the JSON-encoded `repo` value. Outside the clone, they survive the resets and branch deletions the app performs.
+- The only way to remove an ignore is `--clear-cache`, and it is all-or-nothing: with `--config` it removes that clone's ignores (and the analysis caches), alone it removes every clone's. `--ignore` cannot be combined with `--clear-cache`.
+- If the store cannot be read, the run continues with no ignored findings and logs one warning, repeated only if a later read succeeds and then fails again: `Cannot read the ignore store <path>; continuing with no ignored findings`. The consequence is visible: the breaking upgrade is attempted again and lands in the next pull request. Treat the warning as the signal to add the ignore again.
 
 ## Scheduling with cron
 
@@ -112,7 +133,7 @@ List the installed schedule with `crontab -l`.
 | Code | Situation |
 | --- | --- |
 | 0 | Nothing left to fix, another instance is running, or the deadline was reached |
-| 1 | Invalid config or arguments, a cache that cannot be cleared, no `gh` login, no Git committer identity in the clone, a modified clone, repeated `gh` failures, or an unexpected tool error |
+| 1 | Invalid config or arguments (including an `--ignore` value that is not `<module>:<id>` with a 7 to 64 digit lowercase hexadecimal ID, a module that is not configured, or `--ignore` together with `--clear-cache`), a cache that cannot be cleared, no `gh` login, no Git committer identity in the clone, a modified clone, repeated `gh` failures, or an unexpected tool error |
 
 Upgrade failures and rebase failures are handled inside the run and are not exit conditions.
 

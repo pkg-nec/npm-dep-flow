@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict'
 import { execFile } from 'node:child_process'
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { mkdtemp } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
 import { fileURLToPath } from 'node:url'
+import { readIgnores, storePath } from '../src/ignores.js'
 import { acquireLock } from '../src/lock.js'
 import { installFakes } from './helpers/fake-bin.js'
 import { createRepos, git } from './helpers/repo.js'
@@ -29,6 +30,7 @@ function scenario() {
     PATH: `${fakes.bin}${path.delimiter}${process.env.PATH}`,
     FAKE_STATE_DIR: fakes.stateDir,
     XDG_RUNTIME_DIR: fakes.runtimeDir,
+    XDG_CACHE_HOME: mkdtempSync(path.join(os.tmpdir(), 'autopilot-cache-')),
     GIT_AUTHOR_NAME: 't',
     GIT_AUTHOR_EMAIL: 't@example.com',
     GIT_COMMITTER_NAME: 't',
@@ -57,7 +59,7 @@ test('--help aligns option descriptions to one column', async () => {
   const longest = Math.max(...rows.map(match => match[1].length))
 
   assert.equal(code, 0)
-  assert.equal(rows.length, 6)
+  assert.equal(rows.length, 7)
   assert.equal(new Set(columns).size, 1)
   assert.equal(columns[0], 2 + longest + 2)
 })
@@ -236,6 +238,45 @@ test('--clear-cache with --config clears once at startup, then runs normally', {
   assert.ok(ghCalls(fakes).some(call => call[0] === 'pr' && call[1] === 'create'))
 })
 
+function seedStores(env, repos) {
+  const root = path.join(env.XDG_CACHE_HOME, 'npm-dep-autopilot')
+  mkdirSync(root, { recursive: true })
+  const mine = storePath(repos.clone, root)
+  const other = storePath(path.join(os.tmpdir(), 'another-clone'), root)
+  writeFileSync(mine, '{}')
+  writeFileSync(other, '{}')
+  return { root, mine, other }
+}
+
+test('--clear-cache with --config removes only this clone\'s store', { skip: !posix, timeout: 60000 }, async () => {
+  const { fakes, repos, env } = scenario()
+  const { mine, other } = seedStores(env, repos)
+  const { code, stderr } = await runCli(['--config', await writeConfig(repos), '--clear-cache'], env)
+
+  assert.equal(code, 0, stderr)
+  assert.equal(existsSync(mine), false)
+  assert.equal(existsSync(other), true)
+  assert.ok(toolCalls(fakes).some(call => call.name === 'npm-dep-upgrade' && call.args.includes('--clear-cache')))
+})
+
+test('--clear-cache alone removes every store', { skip: !posix }, async () => {
+  const { env, repos } = scenario()
+  const { root } = seedStores(env, repos)
+  const { code, stderr } = await runCli(['--clear-cache'], env)
+
+  assert.equal(code, 0, stderr)
+  assert.equal(existsSync(root), false)
+})
+
+test('--clear-cache succeeds when no store file exists', { skip: !posix, timeout: 60000 }, async () => {
+  const { env, repos } = scenario()
+  const alone = await runCli(['--clear-cache'], env)
+  const withConfig = await runCli(['--config', await writeConfig(repos), '--clear-cache'], env)
+
+  assert.equal(alone.code, 0, alone.stderr)
+  assert.equal(withConfig.code, 0, withConfig.stderr)
+})
+
 test('a failing cache clear stops the run with exit 1 before any planning', { skip: !posix }, async () => {
   const { fakes, repos, env } = scenario()
   writeFileSync(path.join(fakes.stateDir, 'clear-fails'), '1')
@@ -273,4 +314,143 @@ test('--help lists --clear-cache', async () => {
   const { stdout } = await runCli(['--help'])
 
   assert.match(stdout, /^ {2}--clear-cache /m)
+})
+
+async function ignoreScenario(overrides) {
+  const base = scenario()
+  const cacheDir = await mkdtemp(path.join(os.tmpdir(), 'autopilot-ignore-'))
+  const file = await writeConfig(base.repos, overrides)
+  const env = { ...base.env, XDG_CACHE_HOME: cacheDir }
+  const store = storePath(base.repos.clone, path.join(cacheDir, 'npm-dep-autopilot'))
+  const entries = async () => (await readIgnores(base.repos.clone, path.join(cacheDir, 'npm-dep-autopilot'))).entries
+  return { ...base, file, env, store, entries }
+}
+
+test('--ignore stores an entry and exits without running', { skip: !posix }, async () => {
+  const { fakes, env, file, entries } = await ignoreScenario()
+  const { code, stdout, stderr } = await runCli(['--config', file, '--ignore', 'web:a1b2c3d'], env)
+
+  assert.equal(code, 0, stderr)
+  assert.match(stdout, /web:a1b2c3d/)
+  assert.deepEqual((await entries()).map(({ module, id }) => ({ module, id })), [{ module: 'web', id: 'a1b2c3d' }])
+  assert.equal(existsSync(path.join(fakes.stateDir, 'calls.log')), false)
+  assert.equal(existsSync(path.join(fakes.stateDir, 'gh-calls.log')), false)
+})
+
+test('--ignore does not take the single-instance lock', { skip: !posix }, async () => {
+  const { fakes, repos, env, file, entries } = await ignoreScenario()
+  const lock = await acquireLock({ repo: repos.clone, dir: fakes.runtimeDir })
+  const { code, stderr } = await runCli(['--config', file, '--ignore', 'web:a1b2c3d'], env)
+
+  assert.ok(lock)
+  assert.equal(code, 0, stderr)
+  assert.equal((await entries()).length, 1)
+  await lock.release()
+})
+
+test('repeated --ignore stores every entry', { skip: !posix }, async () => {
+  const { env, file, entries } = await ignoreScenario()
+  const { code, stderr } = await runCli(['--config', file, '--ignore', 'web:a1b2c3d', '--ignore', 'web:0123456'], env)
+
+  assert.equal(code, 0, stderr)
+  assert.deepEqual((await entries()).map(entry => entry.id), ['a1b2c3d', '0123456'])
+})
+
+test('--ignore=<value> is accepted', { skip: !posix }, async () => {
+  const { env, file, entries } = await ignoreScenario()
+  const { code, stderr } = await runCli(['--config', file, '--ignore=web:a1b2c3d'], env)
+
+  assert.equal(code, 0, stderr)
+  assert.equal((await entries()).length, 1)
+})
+
+test('--ignore :<id> stores the empty-module project', { skip: !posix }, async () => {
+  const { env, file, entries } = await ignoreScenario({ projects: [{ path: '.', module: '', gitCommitArgs: ['--no-verify'] }] })
+  const { code, stderr } = await runCli(['--config', file, '--ignore', ':a1b2c3d'], env)
+
+  assert.equal(code, 0, stderr)
+  assert.deepEqual((await entries()).map(({ module, id }) => ({ module, id })), [{ module: '', id: 'a1b2c3d' }])
+})
+
+test('--ignore reports an already stored entry without duplicating it', { skip: !posix }, async () => {
+  const { env, file, entries } = await ignoreScenario()
+  await runCli(['--config', file, '--ignore', 'web:a1b2c3d'], env)
+  const { code, stdout, stderr } = await runCli(['--config', file, '--ignore', 'web:a1b2c3d'], env)
+
+  assert.equal(code, 0, stderr)
+  assert.match(stdout, /already ignored/i)
+  assert.equal((await entries()).length, 1)
+})
+
+for (const [value, problem] of [
+  ['a1b2c3d', /<module>:<id>/],
+  ['web:a1b2c3', /id/],
+  ['web:ABC1234', /id/],
+  ['web:zzzzzzz', /id/],
+  ['nope:a1b2c3d', /Unknown module "nope".*web/],
+]) {
+  test(`--ignore rejects a bad value: ${value}`, { skip: !posix }, async () => {
+    const { env, file, store } = await ignoreScenario()
+    const { code, stderr } = await runCli(['--config', file, '--ignore', value], env)
+
+    assert.equal(code, 1)
+    assert.match(stderr, problem)
+    assert.equal(existsSync(store), false)
+  })
+}
+
+test('--ignore without --config is a usage error', async () => {
+  const { code, stderr } = await runCli(['--ignore', 'web:a1b2c3d'])
+
+  assert.equal(code, 1)
+  assert.match(stderr, /--config/)
+})
+
+test('--ignore with --clear-cache is a usage error', async () => {
+  const { code, stderr } = await runCli(['--config', 'x.json', '--ignore', 'web:a1b2c3d', '--clear-cache'])
+
+  assert.equal(code, 1)
+  assert.match(stderr, /--ignore.*--clear-cache|--clear-cache.*--ignore/)
+})
+
+test('a stored ignore keeps the finding out of the run and is logged', { skip: !posix, timeout: 60000 }, async () => {
+  const { fakes, env, file } = await ignoreScenario()
+  const other = {
+    id: '1'.repeat(64),
+    package: 'minimist',
+    version: '1.2.0',
+    targetLocation: 'node_modules/minimist',
+    severity: 'critical',
+    resolution: 'complete',
+    choices: [{ strategy: 'update-within-declared-range', targetPackage: 'minimist', currentVersion: '1.2.0', targetVersion: '1.2.8' }],
+  }
+  const runEnv = { ...env, FAKE_EXTRA_ROWS: JSON.stringify([other]) }
+  const ignored = await runCli(['--config', file, '--ignore', 'web:fffffff'], runEnv)
+  const { code, stdout, stderr } = await runCli(['--config', file], runEnv)
+  const calls = readFileSync(path.join(fakes.stateDir, 'calls.log'), 'utf8').trim().split('\n').map(line => JSON.parse(line))
+  const upgraded = calls.filter(call => call.name === 'npm-dep-upgrade' && call.args[0] !== '--clear-cache').map(call => call.args[1])
+
+  assert.equal(ignored.code, 0, ignored.stderr)
+  assert.equal(code, 0, stderr)
+  assert.deepEqual(upgraded, ['1'.repeat(64)])
+  assert.match(stdout, /^Ignoring 1 finding\(s\): web:fffffff \(brace-expansion@5\.0\.9\)$/m)
+})
+
+test('an unreadable ignore store warns with its own path and the run continues', { skip: !posix, timeout: 60000 }, async () => {
+  const { env, file, store } = await ignoreScenario()
+  mkdirSync(path.dirname(store), { recursive: true })
+  writeFileSync(store, 'not json')
+  const { code, stdout, stderr } = await runCli(['--config', file], env)
+
+  assert.equal(code, 0, stderr)
+  assert.ok(stdout.includes(`Cannot read the ignore store ${store}; continuing with no ignored findings`), stdout)
+  assert.match(stdout, /Created PR /)
+})
+
+test('--ignore records the stored entries for debugging', { skip: !posix }, async () => {
+  const { env, file } = await ignoreScenario()
+  const { code, stderr } = await runCli(['--config', file, '--ignore', 'web:a1b2c3d', '--debug'], env)
+
+  assert.equal(code, 0, stderr)
+  assert.match(stderr, /^\[npm-dep-autopilot debug\] ignores web:a1b2c3d addedAt=\d{4}-\d\d-\d\dT[\d:.]+Z$/m)
 })

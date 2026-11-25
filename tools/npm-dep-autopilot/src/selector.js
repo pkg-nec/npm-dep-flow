@@ -1,3 +1,5 @@
+import { isIgnored } from './ignores.js'
+
 export const SEVERITIES = Object.freeze(['critical', 'high', 'moderate', 'low'])
 export const STRATEGY_RANK = Object.freeze([
   'upgrade-angular-toolchain',
@@ -19,16 +21,22 @@ function kindOf(rank) {
   return 'package'
 }
 
-export function rankCandidates(entries, severity, skip) {
-  if (!SEVERITIES.includes(severity)) return []
+export function rankCandidates(entries, severity, skip, ignores = []) {
+  if (!SEVERITIES.includes(severity)) return { candidates: [], ignored: [] }
 
-  return entries
-    .filter(({ project, row }) => row.severity === severity && row.resolution === 'complete' && !skip.has(skipKey(project, row)))
+  const complete = entries.filter(({ row }) => row.severity === severity && row.resolution === 'complete')
+  const ignored = complete
+    .filter(({ project, row }) => isIgnored(ignores, project.module, row.id))
+    .map(({ project, row }) => ({ project, row }))
+  const candidates = complete
+    .filter(({ project, row }) => !isIgnored(ignores, project.module, row.id) && !skip.has(skipKey(project, row)))
     .map(({ project, row }, order) => ({ project, row, rank: strongestRank(row), order }))
     .sort((left, right) => left.rank - right.rank || left.order - right.order)
     .map(({ project, row, rank }) => ({ project, row, kind: kindOf(rank) }))
+
+  return { candidates, ignored }
 }
 
-export const publishesImmediately = (severity, candidate) => severity === 'critical' || candidate.kind !== 'package'
+export const publishesImmediately = item => item.severity === 'critical' || item.kind !== 'package'
 
 export const drainCandidates = (candidates, module) => candidates.filter(candidate => candidate.project.module === module && candidate.kind === 'package')

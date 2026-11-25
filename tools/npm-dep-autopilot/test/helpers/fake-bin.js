@@ -14,7 +14,8 @@ if (args[0] === 'pr' && args[1] === 'create') console.log('https://example.test/
 `,
   'npm-dep-upgrade-plan': `${header}
 const upgraded = fs.existsSync(path.join(state, 'upgraded'))
-const rows = upgraded ? [] : [{ id: 'f'.repeat(64), package: 'brace-expansion', version: '5.0.9', targetLocation: 'node_modules/brace-expansion', severity: 'critical', resolution: 'complete', choices: [{ strategy: 'update-within-declared-range', targetPackage: 'brace-expansion', currentVersion: '5.0.9', targetVersion: '5.0.12' }] }]
+const extra = JSON.parse(process.env.FAKE_EXTRA_ROWS || '[]')
+const rows = upgraded ? [] : [{ id: 'f'.repeat(64), package: 'brace-expansion', version: '5.0.9', targetLocation: 'node_modules/brace-expansion', severity: 'critical', resolution: 'complete', choices: [{ strategy: 'update-within-declared-range', targetPackage: 'brace-expansion', currentVersion: '5.0.9', targetVersion: '5.0.12' }] }, ...extra]
 console.log(JSON.stringify({ schemaVersion: 3, auditedAt: new Date().toISOString(), rows }))
 `,
   'npm-dep-upgrade': `${header}

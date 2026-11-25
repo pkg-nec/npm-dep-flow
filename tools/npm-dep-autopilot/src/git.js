@@ -39,9 +39,6 @@ export function createGit({ run, repo, defaultBranch, signal }) {
     async resetHard(sha) {
       await git(['reset', '-q', '--hard', sha])
     },
-    async subjectsSince() {
-      return (await git(['log', '--reverse', '--format=%s', `${remoteDefault}..HEAD`])).split('\n').filter(Boolean)
-    },
     async rebaseOnDefault() {
       const result = await exec(['rebase', remoteDefault])
       if (result.code === 0) return true
