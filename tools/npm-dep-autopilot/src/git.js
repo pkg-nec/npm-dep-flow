@@ -52,6 +52,14 @@ export function createGit({ run, repo, defaultBranch, signal }) {
       if (result.code === 1) return true
       throw new AutopilotError(`git merge-base failed: ${result.stderr.trim()}`, 'GIT_FAILED')
     },
+    async isBasedOnDefault(branch) {
+      const ref = `refs/remotes/origin/${branch}`
+      if ((await exec(['rev-parse', '--verify', '--quiet', ref])).code !== 0) return null
+      const result = await exec(['merge-base', '--is-ancestor', remoteDefault, ref])
+      if (result.code === 0) return true
+      if (result.code === 1) return false
+      throw new AutopilotError(`git merge-base failed: ${result.stderr.trim()}`, 'GIT_FAILED')
+    },
     async renameBranch(to) {
       await git(['branch', '-q', '-m', to])
     },

@@ -148,3 +148,55 @@ test('assertIdentity rejects with GIT_IDENTITY when git cannot determine a commi
 test('assertIdentity passes when the clone has a committer identity', async () => {
   await adapter(createRepos()).assertIdentity()
 })
+
+function pushBranch(repos, branch) {
+  git(repos.other, 'checkout', '-q', '-b', branch)
+  commitFile(repos.other, `${branch.replaceAll('/', '-')}.txt`, 'b')
+  git(repos.other, 'push', '-q', 'origin', branch)
+  git(repos.other, 'checkout', '-q', repos.defaultBranch)
+}
+
+function advanceDefault(repos) {
+  commitFile(repos.other, 'moved.txt', 'm')
+  git(repos.other, 'push', '-q', 'origin', repos.defaultBranch)
+}
+
+test('isBasedOnDefault is true for a branch cut from the current default tip', async () => {
+  const repos = createRepos()
+  pushBranch(repos, 'deps/web/a')
+  const tool = adapter(repos)
+  await tool.fetch()
+
+  assert.equal(await tool.isBasedOnDefault('deps/web/a'), true)
+})
+
+test('isBasedOnDefault is false once the default branch moves', async () => {
+  const repos = createRepos()
+  pushBranch(repos, 'deps/web/a')
+  advanceDefault(repos)
+  const tool = adapter(repos)
+  await tool.fetch()
+
+  assert.equal(await tool.isBasedOnDefault('deps/web/a'), false)
+})
+
+test('isBasedOnDefault is true after the default branch is merged into the branch', async () => {
+  const repos = createRepos()
+  pushBranch(repos, 'deps/web/a')
+  advanceDefault(repos)
+  git(repos.other, 'checkout', '-q', 'deps/web/a')
+  git(repos.other, 'merge', '-q', '--no-edit', repos.defaultBranch)
+  git(repos.other, 'push', '-q', 'origin', 'deps/web/a')
+  const tool = adapter(repos)
+  await tool.fetch()
+
+  assert.equal(await tool.isBasedOnDefault('deps/web/a'), true)
+})
+
+test('isBasedOnDefault is null for a branch missing on origin', async () => {
+  const repos = createRepos()
+  const tool = adapter(repos)
+  await tool.fetch()
+
+  assert.equal(await tool.isBasedOnDefault('deps/web/none'), null)
+})
