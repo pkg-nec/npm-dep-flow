@@ -133,7 +133,7 @@ List the installed schedule with `crontab -l`.
 | Code | Situation |
 | --- | --- |
 | 0 | Nothing left to fix, another instance is running, or the deadline was reached |
-| 1 | Invalid config or arguments (including an `--ignore` value that is not `<module>:<id>` with a 7 to 64 digit lowercase hexadecimal ID, a module that is not configured, or `--ignore` together with `--clear-cache`), a cache that cannot be cleared, no `gh` login, no Git committer identity in the clone, a modified clone, repeated failures to poll open pull requests (`gh` or `git fetch`), or an unexpected tool error |
+| 1 | Invalid config or arguments (including an `--ignore` value that is not `<module>:<id>` with a 7 to 64 digit lowercase hexadecimal ID, a module that is not configured, or `--ignore` together with `--clear-cache`), a cache that cannot be cleared, no `gh` login, no Git committer identity in the clone, a modified clone, repeated failures to poll open pull requests or close a stale one (`gh` or `git fetch`; a missing permission to close keeps failing every run until the PR is closed by hand), or an unexpected tool error |
 
 Upgrade failures and rebase failures are handled inside the run and are not exit conditions.
 
