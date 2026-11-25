@@ -47,10 +47,7 @@ async function waitForOpenPrs(context, expectBranch) {
       const result = await closeStalePrs(context, await gh.openPrs(user))
       open = result.open
       failures = 0
-      if (result.closed > 0) {
-        waited = true
-        if (open.length === 0) return waited
-      }
+      if (result.closed > 0) waited = true
     }
     catch (error) {
       if (error instanceof DeadlineReached) throw error

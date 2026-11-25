@@ -598,3 +598,18 @@ test('the deadline during a close returns deadline', async () => {
   assert.equal(await env.run(), 'deadline')
   assert.deepEqual(env.sleeps, [])
 })
+
+test('closing a stale PR right after publishing still waits for the new PR to be listed', async () => {
+  const newPr = { number: 3, headRefName: 'deps/web/pkg1-1.0.1', url: 'u3' }
+  const env = makeEnv({
+    rows: { web: [finding('1', [WITHIN], 'critical')], api: [finding('2', [WITHIN], 'critical')] },
+    openPrs: [[], [stalePr], [newPr], []],
+    based: { 'deps/web/a': false },
+  })
+
+  await env.run()
+
+  const pollsBeforeSecondUpgrade = env.events.slice(0, env.events.indexOf('upgrade:api:2')).filter(event => event === 'openPrs').length
+  assert.equal(env.closed.length, 1)
+  assert.equal(pollsBeforeSecondUpgrade, 4)
+})
