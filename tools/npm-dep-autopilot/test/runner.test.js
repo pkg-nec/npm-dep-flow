@@ -30,7 +30,7 @@ function reportFor(id, strategies = [WITHIN], commits = 1) {
   return upgradeReport({ id, actions, commits: Array.from({ length: commits }, (_, index) => ({ hash: `h${index}`, subject: `s${id}.${index}` })) })
 }
 
-function makeEnv({ rows = {}, openPrs = [[]], upgrade, rebase = [true], newCommits = [false], dirty = false, onWork = false, sleep, commits = {}, strategies = {}, keepFindings = false, runConfig = config, loadIgnores } = {}) {
+function makeEnv({ rows = {}, openPrs = [[]], upgrade, rebase = [true], newCommits = [false], dirty = false, onWork = false, sleep, commits = {}, strategies = {}, keepFindings = false, runConfig = config, loadIgnores, based = {}, closeFails = [] } = {}) {
   const events = []
   const logs = []
   const fixed = new Set()
@@ -39,6 +39,9 @@ function makeEnv({ rows = {}, openPrs = [[]], upgrade, rebase = [true], newCommi
   const newQueue = [...newCommits]
   const state = { commits: 0, dirty }
   const created = []
+  const closed = []
+  const basedQueues = Object.fromEntries(Object.entries(based).map(([branch, value]) => [branch, Array.isArray(value) ? [...value] : [value]]))
+  const closeQueue = [...closeFails]
 
   const tools = {
     async plan(project) {
@@ -87,6 +90,14 @@ function makeEnv({ rows = {}, openPrs = [[]], upgrade, rebase = [true], newCommi
       if (!ok) fixed.clear()
       return ok
     },
+    async isBasedOnDefault(branch) {
+      events.push(`based:${branch}`)
+      const queue = basedQueues[branch]
+      if (!queue) return true
+      const next = queue.length > 1 ? queue.shift() : queue[0]
+      if (next instanceof Error) throw next
+      return next
+    },
     async renameBranch(to) {
       events.push(`rename:${to}`)
     },
@@ -104,6 +115,12 @@ function makeEnv({ rows = {}, openPrs = [[]], upgrade, rebase = [true], newCommi
       if (next instanceof Error) throw next
       return next
     },
+    async closePr(number, comment) {
+      events.push(`close:${number}`)
+      const failure = closeQueue.shift()
+      if (failure instanceof Error) throw failure
+      closed.push({ number, comment })
+    },
     async ensureLabel() {
       events.push('ensureLabel')
     },
@@ -117,6 +134,7 @@ function makeEnv({ rows = {}, openPrs = [[]], upgrade, rebase = [true], newCommi
   const deadline = {
     async sleep(ms) {
       sleeps.push(ms)
+      if (sleeps.length > 50) throw new Error('runaway wait loop')
       if (sleep) await sleep(sleeps.length)
     },
   }
@@ -124,7 +142,7 @@ function makeEnv({ rows = {}, openPrs = [[]], upgrade, rebase = [true], newCommi
   const context = { config: runConfig, gh, git, tools, deadline, log: line => logs.push(line) }
   if (loadIgnores) context.loadIgnores = loadIgnores
 
-  return { events, created, sleeps, logs, run: () => runAutopilot(context) }
+  return { events, created, closed, sleeps, logs, run: () => runAutopilot(context) }
 }
 
 test('waits for an open PR, resyncing before and after, then works', async () => {
@@ -499,4 +517,99 @@ test('a project with an empty module publishes deps: titles and deps/ branches',
 
   assert.equal(env.created[0].branch, 'deps/pkg1-1.0.1')
   assert.equal(env.created[0].title, 'deps: bump pkg1 from 1.0.0 to 1.0.1')
+})
+
+const stalePr = { number: 1, headRefName: 'deps/web/a', url: 'u1' }
+const currentPr = { number: 2, headRefName: 'deps/web/b', url: 'u2' }
+const closeComment = 'Closed by npm-dep-autopilot: this branch is behind main. A new pull request will be planned from the current main.'
+
+test('a stale PR is closed and a work cycle starts without waiting', async () => {
+  const env = makeEnv({ openPrs: [[stalePr], []], based: { 'deps/web/a': false } })
+
+  assert.equal(await env.run(), 'done')
+  assert.deepEqual(env.closed, [{ number: 1, comment: closeComment }])
+  assert.deepEqual(env.sleeps, [])
+  assert.ok(env.logs.includes('Closed stale PR u1: deps/web/a is behind main'))
+  assert.equal(env.events.filter(event => event === 'syncDefault').length, 2)
+  assert.ok(env.events.indexOf('close:1') < env.events.lastIndexOf('syncDefault'))
+  assert.ok(env.events.lastIndexOf('syncDefault') < env.events.indexOf('createWorkBranch'))
+})
+
+test('a current PR is polled, not closed', async () => {
+  const env = makeEnv({ openPrs: [[currentPr], [currentPr], []] })
+
+  assert.equal(await env.run(), 'done')
+  assert.deepEqual(env.closed, [])
+  assert.deepEqual(env.sleeps, [60000, 60000])
+})
+
+test('a PR that falls behind while polling is closed at that poll', async () => {
+  const env = makeEnv({ openPrs: [[stalePr]], based: { 'deps/web/a': [true, false] } })
+
+  assert.equal(await env.run(), 'done')
+  assert.equal(env.closed.length, 1)
+  assert.deepEqual(env.sleeps, [60000])
+})
+
+test('only stale PRs are closed and the wait continues for current ones', async () => {
+  const env = makeEnv({ openPrs: [[stalePr, currentPr], [currentPr], []], based: { 'deps/web/a': false } })
+
+  assert.equal(await env.run(), 'done')
+  assert.deepEqual(env.events.filter(event => event.startsWith('close:')), ['close:1'])
+  assert.deepEqual(env.sleeps, [60000, 60000])
+})
+
+test('a PR whose branch is missing is not closed', async () => {
+  const env = makeEnv({ openPrs: [[stalePr], []], based: { 'deps/web/a': null } })
+
+  assert.equal(await env.run(), 'done')
+  assert.deepEqual(env.closed, [])
+  assert.deepEqual(env.sleeps, [60000])
+})
+
+test('a fetch is done before every PR list poll', async () => {
+  const env = makeEnv({ openPrs: [[currentPr], []] })
+
+  await env.run()
+  const polls = env.events.flatMap((event, index) => (event === 'openPrs' ? [index] : []))
+  assert.equal(polls.length, 2)
+  for (const index of polls) assert.equal(env.events[index - 1], 'fetch')
+})
+
+test('five consecutive close failures are fatal', async () => {
+  const env = makeEnv({ openPrs: [[stalePr]], based: { 'deps/web/a': false }, closeFails: Array.from({ length: 5 }, () => new Error('denied')) })
+
+  await assert.rejects(env.run(), { code: 'GH_UNAVAILABLE' })
+  assert.equal(env.sleeps.length, 4)
+  assert.equal(env.events.includes('createWorkBranch'), false)
+})
+
+test('a single close failure is retried', async () => {
+  const env = makeEnv({ openPrs: [[stalePr]], based: { 'deps/web/a': false }, closeFails: [new Error('denied')] })
+
+  assert.equal(await env.run(), 'done')
+  assert.equal(env.closed.length, 1)
+  assert.deepEqual(env.events.filter(event => event.startsWith('close:')), ['close:1', 'close:1'])
+})
+
+test('the deadline during a close returns deadline', async () => {
+  const env = makeEnv({ openPrs: [[stalePr]], based: { 'deps/web/a': false }, closeFails: [new DeadlineReached()] })
+
+  assert.equal(await env.run(), 'deadline')
+  assert.deepEqual(env.sleeps, [])
+})
+
+test('closing a stale PR right after publishing still waits for the new PR to be listed', async () => {
+  const newPr = { number: 3, headRefName: 'deps/web/pkg1-1.0.1', url: 'u3' }
+  const env = makeEnv({
+    rows: { web: [finding('1', [WITHIN], 'critical')], api: [finding('2', [WITHIN], 'critical')] },
+    openPrs: [[], [stalePr], [newPr], []],
+    based: { 'deps/web/a': false },
+  })
+
+  await env.run()
+
+  const pollsBeforeSecondUpgrade = env.events.slice(0, env.events.indexOf('upgrade:api:2')).filter(event => event === 'openPrs').length
+  assert.equal(env.closed.length, 1)
+  assert.equal(pollsBeforeSecondUpgrade, 4)
 })

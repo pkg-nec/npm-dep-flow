@@ -36,12 +36,24 @@ test('openPrs lists open dependencies PRs by author', async () => {
   const prs = await createGh({ run, repo: '/repo' }).openPrs('maw')
 
   assert.deepEqual(prs, [{ number: 7, headRefName: 'deps/web/x-1' }])
-  assert.deepEqual(calls[0].args, ['pr', 'list', '--state', 'open', '--label', 'dependencies', '--author', 'maw', '--json', 'number,headRefName'])
+  assert.deepEqual(calls[0].args, ['pr', 'list', '--state', 'open', '--label', 'dependencies', '--author', 'maw', '--json', 'number,headRefName,url'])
 })
 
 test('openPrs throws on failure', async () => {
   const { run } = fakeRun([{ code: 1, stdout: '', stderr: 'network' }])
   await assert.rejects(createGh({ run, repo: '/repo' }).openPrs('maw'), { code: 'GH_FAILED' })
+})
+
+test('closePr closes with a comment and deletes the branch', async () => {
+  const { run, calls } = fakeRun([{ code: 0, stdout: '', stderr: '' }])
+  await createGh({ run, repo: '/repo' }).closePr(7, 'why')
+
+  assert.deepEqual(calls[0].args, ['pr', 'close', '7', '--comment', 'why', '--delete-branch'])
+})
+
+test('closePr throws GH_FAILED on failure', async () => {
+  const { run } = fakeRun([{ code: 1, stdout: '', stderr: 'denied' }])
+  await assert.rejects(createGh({ run, repo: '/repo' }).closePr(7, 'why'), { code: 'GH_FAILED' })
 })
 
 test('createPr passes branch, title, body, base and the dependencies label', async () => {

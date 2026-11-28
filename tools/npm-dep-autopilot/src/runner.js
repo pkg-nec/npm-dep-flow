@@ -17,7 +17,24 @@ async function sync({ git, log }) {
   await git.syncDefault()
 }
 
-async function waitForOpenPrs({ gh, deadline, config, user, log }, expectBranch) {
+async function closeStalePrs({ git, gh, config, log }, open) {
+  const { defaultBranch } = config
+  const remaining = []
+  let closed = 0
+  for (const pr of open) {
+    if (await git.isBasedOnDefault(pr.headRefName) !== false) {
+      remaining.push(pr)
+      continue
+    }
+    await gh.closePr(pr.number, `Closed by npm-dep-autopilot: this branch is behind ${defaultBranch}. A new pull request will be planned from the current ${defaultBranch}.`)
+    log(`Closed stale PR ${pr.url}: ${pr.headRefName} is behind ${defaultBranch}`)
+    closed += 1
+  }
+  return { open: remaining, closed }
+}
+
+async function waitForOpenPrs(context, expectBranch) {
+  const { git, gh, deadline, config, user, log } = context
   let expected = expectBranch
   let waited = false
   let failures = 0
@@ -26,13 +43,16 @@ async function waitForOpenPrs({ gh, deadline, config, user, log }, expectBranch)
   for (;;) {
     let open = null
     try {
-      open = await gh.openPrs(user)
+      await git.fetch()
+      const result = await closeStalePrs(context, await gh.openPrs(user))
+      open = result.open
       failures = 0
+      if (result.closed > 0) waited = true
     }
     catch (error) {
       if (error instanceof DeadlineReached) throw error
       failures += 1
-      if (failures >= MAX_POLL_FAILURES) throw new AutopilotError(`gh is unavailable: ${error.message}`, 'GH_UNAVAILABLE')
+      if (failures >= MAX_POLL_FAILURES) throw new AutopilotError(`Cannot poll open PRs: ${error.message}`, 'GH_UNAVAILABLE')
     }
 
     if (open && expected && open.some(pr => pr.headRefName === expected)) expected = null

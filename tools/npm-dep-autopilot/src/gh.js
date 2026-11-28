@@ -18,8 +18,11 @@ export function createGh({ run, repo, signal }) {
       return (await execOrThrow(['api', 'user', '--jq', '.login'])).trim()
     },
     async openPrs(user) {
-      const stdout = await execOrThrow(['pr', 'list', '--state', 'open', '--label', 'dependencies', '--author', user, '--json', 'number,headRefName'])
+      const stdout = await execOrThrow(['pr', 'list', '--state', 'open', '--label', 'dependencies', '--author', user, '--json', 'number,headRefName,url'])
       return JSON.parse(stdout)
+    },
+    async closePr(number, comment) {
+      await execOrThrow(['pr', 'close', String(number), '--comment', comment, '--delete-branch'])
     },
     async createPr({ branch, title, body, base }) {
       const stdout = await execOrThrow(['pr', 'create', '--base', base, '--head', branch, '--title', title, '--body', body, '--label', 'dependencies'])
